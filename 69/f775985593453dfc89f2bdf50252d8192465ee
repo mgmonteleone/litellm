@@ -1,0 +1,27 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTester.test.tsx
+  s_d71e62cb6f304c::t_a26aaf7a19f564 108,109-110,114,117-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "69f775985593453dfc89f2bdf50252d8192465ee",
+  "prompts": {},
+  "sessions": {
+    "s_2f24c21c253d28": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a521efe8b31083e14",
+        "model": "unknown"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    },
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
