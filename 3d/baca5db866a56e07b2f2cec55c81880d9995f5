@@ -1,3 +1,20 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.characterization.test.tsx
+  s_d71e62cb6f304c::t_dd0ed2b84d69e6 114,139,163,235-289
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/ingestPayload.ts
+  s_d71e62cb6f304c::t_dd0ed2b84d69e6 1-107
+ui/litellm-dashboard/src/components/networking.tsx
+  s_d71e62cb6f304c::t_dd0ed2b84d69e6 5822-5823,5838-5840
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.tsx
+  s_d71e62cb6f304c::t_dd0ed2b84d69e6 1,3,16,18,21-29,36-43,68-71,78-79,87,90,92-96,118-183,187-188,191-193,201-202,205-215,281-286,312-313,486-510,513-518,521-539,556-565
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/ingestPayload.test.ts
+  s_d71e62cb6f304c::t_dd0ed2b84d69e6 1-120
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/TestVectorStoreTab.tsx
+  s_d71e62cb6f304c::t_dd0ed2b84d69e6 17-18,23-32,68
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/index.tsx
+  s_d71e62cb6f304c::t_dd0ed2b84d69e6 42-52,168,211-216
+  s_d71e62cb6f304c::t_bf01cc955bc1af 41,187-191
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.test.tsx
+  s_d71e62cb6f304c::t_dd0ed2b84d69e6 12-15,181
 ---
 {
   "schema_version": "authorship/3.0.0",
