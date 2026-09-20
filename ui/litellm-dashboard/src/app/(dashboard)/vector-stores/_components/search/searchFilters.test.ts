@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendChild,
   coerceFilterValue,
+  correctFilterKey,
   newCondition,
   newGroup,
   removeNode,
@@ -15,6 +16,28 @@ const condition = (key: string, operator: FilterCondition["operator"], value: st
   ...newCondition(key),
   operator,
   value,
+});
+
+describe("correctFilterKey", () => {
+  it("prefixes a bare key with metadata. when that full path is a declared filter field", () => {
+    expect(correctFilterKey("department", ["metadata.department", "metadata.year"])).toBe("metadata.department");
+  });
+
+  it("leaves a key that is already a declared filter field untouched", () => {
+    expect(correctFilterKey("metadata.department", ["metadata.department"])).toBe("metadata.department");
+  });
+
+  it("leaves a bare key alone when its metadata. form is not declared", () => {
+    expect(correctFilterKey("department", ["metadata.year"])).toBe("department");
+  });
+
+  it("leaves a bare key alone when the store declares no filter fields at all", () => {
+    expect(correctFilterKey("department", [])).toBe("department");
+  });
+
+  it("leaves a top-level (non-metadata) declared field as typed", () => {
+    expect(correctFilterKey("chunk_index", ["chunk_index"])).toBe("chunk_index");
+  });
 });
 
 describe("coerceFilterValue", () => {

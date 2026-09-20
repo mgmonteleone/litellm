@@ -41,7 +41,10 @@ export interface VectorStoreTesterProps {
 const asStringList = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 
-const SearchEntryBody: React.FC<{ entry: SearchEntry }> = ({ entry }) => {
+const SearchEntryBody: React.FC<{ entry: SearchEntry; filterFields: readonly string[] }> = ({
+  entry,
+  filterFields,
+}) => {
   if (entry.error) {
     return <p className="text-sm break-words text-destructive">{entry.error}</p>;
   }
@@ -59,6 +62,7 @@ const SearchEntryBody: React.FC<{ entry: SearchEntry }> = ({ entry }) => {
           result={result}
           index={index}
           topScore={results[0].score}
+          filterFields={filterFields}
         />
       ))}
     </ul>
@@ -165,7 +169,7 @@ export const VectorStoreTester: React.FC<VectorStoreTesterProps> = ({
                     </span>
                   </div>
 
-                  <SearchEntryBody entry={entry} />
+                  <SearchEntryBody entry={entry} filterFields={filterKeys} />
                 </div>
               ))}
             </div>
