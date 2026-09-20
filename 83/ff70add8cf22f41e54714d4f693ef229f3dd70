@@ -8,6 +8,7 @@ tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
 litellm/proxy/rag_endpoints/endpoints.py
   s_d71e62cb6f304c::t_faa2371584ecc7 190-191,195-196,201,312
   s_d71e62cb6f304c::t_42e6b1aefb7ef4 189
+  s_d71e62cb6f304c::t_9ac2629234b699 152-188,192-194,197-200,202-206
 litellm/rag/ingestion/mongodb_ingestion.py
   s_d71e62cb6f304c::t_faa2371584ecc7 24,32,55,57-58,98,145,149,213
   s_d71e62cb6f304c::t_0ca472dcb91cd9 59-61
