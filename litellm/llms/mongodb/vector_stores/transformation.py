@@ -46,6 +46,7 @@ MIN_NUM_CANDIDATES: Final = 100
 MAX_NUM_CANDIDATES: Final = 10_000
 MAX_QUERY_CHARACTERS: Final = 32_000
 MAX_DIMENSIONS: Final = 8192
+MAX_SIDECAR_TIMEOUT_MS: Final = 600_000  # the sidecar rejects longer deadlines; LiteLLM's SDK default is far above it
 DIMENSION_PROBE_TEXT: Final = "LiteLLM embedding dimension probe"
 _EMPTY_EMBEDDING_CONFIG: Final = MappingProxyType({})
 _SIDECAR_TOO_OLD_MESSAGE: Final = (
@@ -362,7 +363,7 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         if not isinstance(seconds, (int, float)) or not isfinite(seconds) or seconds <= 0:
             raise config_error("MongoDB search timeout must be a positive finite number.")
         try:
-            return max(1, int(seconds * 1000))
+            return min(max(1, int(seconds * 1000)), MAX_SIDECAR_TIMEOUT_MS)
         except (ValueError, OverflowError):
             raise config_error("MongoDB search timeout must be a positive finite number.") from None
 

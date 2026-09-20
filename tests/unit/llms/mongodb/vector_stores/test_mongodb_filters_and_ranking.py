@@ -198,3 +198,8 @@ def test_search_response_keeps_attributes_and_drops_score_details() -> None:
 def test_supported_openai_params_advertise_filters_and_ranking() -> None:
     config: Final = MongoDBVectorStoreConfig(RecordingEmbeddingExecutor())
     assert config.get_supported_openai_params("mongodb") == ["filters", "max_num_results", "ranking_options"]
+
+
+def test_timeouts_are_clamped_to_the_sidecar_ceiling() -> None:
+    assert search_body({"timeout": 6000}, {})["timeout_ms"] == 600_000
+    assert search_body({"timeout": 0.25}, {})["timeout_ms"] == 250
