@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -147,7 +147,11 @@ describe("MongoDB vector store dialog", () => {
     fillConnection();
 
     await vi.waitFor(() =>
-      expect(mockDiscover).toHaveBeenCalledWith("test-token", expect.objectContaining({ kind: "databases" })),
+      expect(mockDiscover).toHaveBeenCalledWith(
+        "test-token",
+        expect.objectContaining({ kind: "databases" }),
+        expect.anything(),
+      ),
     );
     expect(await screen.findByRole("button", { name: "Enter a value that is not listed" })).toBeInTheDocument();
   });
@@ -254,5 +258,72 @@ describe("MongoDB vector store dialog", () => {
 
     expect(screen.getByText("Index Dimensions")).toBeInTheDocument();
     expect(screen.getByText("Similarity")).toBeInTheDocument();
+  });
+});
+
+describe("MongoDB discovery debouncing and scoping", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreate.mockResolvedValue(undefined);
+    mockTest.mockResolvedValue(PASSING_RESULT);
+    mockDiscover.mockImplementation(async (_token, body) => discoveryPayloads[body.kind] ?? {});
+  });
+
+  it("debounces five fast keystrokes in Database into a single discover call, and never re-fires Databases", async () => {
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+    fillConnection();
+    await vi.waitFor(() =>
+      expect(mockDiscover).toHaveBeenCalledWith(
+        "test-token",
+        expect.objectContaining({ kind: "databases" }),
+        expect.anything(),
+      ),
+    );
+    // Discovery has answered, so the Database field is now a combobox over its suggestions;
+    // switch to free text the way an admin typing a database that isn't listed yet would.
+    await user.click(await screen.findByRole("button", { name: "Enter a value that is not listed" }));
+    mockDiscover.mockClear();
+
+    const databaseInput = screen.getByPlaceholderText("sample_mflix");
+    act(() => {
+      "knowl".split("").forEach((_, index) => {
+        fireEvent.change(databaseInput, { target: { value: "knowl".slice(0, index + 1) } });
+      });
+    });
+
+    await vi.waitFor(
+      () => expect(mockDiscover.mock.calls.filter((call) => call[1].kind === "collections")).toHaveLength(1),
+      { timeout: 2000 },
+    );
+    expect(mockDiscover.mock.calls.filter((call) => call[1].kind === "databases")).toHaveLength(0);
+    expect(mockDiscover.mock.calls.find((call) => call[1].kind === "collections")?.[1].litellm_params).toMatchObject({
+      mongodb_database: "knowl",
+    });
+  });
+
+  it("does not refetch collections when only the vector field name changes", async () => {
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+    fillConnection();
+    fireEvent.change(screen.getByPlaceholderText("sample_mflix"), { target: { value: "knowledge" } });
+    await vi.waitFor(() =>
+      expect(mockDiscover).toHaveBeenCalledWith(
+        "test-token",
+        expect.objectContaining({ kind: "collections" }),
+        expect.anything(),
+      ),
+    );
+    mockDiscover.mockClear();
+
+    fireEvent.change(screen.getByPlaceholderText("embedding"), { target: { value: "embedding_v2" } });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(mockDiscover.mock.calls.filter((call) => call[1].kind === "collections")).toHaveLength(0);
+    expect(mockDiscover.mock.calls.filter((call) => call[1].kind === "databases")).toHaveLength(0);
   });
 });

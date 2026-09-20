@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useDebouncedValue } from "@tanstack/react-pacer/debouncer";
 
 import { vectorStoreDiscoverCall } from "@/components/networking";
 import type { VectorStoreDiscoveryKind } from "@/components/vector_store_providers";
 import { ApiError, extractProxyErrorMessage } from "@/lib/http/client";
+import { DEBOUNCE_WAIT_MS } from "@/utils/debounceConstants";
 
 import { discoverRequestKind, parseSuggestions, type DiscoverySuggestion } from "./mongodbDiscovery";
 
@@ -42,16 +44,26 @@ export const useMongoDiscovery = (
 ): DiscoveryState => {
   /** Keyed so a result from a superseded request cannot be shown against the current one. */
   const [answered, setAnswered] = useState<{ key: string; state: DiscoveryState } | null>(null);
-  /** The request travels into the effect serialised, so a fresh object literal per render cannot re-trigger it. */
-  const payloadKey = useMemo(() => JSON.stringify(request), [request]);
-  const requestKey = `${kind}:${payloadKey}`;
+  /**
+   * `enabled` travels through the same debounce as the request: a database field going from
+   * empty to one character flips it true on the very next keystroke, and without debouncing that
+   * transition too, the effect would fire once immediately with the stale (pre-keystroke) request
+   * and again after the debounce settles.
+   */
+  const payloadKey = useMemo(() => JSON.stringify({ enabled, request }), [enabled, request]);
+  /** Waits for the admin to stop typing before firing, so one field doesn't send a request per keystroke. */
+  const [debouncedPayloadKey] = useDebouncedValue(payloadKey, { wait: DEBOUNCE_WAIT_MS });
+  const requestKey = `${kind}:${debouncedPayloadKey}`;
 
   useEffect(() => {
-    if (!accessToken || !enabled) return;
-    const body = JSON.parse(payloadKey) as MongoDiscoveryRequest;
+    const { enabled: debouncedEnabled, request: body } = JSON.parse(debouncedPayloadKey) as {
+      enabled: boolean;
+      request: MongoDiscoveryRequest;
+    };
+    if (!accessToken || !debouncedEnabled) return;
     const controller = new AbortController();
     const resolve = (state: DiscoveryState) => {
-      if (!controller.signal.aborted) setAnswered({ key: `${kind}:${payloadKey}`, state });
+      if (!controller.signal.aborted) setAnswered({ key: `${kind}:${debouncedPayloadKey}`, state });
     };
 
     const discoverRequest = {
@@ -62,7 +74,7 @@ export const useMongoDiscovery = (
       options: body.options ?? {},
     };
 
-    vectorStoreDiscoverCall(accessToken, discoverRequest)
+    vectorStoreDiscoverCall(accessToken, discoverRequest, controller.signal)
       .then((payload) => {
         const suggestions = parseSuggestions(kind, payload);
         resolve({
@@ -81,7 +93,7 @@ export const useMongoDiscovery = (
       });
 
     return () => controller.abort();
-  }, [accessToken, enabled, kind, payloadKey]);
+  }, [accessToken, kind, debouncedPayloadKey]);
 
   if (!accessToken || !enabled) return IDLE;
   return answered?.key === requestKey ? answered.state : LOADING;
