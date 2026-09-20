@@ -2,7 +2,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, Field
 from typing_extensions import ReadOnly, TypedDict
@@ -376,6 +376,21 @@ class VectorStoreIndexEndpoints(TypedDict):
     write: list[
         tuple[Literal["GET", "POST", "PUT", "DELETE", "PATCH"], str]
     ]  # endpoints for writing a vector store index
+
+
+MANAGED_STORE_CALLER_OPTIONS: Final = frozenset(
+    {
+        "vector_store_id",
+        "data_source_id",
+        "wait_for_ingestion",
+        "ingestion_timeout",
+        "custom_metadata",
+        "file_description",
+        "max_embedding_requests_per_min",
+    }
+)
+"""Per-request ingest options a caller may send for a managed store, as opposed to the
+store's own configuration. Providers treat them as recognised keys rather than typos."""
 
 
 VECTOR_STORE_OPENAI_PARAMS = Literal[

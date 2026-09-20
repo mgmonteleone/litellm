@@ -53,6 +53,7 @@ from litellm.proxy.vector_store_endpoints.utils import (
 from litellm.rag.main import get_ingestion_class
 from litellm.repositories.table_repositories import ManagedVectorStoresRepository
 from litellm.types.utils import ModelResponse
+from litellm.types.vector_stores import MANAGED_STORE_CALLER_OPTIONS
 
 if TYPE_CHECKING:
     from litellm.proxy.utils import PrismaClient
@@ -166,19 +167,6 @@ def _ingest_provider_error(vector_store_config: Mapping[str, object]) -> str | N
     return None
 
 
-_MANAGED_STORE_CALLER_OPTIONS: Final = frozenset(
-    {
-        "vector_store_id",
-        "data_source_id",
-        "wait_for_ingestion",
-        "ingestion_timeout",
-        "custom_metadata",
-        "file_description",
-        "max_embedding_requests_per_min",
-    }
-)
-
-
 def _caller_vector_store_options(
     request_vector_store_config: Mapping[str, object],
     managed_store: LiteLLM_ManagedVectorStore | None,
@@ -186,11 +174,11 @@ def _caller_vector_store_options(
     if managed_store is None:
         return request_vector_store_config
     return MappingProxyType(
-        {key: value for key, value in request_vector_store_config.items() if key in _MANAGED_STORE_CALLER_OPTIONS}
+        {key: value for key, value in request_vector_store_config.items() if key in MANAGED_STORE_CALLER_OPTIONS}
     )
 
 
-_PER_REQUEST_CALLER_OPTIONS: Final = _MANAGED_STORE_CALLER_OPTIONS - frozenset(("vector_store_id",))
+_PER_REQUEST_CALLER_OPTIONS: Final = MANAGED_STORE_CALLER_OPTIONS - frozenset(("vector_store_id",))
 
 
 def _managed_store_overrides(managed_store: LiteLLM_ManagedVectorStore | None) -> Mapping[str, object]:
