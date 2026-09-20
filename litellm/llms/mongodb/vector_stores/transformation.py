@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from difflib import get_close_matches
 from ipaddress import ip_address
 from math import isfinite
 from time import time
@@ -19,8 +20,9 @@ from litellm.llms.base_llm.vector_store.transformation import (
 from litellm.llms.mongodb.vector_stores.filters import translate_filters
 from litellm.secret_managers.main import get_secret_str
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.utils import EmbeddingResponse
+from litellm.types.utils import EmbeddingResponse, all_litellm_params
 from litellm.types.vector_stores import (
+    MANAGED_STORE_CALLER_OPTIONS,
     VECTOR_STORE_OPENAI_PARAMS,
     BaseVectorStoreAuthCredentials,
     VectorStoreCreateOptionalRequestParams,
@@ -185,24 +187,52 @@ _MONGODB_PARAM_PREFIX: Final = "mongodb_"
 _KNOWN_MONGODB_PARAMS: Final = frozenset(
     name for name in MongoDBVectorStoreParams.model_fields if name.startswith(_MONGODB_PARAM_PREFIX)
 )
+_GENERIC_STORE_PARAMS: Final = frozenset(
+    {
+        "custom_llm_provider",
+        "vector_store_name",
+        "vector_store_description",
+        "vector_store_metadata",
+        "litellm_credential_name",
+        *MANAGED_STORE_CALLER_OPTIONS,
+    }
+)
+# The registry merges every GenericLiteLLMParams field into litellm_params, and the SDK and proxy
+# thread all_litellm_params through the same mapping, so those names reach the provider whether or
+# not the operator wrote them. Anything else is a key the operator meant for this store.
+_SUPPORTED_PARAMS: Final = frozenset(
+    {
+        *MongoDBVectorStoreParams.model_fields,
+        *GenericLiteLLMParams.model_fields,
+        *_GENERIC_STORE_PARAMS,
+        *all_litellm_params,
+    }
+)
+_SUGGESTION_CANDIDATES: Final = tuple(
+    sorted(_KNOWN_MONGODB_PARAMS | _GENERIC_STORE_PARAMS | {"litellm_embedding_model", "litellm_embedding_config"})
+)
 _RESPONSE_ADAPTER: Final = TypeAdapter(VectorStoreSearchResponse)
+
+
+def _unknown_param_hint(key: str) -> str:
+    closest: Final = get_close_matches(key, _SUGGESTION_CANDIDATES, n=1)
+    return f"'{key}' (did you mean '{closest[0]}'?)" if closest else f"'{key}'"
 
 
 def reject_unknown_params(litellm_params: Mapping[str, object]) -> None:
     """Without this a mistyped mongodb_collection reads as 'mongodb_collection is required',
-    naming a key the reader can see they have set."""
+    naming a key the reader can see they have set, and a mistyped embedding_model is dropped silently."""
     if litellm_params.get("mongodb_connection_string") is not None:
         raise config_error(
             "MongoDB vector stores now use the BETA sidecar. Move mongodb_connection_string to "
             "MONGODB_CONNECTION_STRING in the sidecar, remove it from LiteLLM, and configure api_base and api_key."
         )
-    unknown: Final = sorted(
-        key for key in litellm_params if key.startswith(_MONGODB_PARAM_PREFIX) and key not in _KNOWN_MONGODB_PARAMS
-    )
+    unknown: Final = sorted(key for key in litellm_params if key not in _SUPPORTED_PARAMS)
     if unknown:
         raise config_error(
-            f"Unrecognised MongoDB vector store parameter(s): {', '.join(unknown)}. "
-            f"Supported: {', '.join(sorted(_KNOWN_MONGODB_PARAMS))}."
+            f"Unrecognised MongoDB vector store parameter(s): {', '.join(_unknown_param_hint(key) for key in unknown)}. "
+            f"Supported MongoDB parameters: {', '.join(sorted(_KNOWN_MONGODB_PARAMS))}, "
+            "litellm_embedding_model, litellm_embedding_config."
         )
 
 

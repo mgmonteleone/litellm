@@ -229,3 +229,90 @@ async def test_public_sdk_preserves_http_errors_response_and_timeout(
             else:
                 assert await search() == RESULT
     executor.call.assert_called_once_with("embedding-alias", "travel policy", {})
+
+
+@pytest.mark.parametrize(
+    ("typo", "suggestion"),
+    [
+        ("embedding_model", "litellm_embedding_model"),
+        ("mongodb_databse", "mongodb_database"),
+        ("mongodb_collections", "mongodb_collection"),
+        ("hybrid_search", "mongodb_hybrid_search"),
+        ("filter_fields", "mongodb_filter_fields"),
+    ],
+)
+def test_unknown_store_params_are_named_with_the_closest_supported_key(typo: str, suggestion: str) -> None:
+    """These used to be dropped silently and resurfaced later as 'litellm_embedding_model is required'."""
+    from litellm.llms.mongodb.vector_stores.transformation import validated_params
+
+    with pytest.raises(litellm.BadRequestError) as error:
+        validated_params({**BASE_PARAMS, typo: "value"})
+
+    assert f"'{typo}'" in str(error.value)
+    assert f"did you mean '{suggestion}'" in str(error.value)
+
+
+def test_unknown_store_param_without_a_close_match_is_still_named() -> None:
+    from litellm.llms.mongodb.vector_stores.transformation import validated_params
+
+    with pytest.raises(litellm.BadRequestError, match=r"'zzzzzzzz'"):
+        validated_params({**BASE_PARAMS, "zzzzzzzz": 1})
+
+
+def test_generic_and_plumbing_params_are_not_mistaken_for_typos() -> None:
+    """The registry, the SDK and the proxy all merge their own keys into litellm_params."""
+    from litellm.llms.mongodb.vector_stores.transformation import validated_params
+    from litellm.types.utils import all_litellm_params
+    from litellm.types.vector_stores import MANAGED_STORE_CALLER_OPTIONS
+
+    registry_defaults: Final = {
+        "use_xai_oauth": False,
+        "use_litellm_proxy": False,
+        "use_in_pass_through": False,
+        "allow_client_keepalive_override": False,
+        "merge_reasoning_content_in_choices": False,
+    }
+    generic_store_keys: Final = {
+        "vector_store_name": "handbook",
+        "vector_store_description": "policies",
+        "vector_store_metadata": {"ingested_files": []},
+        "litellm_credential_name": "mongo-creds",
+        "custom_llm_provider": "mongodb",
+    }
+    plumbing: Final = dict.fromkeys(all_litellm_params, None)
+    caller_options: Final = dict.fromkeys(MANAGED_STORE_CALLER_OPTIONS, None)
+
+    params: Final = validated_params(
+        {**BASE_PARAMS, **registry_defaults, **generic_store_keys, **caller_options, **plumbing}
+    )
+    assert params.mongodb_database == "policies"
+
+
+def test_validate_environment_rejects_unknown_params_too() -> None:
+    """test_connection and ingest reach the provider through validate_environment."""
+    from litellm.types.router import GenericLiteLLMParams
+
+    with pytest.raises(litellm.BadRequestError, match=r"'embeddding_model'"):
+        MongoDBVectorStoreConfig().validate_environment(
+            headers={},
+            litellm_params=GenericLiteLLMParams(**{**BASE_PARAMS, "embeddding_model": "x"}),
+        )
+
+
+@pytest.mark.asyncio
+async def test_search_rejects_an_unknown_param_before_embedding_or_any_request() -> None:
+    executor: Final = RecordingEmbeddingExecutor()
+    client: Final = MagicMock()
+
+    with pytest.raises(litellm.BadRequestError, match=r"'dimensions'"):
+        await litellm.vector_stores.asearch(
+            **BASE_PARAMS,
+            dimensions=1536,
+            vector_store_id="policy_index",
+            query="travel policy",
+            custom_llm_provider="mongodb",
+            _direct_vector_store_embedding_executor=executor,
+            client=client,
+        )
+
+    executor.call.assert_not_called()
