@@ -1,0 +1,57 @@
+litellm/llms/vertex_ai/rag_engine/ingestion.py
+  s_d71e62cb6f304c::t_7db6755d2a3c4d 262
+litellm/proxy/rag_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_d25bf2bf903caa 214,223-224,244,272,333,404-406,412,418,429-430,433,492-494,537,600,672,693
+litellm/proxy/rag_endpoints/upload_security.py
+  s_d71e62cb6f304c::t_5d24a4295f8e42 8-9,18,25-27,134,215-231,272,296
+litellm/rag/ingestion/base_ingestion.py
+  s_d71e62cb6f304c::t_737f28fcca9dd4 278,287,292-293,304,313-314,360
+litellm/rag/ingestion/bedrock_ingestion.py
+  s_d71e62cb6f304c::t_ccdb696cd08a3e 638
+litellm/rag/ingestion/gemini_ingestion.py
+  s_d71e62cb6f304c::t_5857970ce818bb 65
+litellm/rag/ingestion/mongodb_ingestion.py
+  s_d71e62cb6f304c::t_9e6fe9e0af68d0 109,154,169,176,183
+litellm/rag/ingestion/openai_ingestion.py
+  s_d71e62cb6f304c::t_d1db1a20e3c619 62
+litellm/rag/ingestion/s3_vectors_ingestion.py
+  s_d71e62cb6f304c::t_374c92ac3fde93 438
+litellm/rag/ingestion/vertex_ai_ingestion.py
+  s_d71e62cb6f304c::t_6f219995d45276 117
+litellm/rag/main.py
+  s_25c805ebe232f3::t_bc793e52e5598e 102,113-114,137,152,191,467,515,525
+tests/test_litellm/proxy/rag_endpoints/test_rag_endpoints.py
+  s_d71e62cb6f304c::t_c462718d1a7199 1167-1169,1177-1192,1211-1257
+tests/test_litellm/proxy/rag_endpoints/test_upload_security.py
+  s_d71e62cb6f304c::t_6a64ceb38ff795 15,26,59-61,103,112,137,144,150,162,165,181-209
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_tenant_guard.py
+  s_d71e62cb6f304c::t_ad4287a07dce17 281
+tests/test_litellm/test_rag_openai_ingestion.py
+  s_d71e62cb6f304c::t_4a57487605ec54 83
+tests/unit/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_f5e2a8c9777147 229,233,252-280
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "c4f5df97594a95d3e8d3ecb715b56a215e38b5f7",
+  "prompts": {},
+  "sessions": {
+    "s_25c805ebe232f3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f961db08-89fd-42a6-98be-0d21942ae41b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    },
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
