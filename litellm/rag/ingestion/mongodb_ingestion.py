@@ -106,6 +106,7 @@ class MongoDBRAGIngestion(BaseRAGIngestion):
         chunks: list[str],  # mutable-ok: BaseRAGIngestion contract
         embeddings: list[list[float]] | None,  # mutable-ok: BaseRAGIngestion contract
         existing_file_id: str | None = None,
+        display_filename: str | None = None,
     ) -> tuple[str | None, str | None]:
         if not chunks or not embeddings:
             raise ValueError(
@@ -150,6 +151,7 @@ class MongoDBRAGIngestion(BaseRAGIngestion):
         )
 
         file_id: Final = deterministic_file_id(filename, file_content)
+        stored_filename: Final = display_filename or filename
         metadata: Final = chunk_metadata(self.vector_store_config.get("custom_metadata"))
         documents_url: Final = f"{api_base}/v1/vector_stores/{quote(index_name, safe='')}/documents"
         for start in range(0, len(chunks), INGEST_BATCH_SIZE):
@@ -164,21 +166,21 @@ class MongoDBRAGIngestion(BaseRAGIngestion):
                     "mongodb_embedding_field": params.embedding_field,
                     "mongodb_text_field": params.text_field,
                     "file_id": file_id,
-                    "filename": filename,
+                    "filename": stored_filename,
                     "content_type": content_type,
                     "documents": batch,
                     "replace_existing": start == 0,
                     "timeout_ms": INGEST_TIMEOUT_MS,
                 },
             )
-        verbose_logger.info("MongoDB ingest: stored %s chunks for %s as %s", len(chunks), filename, file_id)
+        verbose_logger.info("MongoDB ingest: stored %s chunks for %s as %s", len(chunks), stored_filename, file_id)
         return index_name, file_id
 
 
 def deterministic_file_id(filename: str | None, file_content: bytes | None) -> str:
     """Same bytes, same id: re-ingesting a document replaces its chunks instead of duplicating them.
 
-    The id is keyed on content only because the proxy replaces upload names with random safe names.
+    The id is keyed on content only because the proxy stores uploads under random safe names.
     """
     if file_content is None:
         return f"file_{uuid4().hex}"

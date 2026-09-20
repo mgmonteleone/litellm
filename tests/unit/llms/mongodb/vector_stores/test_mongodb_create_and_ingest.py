@@ -226,10 +226,11 @@ async def test_ingestion_embeds_locally_then_creates_index_and_posts_batches() -
     with patch("litellm.rag.ingestion.mongodb_ingestion.get_async_httpx_client", return_value=handler):
         index_name, file_id = await ingestion.store(
             file_content=b"raw",
-            filename="travel.md",
+            filename="9f1c2b4e.txt",
             content_type="text/markdown",
             chunks=chunks,
             embeddings=embeddings,
+            display_filename="travel.md",
         )
     assert index_name == "policy_index"
     assert file_id is not None and file_id.startswith("file_")
@@ -248,6 +249,35 @@ async def test_ingestion_embeds_locally_then_creates_index_and_posts_batches() -
     assert file_id == "file_" + __import__("hashlib").sha256(b"raw").hexdigest()[:32]
     assert second["documents"][0]["chunk_index"] == 200
     assert first["file_id"] == file_id and first["filename"] == "travel.md"
+    assert second["filename"] == "travel.md"
+
+
+@pytest.mark.asyncio
+async def test_ingestion_falls_back_to_the_storage_name_when_no_display_name_is_given() -> None:
+    """URL and SDK ingests have no separate display name, so the stored chunks keep the only name there is."""
+    bodies: list[dict[str, object]] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/vector_stores":
+            return httpx.Response(201, json=INDEX_STATUS)
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200, json={"file_id": "ignored", "inserted": 1, "deleted": 0, "ingested_at": "2026-09-20T00:00:00Z"}
+        )
+
+    handler: Final = AsyncHTTPHandler()
+    await handler.client.aclose()
+    handler.client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    ingestion: Final = MongoDBRAGIngestion({"vector_store": {**BASE_PARAMS, "vector_store_id": "policy_index"}})
+    with patch("litellm.rag.ingestion.mongodb_ingestion.get_async_httpx_client", return_value=handler):
+        await ingestion.store(
+            file_content=b"raw",
+            filename="handbook.pdf",
+            content_type="application/pdf",
+            chunks=["a"],
+            embeddings=[[1.0]],
+        )
+    assert bodies[0]["filename"] == "handbook.pdf"
 
 
 @pytest.mark.asyncio

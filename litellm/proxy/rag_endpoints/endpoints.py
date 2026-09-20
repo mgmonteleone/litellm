@@ -211,6 +211,7 @@ def _build_file_metadata_entry(
     response: object,
     file_data: tuple[str, bytes, str] | None = None,
     file_url: str | None = None,
+    display_filename: str | None = None,
 ) -> Mapping[str, str | int | None]:
     """
     Build a file metadata entry for storing in vector_store_metadata.
@@ -219,6 +220,8 @@ def _build_file_metadata_entry(
         response: The response from litellm.aingest containing file_id
         file_data: Optional tuple of (filename, content, content_type)
         file_url: Optional URL if file was ingested from URL
+        display_filename: Sanitized name the file was uploaded under, shown instead of
+            the server-generated storage name
 
     Returns:
         Dictionary with file metadata (file_id, filename, file_url, ingested_at, etc.)
@@ -238,7 +241,7 @@ def _build_file_metadata_entry(
     content_type = None
 
     if file_data:
-        filename = file_data[0]
+        filename = display_filename or file_data[0]
         file_size = len(file_data[1]) if len(file_data) > 1 else None
         content_type = file_data[2] if len(file_data) > 2 else None
 
@@ -266,6 +269,7 @@ async def _save_vector_store_to_db_from_rag_ingest(
     user_api_key_dict: UserAPIKeyAuth,
     file_data: tuple[str, bytes, str] | None = None,
     file_url: str | None = None,
+    display_filename: str | None = None,
     *,
     store_is_managed: bool = False,
 ) -> None:
@@ -326,6 +330,7 @@ async def _save_vector_store_to_db_from_rag_ingest(
         response=response,
         file_data=file_data,
         file_url=file_url,
+        display_filename=display_filename,
     )
 
     try:
@@ -396,20 +401,21 @@ async def _save_vector_store_to_db_from_rag_ingest(
 def _secure_uploaded_file(
     file_data: tuple[str, bytes, str],
     scanner: MalwareScanner,
-) -> tuple[str, bytes, str]:
-    validation: Final = validate_upload(content=file_data[1], scanner=scanner)
+) -> tuple[tuple[str, bytes, str], str]:
+    """Return the storage-safe ``file_data`` plus the sanitized name to display it under."""
+    validation: Final = validate_upload(filename=file_data[0], content=file_data[1], scanner=scanner)
     if isinstance(validation, RejectedUpload):
         raise HTTPException(
             status_code=400,
             detail={"error": validation.message, "reason": validation.reason.value},
         )
-    return validation.safe_filename, file_data[1], validation.content_type
+    return (validation.safe_filename, file_data[1], validation.content_type), validation.display_filename
 
 
 async def parse_rag_ingest_request(
     request: Request,
     scanner: MalwareScanner,
-) -> tuple[dict[str, Any], tuple[str, bytes, str] | None, str | None, str | None]:
+) -> tuple[dict[str, Any], tuple[str, bytes, str] | None, str | None, str | None, str | None]:
     """
     Parse RAG ingest request.
 
@@ -420,10 +426,11 @@ async def parse_rag_ingest_request(
     Uploaded file bytes are validated against the vector-store upload controls
     (size limit, format allowlist with content inspection, archive rejection,
     and the injected malware scanner) and given a server-generated filename
-    before they are returned.
+    before they are returned. The name the caller uploaded under survives, in
+    sanitized form, as the separate display name.
 
     Returns:
-        Tuple of (ingest_options, file_data, file_url, file_id)
+        Tuple of (ingest_options, file_data, file_url, file_id, display_filename)
     """
     headers: Final = _safe_get_request_headers(request)
     content_type = headers.get("content-type", "")
@@ -482,9 +489,9 @@ async def parse_rag_ingest_request(
             detail={"error": "Must provide file, file_url, or file_id"},
         )
 
-    secured_file_data: Final[tuple[str, bytes, str] | None] = (
-        _secure_uploaded_file(file_data, scanner) if file_data is not None else None
-    )
+    secured_upload: Final = _secure_uploaded_file(file_data, scanner) if file_data is not None else None
+    secured_file_data: Final = secured_upload[0] if secured_upload is not None else None
+    display_filename: Final = secured_upload[1] if secured_upload is not None else None
 
     if "vector_store" not in ingest_options:
         raise HTTPException(
@@ -527,7 +534,7 @@ async def parse_rag_ingest_request(
                     },
                 )
 
-    return ingest_options, secured_file_data, file_url, file_id
+    return ingest_options, secured_file_data, file_url, file_id, display_filename
 
 
 @router.post(
@@ -590,7 +597,7 @@ async def rag_ingest(
 
     try:
         # Parse request
-        ingest_options, file_data, file_url, file_id = await parse_rag_ingest_request(
+        ingest_options, file_data, file_url, file_id, display_filename = await parse_rag_ingest_request(
             request, scanner=EicarTestMalwareScanner()
         )
 
@@ -662,6 +669,7 @@ async def rag_ingest(
             file_data=file_data,
             file_url=file_url,
             file_id=file_id,
+            display_filename=display_filename,
             router=llm_router,
             **request_data,
         )
@@ -682,6 +690,7 @@ async def rag_ingest(
                 user_api_key_dict=user_api_key_dict,
                 file_data=file_data,
                 file_url=file_url,
+                display_filename=display_filename,
                 store_is_managed=managed_store is not None,
             )
         else:

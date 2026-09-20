@@ -1164,7 +1164,9 @@ class TestVectorStoreUploadControls:
             content=b"benign document text\n",
             content_type="text/plain",
         )
-        _options, file_data, _url, _file_id = await parse_rag_ingest_request(request, scanner=EicarTestMalwareScanner())
+        _options, file_data, _url, _file_id, display_filename = await parse_rag_ingest_request(
+            request, scanner=EicarTestMalwareScanner()
+        )
         assert file_data is not None
         server_filename, content_bytes, secured_content_type = file_data
         assert server_filename != "../../etc/passwd"
@@ -1172,6 +1174,22 @@ class TestVectorStoreUploadControls:
         assert server_filename.endswith(".txt")
         assert secured_content_type == "text/plain"
         assert content_bytes == b"benign document text\n"
+        assert display_filename == "passwd"
+
+    async def test_upload_keeps_the_original_name_for_display(self):
+        from litellm.proxy.rag_endpoints.endpoints import parse_rag_ingest_request
+        from litellm.proxy.rag_endpoints.upload_security import EicarTestMalwareScanner
+
+        request = _multipart_ingest_request(
+            filename="travel.md",
+            content=b"benign document text\n",
+            content_type="text/markdown",
+        )
+        _options, file_data, _url, _file_id, display_filename = await parse_rag_ingest_request(
+            request, scanner=EicarTestMalwareScanner()
+        )
+        assert display_filename == "travel.md"
+        assert file_data is not None and file_data[0] != "travel.md"
 
 
 def test_per_request_caller_options_never_come_from_the_managed_store():
@@ -1190,3 +1208,50 @@ def test_per_request_caller_options_never_come_from_the_managed_store():
     overrides = _managed_store_overrides(store)
     assert overrides["mongodb_database"] == "knowledge"
     assert "custom_metadata" not in overrides and "file_description" not in overrides
+
+
+def test_rag_ingest_forwards_the_uploaded_name_and_records_it_in_file_metadata(client_internal_user):
+    """An upload named travel.md must be ingested and listed as travel.md, not as its storage name."""
+    prisma_client = MagicMock()
+    prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+    create_in_db = AsyncMock()
+    with (
+        patch(  # test-quality-ok: aingest is the endpoint's downstream boundary; the forwarded name is the assertion
+            "litellm.proxy.rag_endpoints.endpoints.litellm.aingest",
+            new=AsyncMock(return_value={"vector_store_id": "policy_index", "file_id": "file_123"}),
+        ) as mock_aingest,
+        patch("litellm.vector_store_registry", None),  # test-quality-ok: proxy module global, no injection seam
+        _patched_prisma_client(prisma_client),
+        patch(  # test-quality-ok: the DB write boundary whose recorded metadata the test asserts
+            "litellm.proxy.vector_store_endpoints.management_endpoints.create_vector_store_in_db",
+            new=create_in_db,
+        ),
+    ):
+        response = client_internal_user.post(
+            "/v1/rag/ingest",
+            files={"file": ("travel.md", io.BytesIO(b"packing list"), "text/markdown")},
+            data={"request": json.dumps({"ingest_options": {"vector_store": {"custom_llm_provider": "mongodb"}}})},
+        )
+
+    assert response.status_code == 200, response.json()
+    assert mock_aingest.await_args.kwargs["display_filename"] == "travel.md"
+    ingested_files = create_in_db.await_args.kwargs["vector_store_metadata"]["ingested_files"]
+    assert [entry["filename"] for entry in ingested_files] == ["travel.md"]
+
+
+async def test_file_metadata_entry_prefers_the_uploaded_name_over_the_storage_name():
+    from litellm.proxy.rag_endpoints.endpoints import _build_file_metadata_entry
+
+    entry = _build_file_metadata_entry(
+        response={"file_id": "file_123"},
+        file_data=("9f1c2b.txt", b"packing list", "text/plain"),
+        display_filename="travel.md",
+    )
+    assert entry["filename"] == "travel.md"
+    assert (
+        _build_file_metadata_entry(
+            response={"file_id": "file_123"},
+            file_data=("9f1c2b.txt", b"packing list", "text/plain"),
+        )["filename"]
+        == "9f1c2b.txt"
+    )

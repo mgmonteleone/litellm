@@ -275,6 +275,7 @@ class BaseRAGIngestion(ABC):
         chunks: list[str],
         embeddings: list[list[float]] | None,
         existing_file_id: str | None = None,
+        display_filename: str | None = None,
     ) -> tuple[str | None, str | None]:
         """
         Store content in vector store.
@@ -283,11 +284,13 @@ class BaseRAGIngestion(ABC):
 
         Args:
             file_content: Raw file bytes
-            filename: Name of the file
+            filename: Name to store the file under
             content_type: MIME type
             chunks: Text chunks (if chunking was done locally)
             embeddings: Embeddings (if embedding was done locally)
             existing_file_id: Provider file ID supplied by the caller, if any
+            display_filename: Name to show the file under, which the proxy keeps separate
+                from ``filename`` because uploads are stored under a generated safe name
 
         Returns:
             Tuple of (vector_store_id, file_id)
@@ -298,6 +301,7 @@ class BaseRAGIngestion(ABC):
         file_data: tuple[str, bytes, str] | None = None,
         file_url: str | None = None,
         file_id: str | None = None,
+        display_filename: str | None = None,
     ) -> RAGIngestResponse:
         """
         Execute the full ingestion pipeline.
@@ -306,6 +310,8 @@ class BaseRAGIngestion(ABC):
             file_data: Tuple of (filename, content_bytes, content_type)
             file_url: URL to fetch file from
             file_id: Existing file ID to use
+            display_filename: Name to show the file under; defaults to the name in
+                ``file_data``
 
         Returns:
             RAGIngestResponse with status and IDs
@@ -351,6 +357,7 @@ class BaseRAGIngestion(ABC):
                 chunks=chunks,
                 embeddings=embeddings,
                 existing_file_id=existing_file_id,
+                display_filename=display_filename or filename,
             )
 
             return RAGIngestResponse(

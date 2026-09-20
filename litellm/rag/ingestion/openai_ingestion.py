@@ -59,6 +59,7 @@ class OpenAIRAGIngestion(BaseRAGIngestion):
         chunks: list[str],
         embeddings: list[list[float]] | None,
         existing_file_id: str | None = None,
+        display_filename: str | None = None,
     ) -> tuple[str | None, str | None]:
         """
         Store content in OpenAI vector store.
