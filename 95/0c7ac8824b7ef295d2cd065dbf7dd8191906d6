@@ -1,0 +1,19 @@
+MONGODB_INTEGRATION_PLAN.md
+  s_d71e62cb6f304c::t_1a13aaf526441d 22,29-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "950c7ac8824b7ef295d2cd065dbf7dd8191906d6",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
