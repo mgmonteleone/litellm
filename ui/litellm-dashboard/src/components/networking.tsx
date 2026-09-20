@@ -5784,7 +5784,8 @@ export const vectorStoreTestConnectionCall = async (
 export const vectorStoreDiscoverCall = async (
   accessToken: string,
   body: VectorStoreDiscoverRequest,
-): Promise<unknown> => await apiClient.post<unknown>(`/vector_store/discover`, { accessToken, body });
+  signal?: AbortSignal,
+): Promise<unknown> => await apiClient.post<unknown>(`/vector_store/discover`, { accessToken, body, signal });
 
 export const vectorStoreUpdateCall = async (accessToken: string, formValues: Record<string, any>): Promise<any> => {
   try {

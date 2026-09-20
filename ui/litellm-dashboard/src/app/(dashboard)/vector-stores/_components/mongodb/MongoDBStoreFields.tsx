@@ -59,17 +59,33 @@ export const MongoDBStoreFields: React.FC<MongoDBStoreFieldsProps> = ({
   });
 
   const connectionReady = Boolean(apiBase && apiKey);
-  const litellmParams = useMemo(
+  /**
+   * Each discovery kind is scoped to only the fields it actually depends on, so typing in one
+   * field doesn't invalidate a sibling's cache and refire its request too: the database list
+   * only needs the sidecar credentials, the collection list also needs the database, and the
+   * field lists need the collection on top of that.
+   */
+  const connectionParams = useMemo(() => ({ api_base: apiBase, api_key: apiKey }), [apiBase, apiKey]);
+  const collectionParams = useMemo(
+    () => ({ api_base: apiBase, api_key: apiKey, mongodb_database: database }),
+    [apiBase, apiKey, database],
+  );
+  const fieldParams = useMemo(
     () => ({ api_base: apiBase, api_key: apiKey, mongodb_database: database, mongodb_collection: collection }),
     [apiBase, apiKey, database, collection],
   );
 
-  const databases = useMongoDiscovery(accessToken, "databases", { litellmParams }, connectionReady);
-  const collections = useMongoDiscovery(accessToken, "collections", { litellmParams }, connectionReady && !!database);
+  const databases = useMongoDiscovery(accessToken, "databases", { litellmParams: connectionParams }, connectionReady);
+  const collections = useMongoDiscovery(
+    accessToken,
+    "collections",
+    { litellmParams: collectionParams },
+    connectionReady && !!database,
+  );
   const fieldsEnabled = connectionReady && !!database && !!collection;
-  const vectorFields = useMongoDiscovery(accessToken, "vector_fields", { litellmParams }, fieldsEnabled);
-  const textFields = useMongoDiscovery(accessToken, "text_fields", { litellmParams }, fieldsEnabled);
-  const filterFields = useMongoDiscovery(accessToken, "filter_fields", { litellmParams }, fieldsEnabled);
+  const vectorFields = useMongoDiscovery(accessToken, "vector_fields", { litellmParams: fieldParams }, fieldsEnabled);
+  const textFields = useMongoDiscovery(accessToken, "text_fields", { litellmParams: fieldParams }, fieldsEnabled);
+  const filterFields = useMongoDiscovery(accessToken, "filter_fields", { litellmParams: fieldParams }, fieldsEnabled);
 
   const discoveryFor = (field: VectorStoreFieldConfig): DiscoveryState | undefined => {
     switch (field.discovery) {
