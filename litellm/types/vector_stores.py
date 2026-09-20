@@ -56,11 +56,15 @@ class LiteLLM_ManagedVectorStoreListResponse(TypedDict, total=False):
 
 
 class VectorStoreUpdateRequest(BaseModel):
+    """Request litellm_params merge over the saved ones; a value equal to the redaction sentinel keeps the
+    saved secret, exactly as VectorStoreTestConnectionRequest.litellm_params does for test_connection."""
+
     vector_store_id: str
     custom_llm_provider: str | None = None
     vector_store_name: str | None = None
     vector_store_description: str | None = None
     vector_store_metadata: dict | None = None
+    litellm_params: Mapping[str, object] | None = None
 
 
 class VectorStoreDeleteRequest(BaseModel):
