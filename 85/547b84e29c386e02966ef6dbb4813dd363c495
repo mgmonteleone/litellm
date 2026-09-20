@@ -1,0 +1,29 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.tsx
+  s_d71e62cb6f304c::t_5a5ddb834b8879 149
+  s_d71e62cb6f304c::t_d50c40622da93d 129,134-140
+  s_d71e62cb6f304c::t_2b82d2e470cc7a 196,199
+  s_d71e62cb6f304c::t_6003a62f55d4d9 424,427-429
+  s_d71e62cb6f304c::t_b77fc1be7fc3f3 4,28
+  s_d71e62cb6f304c::t_ba88de2ca84fda 250
+  s_d71e62cb6f304c::t_85a97f94b85f08 141
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.test.tsx
+  s_d71e62cb6f304c::t_85f47079eae801 293-333,335-401
+  s_d71e62cb6f304c::t_9930719a94fb15 334
+  s_d71e62cb6f304c::t_e089f565c6b78a 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "85547b84e29c386e02966ef6dbb4813dd363c495",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
