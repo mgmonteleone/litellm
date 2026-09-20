@@ -1,0 +1,28 @@
+ui/litellm-dashboard/src/components/vector_store_providers.test.tsx
+  s_d71e62cb6f304c::t_62d64baab0e549 154-158
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.test.tsx
+  s_d71e62cb6f304c::t_95b1a714d71279 405-485
+  s_d71e62cb6f304c::t_3689afa74c06c5 25,33,41
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBStoreFields.integration.test.tsx
+  s_d71e62cb6f304c::t_37b09e75c94e35 8
+  s_d71e62cb6f304c::t_6e9ee3723cdc7f 146-147,149
+  s_d71e62cb6f304c::t_f9501624a2cd51 132,134-135,143-145,148
+  s_d71e62cb6f304c::t_c77f1e9163cbc8 141
+  s_d71e62cb6f304c::t_f60078cf3e5f23 142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "0c08f8f2b5992d87d70f637df7632020719d36a9",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}

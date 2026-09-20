@@ -1,0 +1,21 @@
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_c85fc5d6acaa00 3133-3176
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_e4fef818aa67c2 127-137,139-141,147,151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "108caff75a7f6601e40038c1b47ea7bc85f6c9c8",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}

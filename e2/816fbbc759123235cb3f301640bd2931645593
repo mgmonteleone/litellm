@@ -1,0 +1,31 @@
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_a34a01a2d81907 2777,2781-2784,2793-2794,2796-2941
+  s_d71e62cb6f304c::t_38897ba77daba5 2778-2780,2785-2787,2791-2792,2795
+  s_d71e62cb6f304c::t_471ee2c621fead 2788-2790
+litellm/types/vector_stores.py
+  s_d71e62cb6f304c::t_a85d58e156e1d4 59-61,67
+litellm/proxy/_lazy_openapi_snapshot.json
+  s_d71e62cb6f304c::t_5df5b7fcbe5cf4 38556,38569-38580
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_4321a526559eb6 641-643
+  s_d71e62cb6f304c::t_051b1398cd151e 586,596-600,602-609
+  s_d71e62cb6f304c::t_f8be98b1111f97 697-704
+ui/litellm-dashboard/src/lib/http/schema.d.ts
+  s_d71e62cb6f304c::t_63ba1cc8aafce0 39426-39430,39434-39437
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "e2816fbbc759123235cb3f301640bd2931645593",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}

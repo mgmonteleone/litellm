@@ -1,0 +1,26 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vectorStoreFormSchema.ts
+  s_d71e62cb6f304c::t_7af7b954da3435 162-187
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreForm.tsx
+  s_d71e62cb6f304c::t_5efb265e86838a 40,44
+  s_d71e62cb6f304c::t_97128811f26591 160-162
+  s_d71e62cb6f304c::t_910dcca634f59b 163-164,172
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBStoreFields.integration.test.tsx
+  s_d71e62cb6f304c::t_9996d7fb26806e 250-255,257-283
+  s_d71e62cb6f304c::t_a58af0ba3da09e 256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "737be9695710f62020ba96c47b202a5c6bd3d9d4",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}

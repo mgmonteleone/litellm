@@ -1,0 +1,19 @@
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_d71e62cb6f304c::t_2077a1412aa084 284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "c252c49acdd18e7f1b5fe152958e0fc042cae8a6",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
