@@ -8361,14 +8361,11 @@ class ProxyConfig:
         try:
             # read vector stores from db table
             vector_stores: Final = await VectorStoreRegistry._get_vector_stores_from_db(prisma_client=prisma_client)
-            if len(vector_stores) <= 0:
-                return
-
             if litellm.vector_store_registry is None:
-                litellm.vector_store_registry = VectorStoreRegistry(vector_stores=vector_stores)
+                if vector_stores:
+                    litellm.vector_store_registry = VectorStoreRegistry(vector_stores=vector_stores)
             else:
-                for vector_store in vector_stores:
-                    litellm.vector_store_registry.add_vector_store_to_registry(vector_store=vector_store)
+                litellm.vector_store_registry.sync_with_db(vector_stores)
         except Exception as e:
             verbose_proxy_logger.exception(
                 "litellm.proxy.proxy_server.py::ProxyConfig:_init_vector_stores_in_db - %s", e

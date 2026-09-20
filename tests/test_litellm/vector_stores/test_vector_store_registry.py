@@ -1,14 +1,7 @@
-import json
-from unittest.mock import patch
-
-import httpx
-import pytest
-import respx
-from fastapi.testclient import TestClient
-
-
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 import litellm
 from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
@@ -182,3 +175,72 @@ def test_search_uses_registry_credentials():
             assert getattr(called_params, "aws_region_name") == "us-east-1"
     finally:
         litellm.vector_store_registry = original_registry
+
+
+def _store(vector_store_id: str, name: str, **litellm_params: object) -> LiteLLM_ManagedVectorStore:
+    return LiteLLM_ManagedVectorStore(
+        vector_store_id=vector_store_id,
+        custom_llm_provider="mongodb",
+        vector_store_name=name,
+        litellm_params=dict(litellm_params),
+    )
+
+
+def test_sync_with_db_updates_changed_rows_removes_deleted_rows_and_keeps_config_stores():
+    """Another instance updated `policies` and deleted `stale`; `from_config` has no row by design."""
+    registry = VectorStoreRegistry([_store("policies", "old name", api_base="http://old"), _store("stale", "gone")])
+    registry.load_vector_stores_from_config(
+        [
+            {
+                "vector_store_name": "cfg",
+                "litellm_params": {"vector_store_id": "from_config", "custom_llm_provider": "openai"},
+            }
+        ]
+    )
+
+    registry.sync_with_db([_store("policies", "new name", api_base="http://new"), _store("fresh", "added elsewhere")])
+
+    by_id = {store["vector_store_id"]: store for store in registry.vector_stores}
+    assert set(by_id) == {"policies", "fresh", "from_config"}
+    assert by_id["policies"]["vector_store_name"] == "new name"
+    assert (by_id["policies"].get("litellm_params") or {})["api_base"] == "http://new"
+
+
+def test_sync_with_empty_db_removes_db_stores_but_keeps_config_stores():
+    registry = VectorStoreRegistry([_store("policies", "deleted on another instance")])
+    registry.load_vector_stores_from_config(
+        [
+            {
+                "vector_store_name": "cfg",
+                "litellm_params": {"vector_store_id": "from_config", "custom_llm_provider": "openai"},
+            }
+        ]
+    )
+
+    registry.sync_with_db([])
+
+    assert [store["vector_store_id"] for store in registry.vector_stores] == ["from_config"]
+
+
+def test_resolve_litellm_params_references_reads_the_environment_and_leaves_literals_alone(monkeypatch):
+    from litellm.vector_stores.vector_store_registry import resolve_litellm_params_references
+
+    monkeypatch.setenv("SIDECAR_KEY_FOR_TEST", "resolved-secret")
+    monkeypatch.delenv("MISSING_FOR_TEST", raising=False)
+
+    resolved = resolve_litellm_params_references(
+        {
+            "api_key": "os.environ/SIDECAR_KEY_FOR_TEST",
+            "api_base": "https://sidecar.example",
+            "absent": "os.environ/MISSING_FOR_TEST",
+            "mongodb_dimensions": 1536,
+        }
+    )
+
+    assert dict(resolved) == {
+        "api_key": "resolved-secret",
+        "api_base": "https://sidecar.example",
+        "absent": None,
+        "mongodb_dimensions": 1536,
+    }
+    assert dict(resolve_litellm_params_references(None)) == {}

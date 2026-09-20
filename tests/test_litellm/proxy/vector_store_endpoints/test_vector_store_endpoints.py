@@ -3061,3 +3061,21 @@ def test_vector_store_search_rejects_caller_embedding_selection_params(blocked_k
 
     assert response.status_code == 400, response.json()
     assert blocked_key in str(response.json())
+
+
+def test_build_request_data_from_managed_vector_store_resolves_environment_references(monkeypatch):
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    monkeypatch.setenv("SIDECAR_KEY_FOR_TEST", "from-environment")
+    store = LiteLLM_ManagedVectorStore(
+        vector_store_id="policy_index",
+        custom_llm_provider="mongodb",
+        litellm_params={"api_base": "https://sidecar.example", "api_key": "os.environ/SIDECAR_KEY_FOR_TEST"},
+    )
+
+    data = build_request_data_from_managed_vector_store(store)
+
+    assert data["api_key"] == "from-environment"
+    assert data["api_base"] == "https://sidecar.example"
+    assert data["custom_llm_provider"] == "mongodb"

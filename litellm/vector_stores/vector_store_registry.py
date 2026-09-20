@@ -1,7 +1,8 @@
 # litellm/proxy/vector_stores/vector_store_registry.py
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
     Any,  # noqa: TID251  # untyped non_default_params dict is the only source of the unknown key type
@@ -16,6 +17,7 @@ from litellm.repositories.table_repositories import (
     ManagedVectorStoreIndexRepository,
     ManagedVectorStoresRepository,
 )
+from litellm.secret_managers.main import get_secret_str
 from litellm.types.vector_stores import (
     VECTOR_STORE_OPENAI_PARAMS,
     LiteLLM_ManagedVectorStore,
@@ -100,10 +102,26 @@ class VectorStoreIndexRegistry:
         return vector_stores_from_db
 
 
+ENV_REFERENCE_PREFIX: Final = "os.environ/"
+
+
+def resolve_litellm_params_references(litellm_params: Mapping[str, object] | None) -> Mapping[str, object]:
+    """`os.environ/NAME` values become the environment value, as they do for model deployments and search tools."""
+    if not litellm_params:
+        return MappingProxyType({})
+    return MappingProxyType(
+        {
+            key: get_secret_str(value) if isinstance(value, str) and value.startswith(ENV_REFERENCE_PREFIX) else value
+            for key, value in litellm_params.items()
+        }
+    )
+
+
 class VectorStoreRegistry:
     def __init__(self, vector_stores: list[LiteLLM_ManagedVectorStore] = []):
         self.vector_stores: list[LiteLLM_ManagedVectorStore] = vector_stores
         self.vector_store_ids_to_vector_store_map: dict[str, LiteLLM_ManagedVectorStore] = {}
+        self.config_vector_store_ids: set[str] = set()
 
     def _extract_tool_params(self, tool: dict) -> VectorStoreToolParams:
         """
@@ -429,6 +447,7 @@ class VectorStoreRegistry:
                 updated_at=datetime.now(timezone.utc),
             )
             self.vector_stores.append(litellm_managed_vector_store)
+            self.config_vector_store_ids.add(vector_store_id)
 
         verbose_logger.debug(
             "all loaded vector stores = %s",
@@ -482,6 +501,25 @@ class VectorStoreRegistry:
                 self.vector_stores[i] = updated_data
                 return
         self.vector_stores.append(updated_data)
+
+    def sync_with_db(self, vector_stores_from_db: Sequence[LiteLLM_ManagedVectorStore]) -> None:
+        """Make the registry match the database rows.
+
+        Rows update or add entries; entries with no row were deleted on another instance and are removed,
+        except stores that came from the proxy config, which have no row by design.
+        """
+        db_ids: Final = frozenset(
+            store_id for store in vector_stores_from_db if (store_id := store.get("vector_store_id"))
+        )
+        self.vector_stores = [
+            store
+            for store in self.vector_stores
+            if store.get("vector_store_id") in db_ids or store.get("vector_store_id") in self.config_vector_store_ids
+        ]
+        for store in vector_stores_from_db:
+            store_id = store.get("vector_store_id")
+            if store_id:
+                self.update_vector_store_in_registry(vector_store_id=store_id, updated_data=store)
 
     #########################################################
     ########### DB management helpers for vector stores ###########
