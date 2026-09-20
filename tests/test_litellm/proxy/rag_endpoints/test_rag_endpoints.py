@@ -1255,3 +1255,55 @@ async def test_file_metadata_entry_prefers_the_uploaded_name_over_the_storage_na
         )["filename"]
         == "9f1c2b.txt"
     )
+
+
+async def _save_from_ingest(response, prisma_client, create_in_db):
+    from litellm.proxy.rag_endpoints.endpoints import _save_vector_store_to_db_from_rag_ingest
+
+    with patch(  # test-quality-ok: the DB write boundary the guard under test must never reach
+        "litellm.proxy.vector_store_endpoints.management_endpoints.create_vector_store_in_db",
+        new=create_in_db,
+    ):
+        await _save_vector_store_to_db_from_rag_ingest(
+            response=response,
+            ingest_options={"vector_store": {"custom_llm_provider": "mongodb"}},
+            prisma_client=prisma_client,
+            user_api_key_dict=UserAPIKeyAuth(user_id="user-1", team_id="team-1"),
+            store_is_managed=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "failed_response",
+    [
+        {"id": "ingest_1", "status": "failed", "vector_store_id": "", "file_id": None, "error": "boom"},
+        {"id": "ingest_1", "status": "completed", "vector_store_id": "", "file_id": "file_1"},
+        {"id": "ingest_1", "status": "failed", "vector_store_id": "vs_real", "file_id": None, "error": "boom"},
+    ],
+)
+async def test_failed_or_idless_ingest_never_writes_a_vector_store_row(failed_response):
+    """A failed ingest carries vector_store_id="", which used to be saved as a row with an empty id."""
+    prisma_client = MagicMock()
+    prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+    create_in_db = AsyncMock()
+
+    await _save_from_ingest(failed_response, prisma_client, create_in_db)
+
+    create_in_db.assert_not_awaited()
+    prisma_client.db.litellm_managedvectorstorestable.find_unique.assert_not_awaited()
+    prisma_client.db.litellm_managedvectorstorestable.update.assert_not_called()
+
+
+async def test_successful_ingest_still_writes_a_vector_store_row():
+    prisma_client = MagicMock()
+    prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+    create_in_db = AsyncMock()
+
+    await _save_from_ingest(
+        {"id": "ingest_1", "status": "completed", "vector_store_id": "vs_real", "file_id": "file_1"},
+        prisma_client,
+        create_in_db,
+    )
+
+    create_in_db.assert_awaited_once()
+    assert create_in_db.await_args.kwargs["vector_store_id"] == "vs_real"

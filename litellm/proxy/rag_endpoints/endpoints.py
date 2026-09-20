@@ -298,15 +298,21 @@ async def _save_vector_store_to_db_from_rag_ingest(
     # Handle both dict and object responses
     mapping_response: Final = _as_string_keyed_mapping(response)
     if mapping_response is not None:
+        status = mapping_response.get("status")
         vector_store_id = mapping_response.get("vector_store_id")
     elif hasattr(response, "vector_store_id"):
+        status = _response_attr(response, "status")
         vector_store_id = _response_attr(response, "vector_store_id")
     else:
         verbose_proxy_logger.warning("Unable to extract vector_store_id from response type: %s", type(response))
         return
 
-    if vector_store_id is None or not isinstance(vector_store_id, str):
-        verbose_proxy_logger.warning("Vector store ID is None or not a string, skipping database save")
+    if status == "failed":
+        verbose_proxy_logger.warning("Ingestion failed, skipping database save")
+        return
+
+    if not vector_store_id or not isinstance(vector_store_id, str):
+        verbose_proxy_logger.warning("Vector store ID is missing or not a string, skipping database save")
         return
 
     vector_store_config: Final = ingest_options.get("vector_store", {})

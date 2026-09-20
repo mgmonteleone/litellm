@@ -3007,3 +3007,46 @@ def test_build_request_data_from_managed_vector_store_resolves_environment_refer
     assert data["api_key"] == "from-environment"
     assert data["api_base"] == "https://sidecar.example"
     assert data["custom_llm_provider"] == "mongodb"
+
+
+class TestListToleratesEmptyIdRows:
+    """A junk row written by an older build (vector_store_id="") must not break the list page."""
+
+    @staticmethod
+    def _row(vector_store_id: str) -> dict:
+        return {
+            "vector_store_id": vector_store_id,
+            "custom_llm_provider": "mongodb",
+            "vector_store_name": f"store-{vector_store_id or 'empty'}",
+            "vector_store_description": None,
+            "vector_store_metadata": None,
+            "litellm_params": {"mongodb_database": "knowledge", "api_key": "sk-secret"},
+            "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        }
+
+    @pytest.mark.asyncio
+    async def test_list_skips_the_empty_id_row_and_keeps_the_real_one(self):
+        from litellm.proxy.vector_store_endpoints.management_endpoints import list_vector_stores
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_many = AsyncMock(
+            return_value=[self._row(""), self._row("vs_real")]
+        )
+        registry = VectorStoreRegistry(vector_stores=[])
+
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma),
+            patch.object(litellm, "vector_store_registry", registry),
+        ):
+            response = await list_vector_stores(
+                user_api_key_dict=UserAPIKeyAuth(
+                    token="sk-test", key_name="sk-...test", user_role=LitellmUserRoles.PROXY_ADMIN
+                )
+            )
+
+        assert [store["vector_store_id"] for store in response["data"]] == ["vs_real"]
+        assert response["total_count"] == 1
+        assert response["data"][0]["litellm_params"]["api_key"] != "sk-secret"
+        assert [store.get("vector_store_id") for store in registry.vector_stores] == ["vs_real"]
