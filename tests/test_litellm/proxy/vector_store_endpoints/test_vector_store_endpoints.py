@@ -3130,3 +3130,47 @@ class TestVectorStoreInfoReadsTheDatabase:
             await self._info("vs_missing", mock_prisma, VectorStoreRegistry(vector_stores=[]))
 
         assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_malformed_stored_metadata_is_a_400_not_a_500(self):
+        """An unguarded json.loads on a corrupt row used to bubble up as an unhandled 500."""
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
+            return_value=MagicMock(
+                model_dump=lambda: {
+                    "vector_store_id": "vs_1",
+                    "custom_llm_provider": "mongodb",
+                    "vector_store_metadata": "{not valid json",
+                    "litellm_params": {"mongodb_database": "knowledge"},
+                }
+            )
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await self._info("vs_1", mock_prisma, VectorStoreRegistry(vector_stores=[]))
+
+        assert exc_info.value.status_code == 400
+        assert "vector_store_metadata" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_config_registered_litellm_params_stored_as_json_string_still_resolves(self):
+        """The config registry can hand info a store whose litellm_params is still a raw JSON string;
+        re-serializing it back to a string (instead of parsing it) fails LiteLLM_ManagedVectorStoresTable's
+        dict-typed field with an unhandled 500."""
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        config_store: LiteLLM_ManagedVectorStore = {
+            "vector_store_id": "vs_config",
+            "custom_llm_provider": "mongodb",
+            "vector_store_metadata": None,
+            "litellm_params": json.dumps({"mongodb_database": "knowledge", "api_key": "sk-secret"}),
+        }
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+
+        response = await self._info("vs_config", mock_prisma, VectorStoreRegistry(vector_stores=[config_store]))
+
+        assert response["vector_store"].litellm_params["mongodb_database"] == "knowledge"
+        assert response["vector_store"].litellm_params["api_key"] != "sk-secret"
