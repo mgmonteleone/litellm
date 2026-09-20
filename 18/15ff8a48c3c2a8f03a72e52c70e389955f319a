@@ -1,0 +1,25 @@
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_953d190d7c8214 2,23,25,190-213,217-221,224,230,233-235
+litellm/proxy/rag_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_e757dc67c27b70 56,177,181
+litellm/types/vector_stores.py
+  s_d71e62cb6f304c::t_e1c0be5687626f 5,381-395
+tests/unit/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_d71e62cb6f304c::t_18c8fd01cf5488 232-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "1815ff8a48c3c2a8f03a72e52c70e389955f319a",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
