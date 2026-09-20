@@ -1,0 +1,19 @@
+litellm/proxy/rag_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_b48c7bd6907e89 53,73-77,269-270,278,287-288,337-340,609,614,617,625-641,653-657,661,685,906
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "2adfac2834ea4164e9879e3969d4f2ab761a3c46",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
