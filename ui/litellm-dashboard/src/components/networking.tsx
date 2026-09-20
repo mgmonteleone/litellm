@@ -6924,6 +6924,8 @@ export const vectorStoreSearchCall = async (
   accessToken: string,
   vectorStoreId: string,
   query: string,
+  /** Extra OpenAI search params (max_num_results, filters, ranking_options); omitted keys keep provider defaults. */
+  options?: Record<string, unknown>,
 ): Promise<any> => {
   try {
     const url = `${getProxyBaseUrl()}/v1/vector_stores/${vectorStoreId}/search`;
@@ -6935,6 +6937,7 @@ export const vectorStoreSearchCall = async (
       },
       body: JSON.stringify({
         query: query,
+        ...options,
       }),
     });
 
