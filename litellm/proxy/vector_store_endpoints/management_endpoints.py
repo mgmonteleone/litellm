@@ -124,19 +124,31 @@ def _registry_vector_store(vector_store_id: str) -> LiteLLM_ManagedVectorStore |
     return litellm.vector_store_registry.get_litellm_managed_vector_store_from_registry(vector_store_id=vector_store_id)
 
 
+def _parse_stored_json_field(raw: object, field_name: str) -> object:
+    """The database (and config-registered stores) may hold this field as a JSON string; parse it before it
+    reaches response validation, which requires a mapping and would otherwise fail as an unhandled 500."""
+    if not isinstance(raw, str):
+        return raw
+    try:
+        return json.loads(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"The saved vector store has malformed {field_name}.") from None
+
+
 def _vector_store_info(vector_store: LiteLLM_ManagedVectorStore) -> LiteLLM_ManagedVectorStoresTable:
-    """Build the info response, parsing metadata the database may hold as a JSON string."""
-    stored_metadata: Final = vector_store.get("vector_store_metadata")
+    """Build the info response, parsing fields the database may hold as JSON strings."""
+    metadata: Final = _parse_stored_json_field(vector_store.get("vector_store_metadata"), "vector_store_metadata")
+    litellm_params: Final = _parse_stored_json_field(vector_store.get("litellm_params"), "litellm_params")
     return LiteLLM_ManagedVectorStoresTable(
         vector_store_id=vector_store.get("vector_store_id") or "",
         custom_llm_provider=vector_store.get("custom_llm_provider") or "",
         vector_store_name=vector_store.get("vector_store_name") or None,
         vector_store_description=vector_store.get("vector_store_description") or None,
-        vector_store_metadata=json.loads(stored_metadata) if isinstance(stored_metadata, str) else stored_metadata,
+        vector_store_metadata=metadata,
         created_at=vector_store.get("created_at") or None,
         updated_at=vector_store.get("updated_at") or None,
         litellm_credential_name=vector_store.get("litellm_credential_name"),
-        litellm_params=_redact_sensitive_litellm_params(vector_store.get("litellm_params")),
+        litellm_params=_redact_sensitive_litellm_params(litellm_params),
         team_id=vector_store.get("team_id") or None,
         user_id=vector_store.get("user_id") or None,
     )
