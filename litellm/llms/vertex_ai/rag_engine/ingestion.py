@@ -259,6 +259,7 @@ class VertexAIRAGIngestion(BaseRAGIngestion):
         content_type: str | None,
         chunks: list[str],
         embeddings: list[list[float]] | None,
+        existing_file_id: str | None = None,
     ) -> tuple[str | None, str | None]:
         """
         Store content in Vertex AI RAG corpus.
@@ -274,6 +275,7 @@ class VertexAIRAGIngestion(BaseRAGIngestion):
             content_type: MIME type
             chunks: Ignored - Vertex AI handles chunking
             embeddings: Ignored - Vertex AI handles embedding
+            existing_file_id: Existing provider file ID, unsupported for Vertex AI
 
         Returns:
             Tuple of (corpus_id, gcs_uri)
