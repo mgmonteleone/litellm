@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useState } from "react";
 import { toast } from "@/lib/toast";
 import { ChevronDown, CircleCheck, CircleHelp, Inbox, X } from "lucide-react";
+import { useForm } from "react-hook-form";
 import { v4 as uuidv4 } from "uuid";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { ragIngestCall } from "@/components/networking";
@@ -19,19 +20,12 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
+import VectorStoreField, { type SelectOption } from "./fields/VectorStoreField";
 import S3VectorsConfig from "./S3VectorsConfig";
 import {
   buildChunkingStrategy,
@@ -115,72 +109,6 @@ const labelWithHint = (label: string, hint: string): React.ReactNode => (
   </>
 );
 
-interface SelectOption {
-  value: string;
-  label: string;
-}
-
-const INPUT_TYPE_BY_FIELD_TYPE: Record<string, string> = { password: "password", number: "number" };
-
-interface IngestProviderFieldProps {
-  field: VectorStoreFieldConfig;
-  value: string;
-  onChange: (value: string) => void;
-  embeddingModelOptions: readonly SelectOption[];
-}
-
-/**
- * The ingest tab rendered every field as free text, so the embedding model had to be typed from
- * memory and a typo only surfaced as a provider error much later. Select fields now get the same
- * combobox the add dialog uses.
- */
-const IngestProviderField: React.FC<IngestProviderFieldProps> = ({ field, value, onChange, embeddingModelOptions }) => {
-  const fieldId = `vector-store-${field.name}`;
-
-  if (field.type === "select") {
-    const options = field.options ?? embeddingModelOptions;
-    return (
-      <Field>
-        <FieldLabel htmlFor={fieldId}>{labelWithHint(field.label, field.tooltip)}</FieldLabel>
-        <Combobox
-          items={options as SelectOption[]}
-          value={options.find((option) => option.value === value) ?? null}
-          onValueChange={(option: SelectOption | null) => onChange(option?.value ?? "")}
-          itemToStringLabel={(option: SelectOption) => option.label}
-          isItemEqualToValue={(option: SelectOption, selected: SelectOption) => option.value === selected.value}
-        >
-          <ComboboxInput id={fieldId} placeholder={field.placeholder} className="w-full" />
-          <ComboboxContent>
-            <ComboboxEmpty>No matching options</ComboboxEmpty>
-            <ComboboxList>
-              {(option: SelectOption) => (
-                <ComboboxItem key={option.value} value={option}>
-                  {option.label}
-                </ComboboxItem>
-              )}
-            </ComboboxList>
-          </ComboboxContent>
-        </Combobox>
-      </Field>
-    );
-  }
-
-  const inputType = INPUT_TYPE_BY_FIELD_TYPE[field.type ?? "text"] ?? "text";
-
-  return (
-    <Field>
-      <FieldLabel htmlFor={fieldId}>{labelWithHint(field.label, field.tooltip)}</FieldLabel>
-      <Input
-        id={fieldId}
-        type={inputType}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={field.placeholder}
-      />
-    </Field>
-  );
-};
-
 interface CreateVectorStoreProps {
   accessToken: string | null;
   onSuccess?: (vectorStoreId: string) => void;
@@ -198,9 +126,18 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
   const [vectorStoreDescription, setVectorStoreDescription] = useState<string>("");
   const [ingestResults, setIngestResults] = useState<RAGIngestResponse[]>([]);
   const [providerParams, setProviderParams] = useState<Record<string, unknown>>({});
+  const providerForm = useForm<Record<string, string>>({ defaultValues: {} });
   const [chunking, setChunking] = useState<ChunkingInput>(EMPTY_CHUNKING);
   const [modelInfo, setModelInfo] = useState<ModelGroup[]>([]);
   const documentsInputId = useId();
+
+  /**
+   * S3 Vectors keeps its own params in state through its dedicated config component; every other
+   * provider's fields are rendered with the same react-hook-form-backed VectorStoreField the add
+   * dialog uses, so a boolean, list or weight field behaves the same in both places.
+   */
+  const currentProviderValues = (): Record<string, unknown> =>
+    selectedProvider === "s3_vectors" ? providerParams : providerForm.getValues();
 
   useEffect(() => {
     if (!accessToken) return;
@@ -209,7 +146,7 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
       .catch((error) => console.error("Error fetching model info:", error));
   }, [accessToken]);
 
-  const embeddingModelOptions = modelInfo
+  const embeddingModelOptions: SelectOption[] = modelInfo
     .filter((option) => option.mode === "embedding" || option.mode === null)
     .map((option) => ({ value: option.model_group, label: option.model_group }));
 
@@ -256,9 +193,10 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
     }
 
     // Validate provider-specific required fields
+    const providerValues = currentProviderValues();
     const requiredFields = getProviderSpecificFields(selectedProvider).filter((field) => field.required);
     for (const field of requiredFields) {
-      if (!providerParams[field.name]) {
+      if (!providerValues[field.name]) {
         toast.warning(`Please provide ${field.label}`);
         return;
       }
@@ -309,7 +247,7 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
             vectorStoreId, // Use the same vector store ID for subsequent uploads
             vectorStoreName || undefined,
             vectorStoreDescription || undefined,
-            buildIngestProviderParams(selectedProvider, providerParams),
+            buildIngestProviderParams(selectedProvider, providerValues),
             buildChunkingStrategy(chunking),
           );
 
@@ -483,12 +421,12 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
               {/* Other Provider-specific fields */}
               {selectedProvider !== "s3_vectors" &&
                 getProviderSpecificFields(selectedProvider).map((field: VectorStoreFieldConfig) => (
-                  <IngestProviderField
+                  <VectorStoreField
                     key={field.name}
                     field={field}
-                    value={asText(providerParams[field.name])}
-                    onChange={(value) => setProviderParams((prev) => ({ ...prev, [field.name]: value }))}
-                    embeddingModelOptions={embeddingModelOptions}
+                    control={providerForm.control}
+                    name={field.name}
+                    fallbackOptions={embeddingModelOptions}
                   />
                 ))}
 
