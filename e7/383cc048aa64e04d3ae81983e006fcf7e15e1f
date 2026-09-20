@@ -1,5 +1,23 @@
 ui/litellm-dashboard/src/lib/http/schema.d.ts
   s_d71e62cb6f304c::t_37fa69267387d8 65140-65141,65143-65151,65153-65165,65196,65201-65204,65206-65212,65214-65226,66965-66972,66974-66982,66984-66996,67090-67094,67096,67103-67106,67108-67114,67116-67123
+litellm/rag/main.py
+  s_d71e62cb6f304c::t_9c0ce9f3178d5d 29,51
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_d71e62cb6f304c::t_9c0ce9f3178d5d 155,158
+litellm/llms/base_llm/vector_store/transformation.py
+  s_d71e62cb6f304c::t_9c0ce9f3178d5d 203-233
+litellm/rag/ingestion/mongodb_ingestion.py
+  s_d71e62cb6f304c::t_9c0ce9f3178d5d 1-190
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_9c0ce9f3178d5d 1-295
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_9c0ce9f3178d5d 4,6,25-26,37,45-46,48-50,53-54,81-94,106-108,118-125,155,160-208,221,312,318,329,335,341,420,424-425,434-463,467-493,495-544
+litellm/llms/custom_httpx/llm_http_handler.py
+  s_d71e62cb6f304c::t_9c0ce9f3178d5d 10028,10031,10101,10104
+provider_endpoints_support.json
+  s_d71e62cb6f304c::t_9c0ce9f3178d5d 2888-2890
+litellm/rag/ingestion/__init__.py
+  s_d71e62cb6f304c::t_9c0ce9f3178d5d 8,17
 ---
 {
   "schema_version": "authorship/3.0.0",
