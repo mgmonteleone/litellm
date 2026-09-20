@@ -37,7 +37,7 @@ const MONGODB_PARAMS = {
 
 const EMPTY_STATE = "Test your vector store by entering a search query below";
 
-const renderTester = (litellmParams?: Record<string, unknown>) =>
+const renderTester = (litellmParams?: Record<string, unknown> | string) =>
   render(<VectorStoreTester vectorStoreId="vs_123" accessToken="sk-test" litellmParams={litellmParams} />);
 
 const queryInput = () => screen.getByPlaceholderText(/enter your search query/i);
@@ -264,5 +264,22 @@ describe("VectorStoreTester options", () => {
 
     await waitFor(() => expect(mockSearch).toHaveBeenCalledTimes(1));
     expect(searchOptions()).not.toHaveProperty("filters");
+  });
+
+  it("still builds filters and hybrid options when litellm_params comes back as a JSON string", async () => {
+    const user = userEvent.setup();
+    renderTester(JSON.stringify({ ...MONGODB_PARAMS, mongodb_text_index: "policy_text_index" }));
+
+    expect(screen.getByRole("switch", { name: /Hybrid/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.change(screen.getByLabelText("Filter value"), { target: { value: "hr" } });
+    fireEvent.change(queryInput(), { target: { value: "hello" } });
+    await user.click(searchButton());
+
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledTimes(1));
+    expect(searchOptions()).toMatchObject({
+      filters: { type: "eq", key: "metadata.department", value: "hr" },
+    });
   });
 });

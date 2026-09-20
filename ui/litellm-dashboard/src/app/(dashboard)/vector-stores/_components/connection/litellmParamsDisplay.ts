@@ -47,19 +47,37 @@ const toDisplayParam = (provider: string, labels: Map<string, string>, name: str
   };
 };
 
+export type LitellmParams = Record<string, unknown> | string | null | undefined;
+
+/**
+ * `_redact_sensitive_litellm_params` re-serializes a config-registered store's params to a JSON
+ * string, so every consumer of the saved params has to accept that shape and normalise it back to
+ * a record before reading any key out of it.
+ */
+export const normalizeLitellmParams = (params: LitellmParams): Record<string, unknown> => {
+  if (params == null) return {};
+  if (typeof params !== "string") return params;
+  try {
+    const parsed: unknown = JSON.parse(params);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+};
+
 /**
  * The saved connection in reading order: the provider's own fields first, as the dialog labelled
  * them, then whatever else the store carries. Secrets never reach the returned value.
  */
-export const describeLitellmParams = (
-  provider: string,
-  params: Record<string, unknown> | null | undefined,
-): readonly DisplayParam[] => {
-  const entries = Object.entries(params ?? {});
+export const describeLitellmParams = (provider: string, params: LitellmParams): readonly DisplayParam[] => {
+  const normalized = normalizeLitellmParams(params);
+  const entries = Object.entries(normalized);
   const labels = providerParamLabels(provider);
   const known = [...labels.keys()]
-    .filter((name) => name in (params ?? {}))
-    .map((name) => toDisplayParam(provider, labels, name, params?.[name]));
+    .filter((name) => name in normalized)
+    .map((name) => toDisplayParam(provider, labels, name, normalized[name]));
   const extra = entries
     .filter(([name, value]) => !labels.has(name) && saysSomething(value))
     .map(([name, value]) => toDisplayParam(provider, labels, name, value));

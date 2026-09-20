@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 
+import { normalizeLitellmParams, type LitellmParams } from "./connection/litellmParamsDisplay";
 import SearchOptionsBar, { type SearchOptionsState } from "./search/SearchOptionsBar";
 import SearchResultCard, { type SearchResult } from "./search/SearchResultCard";
 import { newCondition, newGroup, toOpenAIFilter } from "./search/searchFilters";
@@ -33,7 +34,7 @@ export interface VectorStoreTesterProps {
   vectorStoreId: string;
   accessToken: string;
   /** The store's saved params; supplies the filter fields and whether hybrid is configured. */
-  litellmParams?: Record<string, unknown> | null;
+  litellmParams?: LitellmParams;
   className?: string;
 }
 
@@ -77,8 +78,9 @@ export const VectorStoreTester: React.FC<VectorStoreTesterProps> = ({
   litellmParams,
   className = "",
 }) => {
-  const filterKeys = useMemo(() => asStringList(litellmParams?.mongodb_filter_fields), [litellmParams]);
-  const hybridSupported = litellmParams?.mongodb_hybrid_search === true || Boolean(litellmParams?.mongodb_text_index);
+  const params = useMemo(() => normalizeLitellmParams(litellmParams), [litellmParams]);
+  const filterKeys = useMemo(() => asStringList(params.mongodb_filter_fields), [params]);
+  const hybridSupported = params.mongodb_hybrid_search === true || Boolean(params.mongodb_text_index);
 
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);

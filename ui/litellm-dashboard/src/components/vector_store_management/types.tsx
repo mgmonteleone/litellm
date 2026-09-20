@@ -18,8 +18,12 @@ export interface VectorStore {
   vector_store_name?: string;
   vector_store_description?: string;
   vector_store_metadata?: VectorStoreMetadata;
-  /** Saved provider settings; the proxy replaces credential-bearing values before sending them. */
-  litellm_params?: Record<string, unknown> | null;
+  /**
+   * Saved provider settings; the proxy replaces credential-bearing values before sending them.
+   * A config-registered store comes back with this re-serialized as a JSON string instead of an
+   * object, so callers must run it through `normalizeLitellmParams` before reading a key off it.
+   */
+  litellm_params?: Record<string, unknown> | string | null;
   litellm_credential_name?: string;
   created_at: string;
   updated_at: string;
