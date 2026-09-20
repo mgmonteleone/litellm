@@ -1,0 +1,23 @@
+litellm/proxy/rag_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_242cdd307204d1 301,304,310-315
+tests/test_litellm/proxy/rag_endpoints/test_rag_endpoints.py
+  s_d71e62cb6f304c::t_a57755b046faf8 1258-1309
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_db191d92c59523 3010-3052
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "edff4eb3253571288e4ff8901d9a4b7909b680c2",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
