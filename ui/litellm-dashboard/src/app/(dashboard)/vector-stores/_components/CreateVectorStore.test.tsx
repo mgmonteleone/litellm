@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import CreateVectorStore from "./CreateVectorStore";
 import * as networking from "@/components/networking";
+import { getProviderSpecificFields } from "@/components/vector_store_providers";
 
 // Mock the networking module
 vi.mock("@/components/networking", () => ({
@@ -287,5 +288,114 @@ describe("CreateVectorStore", () => {
 
     // Should show validation warning (mocked message.warning would be called)
     // The actual validation happens in the component
+  });
+});
+
+describe("CreateVectorStore boolean, list and weight provider fields", () => {
+  const BOOLEAN_LIST_WEIGHT_FIELDS = [
+    {
+      name: "hybrid_enabled",
+      label: "Hybrid Search",
+      tooltip: "Blend vector similarity with keyword matching",
+      required: false,
+      type: "boolean" as const,
+    },
+    {
+      name: "filter_fields",
+      label: "Filter Fields",
+      tooltip: "Fields to filter on, comma separated",
+      placeholder: "metadata.department, metadata.year",
+      required: false,
+      type: "string-list" as const,
+    },
+    {
+      name: "vector_weight",
+      label: "Vector Weight",
+      tooltip: "How much of the rank comes from vector similarity",
+      required: false,
+      type: "weight-split" as const,
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The default selected provider (bedrock) gets these fields for this describe block only.
+    vi.mocked(getProviderSpecificFields).mockImplementation((provider: string) =>
+      provider === "bedrock" ? BOOLEAN_LIST_WEIGHT_FIELDS : [],
+    );
+  });
+
+  const uploadFile = async () => {
+    const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
+    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(uploadInput, { target: { files: [file] } });
+    });
+    expect(await screen.findByText("Uploaded Documents (1)")).toBeInTheDocument();
+  };
+
+  it("renders a switch for a boolean field and a slider for a weight-split field, not bare text inputs", () => {
+    render(<CreateVectorStore accessToken="test-token" />);
+
+    expect(screen.getByRole("switch", { name: /Hybrid Search/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("slider", { hidden: true }).length).toBeGreaterThan(0);
+    expect(screen.getByPlaceholderText("metadata.department, metadata.year")).toBeInTheDocument();
+  });
+
+  it("submits a boolean field as true and a string-list field as an array, not as literal text", async () => {
+    const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
+    mockRagIngestCall.mockResolvedValue({
+      id: "test-id",
+      status: "completed",
+      vector_store_id: "vs_123",
+      file_id: "file_123",
+    });
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+    render(<CreateVectorStore accessToken="test-token" />);
+    await uploadFile();
+
+    await user.click(screen.getByRole("switch", { name: /Hybrid Search/ }));
+    fireEvent.change(screen.getByPlaceholderText("metadata.department, metadata.year"), {
+      target: { value: "metadata.department, metadata.year" },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Create Vector Store/i }));
+    });
+
+    await waitFor(() => expect(mockRagIngestCall).toHaveBeenCalledTimes(1));
+    const providerParams = mockRagIngestCall.mock.calls[0][6];
+    expect(providerParams).toMatchObject({
+      hybrid_enabled: true,
+      filter_fields: ["metadata.department", "metadata.year"],
+    });
+  });
+
+  it("clamps the weight slider to [0, 1] and submits it as a vector/text split object", async () => {
+    const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
+    mockRagIngestCall.mockResolvedValue({
+      id: "test-id",
+      status: "completed",
+      vector_store_id: "vs_123",
+      file_id: "file_123",
+    });
+
+    render(<CreateVectorStore accessToken="test-token" />);
+    await uploadFile();
+
+    const slider = screen.getAllByRole("slider", { hidden: true })[0];
+    fireEvent.keyDown(slider, { key: "ArrowRight", keyCode: 39, which: 39 });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Create Vector Store/i }));
+    });
+
+    await waitFor(() => expect(mockRagIngestCall).toHaveBeenCalledTimes(1));
+    const providerParams = mockRagIngestCall.mock.calls[0][6] as Record<string, unknown>;
+    const weight = providerParams.vector_weight as { vector: number; text: number };
+    expect(weight.vector).toBeGreaterThanOrEqual(0);
+    expect(weight.vector).toBeLessThanOrEqual(1);
+    expect(weight.vector + weight.text).toBeCloseTo(1);
   });
 });
