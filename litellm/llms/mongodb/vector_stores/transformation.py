@@ -1,8 +1,9 @@
 from collections.abc import Mapping, Sequence
 from ipaddress import ip_address
 from math import isfinite
+from time import time
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Final, Literal, NoReturn
+from typing import TYPE_CHECKING, Final, Literal
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -21,6 +22,8 @@ from litellm.types.utils import EmbeddingResponse
 from litellm.types.vector_stores import (
     BaseVectorStoreAuthCredentials,
     VectorStoreCreateOptionalRequestParams,
+    VectorStoreCreateResponse,
+    VectorStoreFileCounts,
     VectorStoreIndexEndpoints,
     VectorStoreSearchOptionalRequestParams,
     VectorStoreSearchResponse,
@@ -31,6 +34,7 @@ if TYPE_CHECKING:
 
 DEFAULT_EMBEDDING_FIELD_NAME: Final = "embedding"
 DEFAULT_TEXT_FIELD_NAME: Final = "text"
+DEFAULT_SIMILARITY: Final = "cosine"
 DEFAULT_MAX_NUM_RESULTS: Final = 10
 MIN_MAX_NUM_RESULTS: Final = 1
 MAX_MAX_NUM_RESULTS: Final = 50
@@ -38,11 +42,15 @@ NUM_CANDIDATES_MULTIPLIER: Final = 10
 MIN_NUM_CANDIDATES: Final = 100
 MAX_NUM_CANDIDATES: Final = 10_000
 MAX_QUERY_CHARACTERS: Final = 32_000
+MAX_DIMENSIONS: Final = 8192
+DIMENSION_PROBE_TEXT: Final = "LiteLLM embedding dimension probe"
 _EMPTY_EMBEDDING_CONFIG: Final = MappingProxyType({})
-_SEARCH_ONLY_MESSAGE: Final = (
-    "MongoDB vector store is search-only. Create the collection and its MongoDB Vector Search "
-    "index in MongoDB directly, then register it here by index name."
+_SIDECAR_TOO_OLD_MESSAGE: Final = (
+    "The MongoDB sidecar does not support this operation. Creating and ingesting vector stores "
+    "requires litellm-mongodb v0.2 or later; upgrade the sidecar image."
 )
+
+Similarity = Literal["cosine", "euclidean", "dotProduct"]
 
 
 def config_error(message: str) -> BadRequestError:
@@ -70,7 +78,20 @@ class _SearchResponse(BaseModel):
     data: Sequence[_Result]
 
 
-class _MongoDBSearchParams(BaseModel):
+class _CreateResponse(BaseModel):
+    """The sidecar's index status document, validated strictly before it becomes an OpenAI-shaped response."""
+
+    model_config = ConfigDict(frozen=True, strict=True, extra="ignore")
+    index_name: str
+    mongodb_database: str
+    mongodb_collection: str
+    status: Literal["ready", "building", "failed", "missing"]
+    queryable: bool
+    document_count: int | None
+    created: bool
+
+
+class MongoDBVectorStoreParams(BaseModel):
     """Typed view over the vector store's litellm_params; unrelated keys are ignored."""
 
     model_config = ConfigDict(frozen=True, extra="ignore")
@@ -82,6 +103,9 @@ class _MongoDBSearchParams(BaseModel):
     mongodb_text_field: str | None = None
     mongodb_embedding_field: str | None = None
     mongodb_num_candidates: int | None = None
+    mongodb_dimensions: int | None = None
+    mongodb_similarity: Similarity | None = None
+    mongodb_filter_fields: Sequence[str] | None = None
 
     @property
     def text_field(self) -> str:
@@ -90,6 +114,14 @@ class _MongoDBSearchParams(BaseModel):
     @property
     def embedding_field(self) -> str:
         return self.mongodb_embedding_field or DEFAULT_EMBEDDING_FIELD_NAME
+
+    @property
+    def similarity(self) -> Similarity:
+        return self.mongodb_similarity or DEFAULT_SIMILARITY
+
+    @property
+    def filter_fields(self) -> tuple[str, ...]:
+        return tuple(self.mongodb_filter_fields or ())
 
     def require_embedding_model(self) -> str:
         if not self.litellm_embedding_model:
@@ -120,9 +152,58 @@ class _MongoDBSearchParams(BaseModel):
 
 _MONGODB_PARAM_PREFIX: Final = "mongodb_"
 _KNOWN_MONGODB_PARAMS: Final = frozenset(
-    name for name in _MongoDBSearchParams.model_fields if name.startswith(_MONGODB_PARAM_PREFIX)
+    name for name in MongoDBVectorStoreParams.model_fields if name.startswith(_MONGODB_PARAM_PREFIX)
 )
 _RESPONSE_ADAPTER: Final = TypeAdapter(VectorStoreSearchResponse)
+
+
+def reject_unknown_params(litellm_params: Mapping[str, object]) -> None:
+    """Without this a mistyped mongodb_collection reads as 'mongodb_collection is required',
+    naming a key the reader can see they have set."""
+    if litellm_params.get("mongodb_connection_string") is not None:
+        raise config_error(
+            "MongoDB vector stores now use the BETA sidecar. Move mongodb_connection_string to "
+            "MONGODB_CONNECTION_STRING in the sidecar, remove it from LiteLLM, and configure api_base and api_key."
+        )
+    unknown: Final = sorted(
+        key for key in litellm_params if key.startswith(_MONGODB_PARAM_PREFIX) and key not in _KNOWN_MONGODB_PARAMS
+    )
+    if unknown:
+        raise config_error(
+            f"Unrecognised MongoDB vector store parameter(s): {', '.join(unknown)}. "
+            f"Supported: {', '.join(sorted(_KNOWN_MONGODB_PARAMS))}."
+        )
+
+
+def validated_params(litellm_params: Mapping[str, object]) -> MongoDBVectorStoreParams:
+    """Validate litellm_params for any MongoDB operation; search, create, and ingest share these rules."""
+    reject_unknown_params(litellm_params)
+    try:
+        params: Final = MongoDBVectorStoreParams.model_validate(litellm_params)
+    except ValidationError:
+        raise config_error(
+            "Invalid MongoDB vector-store configuration. Check the database, collection, fields, "
+            "similarity, filter fields, and candidate count."
+        ) from None
+    params.require_database()
+    params.require_collection()
+    if params.mongodb_dimensions is not None and not 1 <= params.mongodb_dimensions <= MAX_DIMENSIONS:
+        raise config_error(
+            f"mongodb_dimensions must be between 1 and {MAX_DIMENSIONS}, got {params.mongodb_dimensions}"
+        )
+    for field in params.filter_fields:
+        if not field.strip() or field.startswith("$"):
+            raise config_error("mongodb_filter_fields entries must be nonblank field paths that do not start with $")
+    return params
+
+
+def embedding_vector(embedding_response: EmbeddingResponse) -> tuple[float, ...]:
+    if not embedding_response.data:
+        raise config_error("The embedding model returned no embedding. Check litellm_embedding_model.")
+    vector: Final = embedding_response.data[0]["embedding"]
+    if not vector or any(not isinstance(value, (float, int)) or not isfinite(value) for value in vector):
+        raise config_error("The embedding model must return a non-empty, finite vector.")
+    return tuple(vector)
 
 
 class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
@@ -137,21 +218,7 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
 
     @staticmethod
     def _reject_unknown_params(litellm_params: Mapping[str, object]) -> None:
-        """Without this a mistyped mongodb_collection reads as 'mongodb_collection is required',
-        naming a key the reader can see they have set."""
-        if litellm_params.get("mongodb_connection_string") is not None:
-            raise config_error(
-                "MongoDB vector stores now use the BETA sidecar. Move mongodb_connection_string to "
-                "MONGODB_CONNECTION_STRING in the sidecar, remove it from LiteLLM, and configure api_base and api_key."
-            )
-        unknown: Final = sorted(
-            key for key in litellm_params if key.startswith(_MONGODB_PARAM_PREFIX) and key not in _KNOWN_MONGODB_PARAMS
-        )
-        if unknown:
-            raise config_error(
-                f"Unrecognised MongoDB vector store parameter(s): {', '.join(unknown)}. "
-                f"Supported: {', '.join(sorted(_KNOWN_MONGODB_PARAMS))}."
-            )
+        reject_unknown_params(litellm_params)
 
     @staticmethod
     def _query_text(query: str | Sequence[str]) -> str:
@@ -242,21 +309,13 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         litellm_params: Mapping[str, object],
         optional_params: VectorStoreSearchOptionalRequestParams,
         extra_body: Mapping[str, object] | None,
-    ) -> _MongoDBSearchParams:
-        cls._reject_unknown_params(litellm_params)
+    ) -> MongoDBVectorStoreParams:
         if extra_body:
             raise config_error("MongoDB vector store does not support extra_body overrides.")
         for unsupported in ("filters", "ranking_options", "rewrite_query"):
             if optional_params.get(unsupported) is not None:
                 raise config_error(f"MongoDB vector store does not support the {unsupported} parameter.")
-        try:
-            params: Final = _MongoDBSearchParams.model_validate(litellm_params)
-        except ValidationError:
-            raise config_error(
-                "Invalid MongoDB vector-store configuration. Check the database, collection, fields, and candidate count."
-            ) from None
-        params.require_database()
-        params.require_collection()
+        params: Final = validated_params(litellm_params)
         params.require_embedding_model()
         cls._num_candidates(cls._limit(optional_params), params.mongodb_num_candidates)
         cls._timeout_ms(litellm_params.get("timeout"))
@@ -267,25 +326,19 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         cls,
         vector_store_id: str,
         query_text: str,
-        params: _MongoDBSearchParams,
+        params: MongoDBVectorStoreParams,
         optional_params: VectorStoreSearchOptionalRequestParams,
         api_base: str,
         embedding_response: EmbeddingResponse,
         timeout: object,
     ) -> tuple[str, dict[str, object]]:  # mutable-ok: the provider contract returns a writable JSON request body
-        if not embedding_response.data:
-            raise config_error(
-                "The embedding model returned no embedding for the search query. Check litellm_embedding_model."
-            )
-        vector: Final = embedding_response.data[0]["embedding"]
-        if not vector or any(not isinstance(value, (float, int)) or not isfinite(value) for value in vector):
-            raise config_error("The embedding model must return a non-empty, finite query vector.")
+        vector: Final = embedding_vector(embedding_response)
         limit: Final = cls._limit(optional_params)
         return (
             f"{api_base}/v1/vector_stores/{quote(vector_store_id, safe='')}/search",
             {  # mutable-ok: JSON transport requires a dict
                 "query": query_text,
-                "query_vector": tuple(vector),
+                "query_vector": vector,
                 "mongodb_database": params.require_database(),
                 "mongodb_collection": params.require_collection(),
                 "mongodb_embedding_field": params.embedding_field,
@@ -364,10 +417,12 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
     def get_error_class(
         self, error_message: str, status_code: int, headers: Mapping[str, object] | httpx.Headers
     ) -> BaseLLMException:
-        if status_code == 400:
+        if status_code in (400, 409):
             raise config_error(error_message)
         if status_code == 401:
             raise AuthenticationError(message="MongoDB sidecar rejected api_key.", model=None, llm_provider="mongodb")
+        if status_code in (404, 405):
+            raise config_error(_SIDECAR_TOO_OLD_MESSAGE)
         if status_code == 408:
             raise Timeout(message=error_message, model=None, llm_provider="mongodb")
         raise ServiceUnavailableError(
@@ -376,13 +431,114 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
             llm_provider="mongodb",
         )
 
-    def validate_create_vector_store(self) -> NoReturn:
-        raise config_error(_SEARCH_ONLY_MESSAGE)
+    # ---- create -------------------------------------------------------------------------------------------------
+
+    def validate_create_vector_store(self) -> None:
+        return None
+
+    @staticmethod
+    def _index_name(vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams) -> str:
+        name: Final = vector_store_create_optional_params.get("name")
+        if not name or not name.strip() or name.startswith("$"):
+            raise config_error(
+                "name is required when creating a MongoDB vector store: it becomes the MongoDB Vector Search index "
+                "name and the vector store ID. Example: name: policy_vector_index"
+            )
+        return name
+
+    @staticmethod
+    def _create_body(
+        index_name: str, params: MongoDBVectorStoreParams, dimensions: int, timeout: object
+    ) -> dict[str, object]:  # mutable-ok: the provider contract returns a writable JSON request body
+        return {  # mutable-ok: JSON transport requires a dict
+            "index_name": index_name,
+            "mongodb_database": params.require_database(),
+            "mongodb_collection": params.require_collection(),
+            "mongodb_embedding_field": params.embedding_field,
+            "mongodb_text_field": params.text_field,
+            "dimensions": dimensions,
+            "similarity": params.similarity,
+            "filter_fields": params.filter_fields,
+            "timeout_ms": MongoDBVectorStoreConfig._timeout_ms(timeout),
+        }
 
     def transform_create_vector_store_request(
         self, vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams, api_base: str
-    ) -> NoReturn:
-        raise config_error(_SEARCH_ONLY_MESSAGE)
+    ) -> tuple[str, dict]:  # mutable-ok: the provider contract returns a writable JSON request body
+        raise config_error(
+            "Creating a MongoDB vector store needs litellm_params (database, collection, and embedding model). "
+            "Call litellm.vector_stores.create with custom_llm_provider='mongodb' and those parameters."
+        )
 
-    def transform_create_vector_store_response(self, response: httpx.Response) -> NoReturn:
-        raise config_error(_SEARCH_ONLY_MESSAGE)
+    def transform_create_vector_store_request_with_litellm_params(
+        self,
+        vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
+        api_base: str,
+        litellm_params: Mapping[str, object],
+    ) -> tuple[str, dict]:  # mutable-ok: the provider contract returns a writable JSON request body
+        params: Final = validated_params(litellm_params)
+        index_name: Final = self._index_name(vector_store_create_optional_params)
+        dimensions: Final = params.mongodb_dimensions or len(
+            embedding_vector(
+                self.embedding_executor.embed(
+                    params.require_embedding_model(),
+                    DIMENSION_PROBE_TEXT,
+                    params.litellm_embedding_config or _EMPTY_EMBEDDING_CONFIG,
+                )
+            )
+        )
+        return (
+            f"{api_base}/v1/vector_stores",
+            self._create_body(index_name, params, dimensions, litellm_params.get("timeout")),
+        )
+
+    async def atransform_create_vector_store_request_with_litellm_params(
+        self,
+        vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
+        api_base: str,
+        litellm_params: Mapping[str, object],
+    ) -> tuple[str, dict]:  # mutable-ok: the provider contract returns a writable JSON request body
+        params: Final = validated_params(litellm_params)
+        index_name: Final = self._index_name(vector_store_create_optional_params)
+        dimensions: Final = params.mongodb_dimensions or len(
+            embedding_vector(
+                await self.embedding_executor.aembed(
+                    params.require_embedding_model(),
+                    DIMENSION_PROBE_TEXT,
+                    params.litellm_embedding_config or _EMPTY_EMBEDDING_CONFIG,
+                )
+            )
+        )
+        return (
+            f"{api_base}/v1/vector_stores",
+            self._create_body(index_name, params, dimensions, litellm_params.get("timeout")),
+        )
+
+    def transform_create_vector_store_response(self, response: httpx.Response) -> VectorStoreCreateResponse:
+        try:
+            status: Final = _CreateResponse.model_validate_json(response.content)
+        except ValidationError:
+            raise ServiceUnavailableError(
+                message="MongoDB sidecar returned an invalid create response. Check the sidecar version and deployment.",
+                model=None,
+                llm_provider="mongodb",
+            ) from None
+        return VectorStoreCreateResponse(
+            id=status.index_name,
+            object="vector_store",
+            created_at=int(time()),
+            name=status.index_name,
+            bytes=0,
+            file_counts=VectorStoreFileCounts(in_progress=0, completed=0, failed=0, cancelled=0, total=0),
+            status="completed" if status.queryable else "in_progress",
+            expires_after=None,
+            expires_at=None,
+            last_active_at=None,
+            metadata={  # mutable-ok: the TypedDict declares a dict field
+                "mongodb_database": status.mongodb_database,
+                "mongodb_collection": status.mongodb_collection,
+                "mongodb_index_status": status.status,
+                "mongodb_index_created": str(status.created).lower(),
+                "mongodb_document_count": str(status.document_count if status.document_count is not None else 0),
+            },
+        )

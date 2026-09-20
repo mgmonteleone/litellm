@@ -200,6 +200,37 @@ class BaseVectorStoreConfig:
     def transform_create_vector_store_response(self, response: httpx.Response) -> VectorStoreCreateResponse:
         pass
 
+    def transform_create_vector_store_request_with_litellm_params(
+        self,
+        vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
+        api_base: str,
+        litellm_params: Mapping[str, object],
+    ) -> tuple[str, dict]:
+        """
+        OPTIONAL
+
+        Providers whose create call depends on litellm_params (for example a database and
+        collection selected at registration time) override this. The default preserves the
+        original contract for every other provider.
+        """
+        return self.transform_create_vector_store_request(
+            vector_store_create_optional_params=vector_store_create_optional_params,
+            api_base=api_base,
+        )
+
+    async def atransform_create_vector_store_request_with_litellm_params(
+        self,
+        vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
+        api_base: str,
+        litellm_params: Mapping[str, object],
+    ) -> tuple[str, dict]:
+        """OPTIONAL async variant; providers that embed or probe during create override this."""
+        return self.transform_create_vector_store_request_with_litellm_params(
+            vector_store_create_optional_params=vector_store_create_optional_params,
+            api_base=api_base,
+            litellm_params=litellm_params,
+        )
+
     @abstractmethod
     def validate_environment(self, headers: dict, litellm_params: GenericLiteLLMParams | None) -> dict:
         return {}

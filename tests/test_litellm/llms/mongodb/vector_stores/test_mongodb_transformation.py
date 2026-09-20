@@ -152,10 +152,10 @@ async def test_public_sdk_preserves_http_errors_response_and_timeout(
     executor: Final = RecordingEmbeddingExecutor()
     if status == -1:
         if asynchronous:
-            with pytest.raises(litellm.BadRequestError, match="search-only"):
+            with pytest.raises(litellm.BadRequestError, match=r"api_(key|base) is required"):
                 await litellm.vector_stores.acreate(custom_llm_provider="mongodb")
         else:
-            with pytest.raises(litellm.BadRequestError, match="search-only"):
+            with pytest.raises(litellm.BadRequestError, match=r"api_(key|base) is required"):
                 litellm.vector_stores.create(custom_llm_provider="mongodb")
         return
     if status == -2:
