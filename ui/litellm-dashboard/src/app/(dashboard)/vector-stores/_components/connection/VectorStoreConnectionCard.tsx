@@ -15,7 +15,7 @@ import type { ConnectionTestState } from "./useVectorStoreConnectionTest";
 
 interface VectorStoreConnectionCardProps {
   provider: string;
-  litellmParams: Record<string, unknown> | null | undefined;
+  litellmParams: Record<string, unknown> | string | null | undefined;
   connectionTest: ConnectionTestState;
   onRunConnectionTest: () => void;
 }

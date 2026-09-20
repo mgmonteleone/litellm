@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeLitellmParams, formatParamValue } from "./litellmParamsDisplay";
+import { describeLitellmParams, formatParamValue, normalizeLitellmParams } from "./litellmParamsDisplay";
 import { REDACTION_SENTINEL } from "./connectionCurl";
 
 /** Exactly what POST /vector_store/info returns for a saved MongoDB store. */
@@ -69,6 +69,33 @@ describe("describeLitellmParams", () => {
     const rows = describeLitellmParams("some_new_provider", { widget_host: "widgets.example.com" });
 
     expect(rows).toEqual([{ name: "widget_host", label: "widget_host", value: "widgets.example.com", secret: false }]);
+  });
+
+  it("parses litellm_params sent back as a JSON string instead of crashing", () => {
+    const rows = describeLitellmParams("mongodb", JSON.stringify(SAVED_MONGODB_PARAMS));
+
+    expect(rows.find((row) => row.name === "api_base")?.value).toBe("http://127.0.0.1:8080");
+    expect(rows.find((row) => row.name === "api_key")?.value).toBe("Set, hidden");
+  });
+
+  it("shows no saved params rather than throwing when the JSON string is malformed", () => {
+    expect(describeLitellmParams("mongodb", "{not valid json")).toEqual([]);
+  });
+});
+
+describe("normalizeLitellmParams", () => {
+  it("parses a JSON-string litellm_params into the record every consumer expects", () => {
+    expect(normalizeLitellmParams(JSON.stringify(SAVED_MONGODB_PARAMS))).toEqual(SAVED_MONGODB_PARAMS);
+  });
+
+  it("returns an empty record for null, undefined and unparsable input", () => {
+    expect(normalizeLitellmParams(null)).toEqual({});
+    expect(normalizeLitellmParams(undefined)).toEqual({});
+    expect(normalizeLitellmParams("not json")).toEqual({});
+  });
+
+  it("passes an already-parsed record through unchanged", () => {
+    expect(normalizeLitellmParams(SAVED_MONGODB_PARAMS)).toBe(SAVED_MONGODB_PARAMS);
   });
 });
 
