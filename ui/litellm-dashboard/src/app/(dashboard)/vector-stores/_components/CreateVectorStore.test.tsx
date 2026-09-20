@@ -9,6 +9,10 @@ vi.mock("@/components/networking", () => ({
   ragIngestCall: vi.fn(),
 }));
 
+vi.mock("@/components/llm_calls/fetch_models", () => ({
+  fetchAvailableModels: vi.fn().mockResolvedValue([]),
+}));
+
 // Mock vector_store_providers
 vi.mock("@/components/vector_store_providers", () => ({
   VectorStoreProviders: {
@@ -174,6 +178,7 @@ describe("CreateVectorStore", () => {
         undefined,
         undefined,
         {},
+        undefined,
       );
     });
   });
