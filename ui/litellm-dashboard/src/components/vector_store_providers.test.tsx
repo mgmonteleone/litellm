@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Providers, providerLogoMap } from "@/components/provider_info_helpers";
 import {
   getProviderSpecificFields,
+  isBetaVectorStoreProvider,
+  vectorStoreCapabilities,
   getVectorStoreProviderLogoAndName,
   VectorStoreProviders,
   vectorStoreProviderLogoMap,
@@ -131,5 +133,40 @@ describe("getVectorStoreProviderLogoAndName", () => {
       logo: "",
       displayName: "totally_unknown",
     });
+  });
+});
+
+describe("vectorStoreCapabilities", () => {
+  it("credits MongoDB with the four capabilities its adapter implements", () => {
+    expect(vectorStoreCapabilities("mongodb")).toEqual(["Search", "Ingest", "Filters", "Hybrid"]);
+  });
+
+  it("gives a search-only provider just Search, so the chips are not decorative", () => {
+    expect(vectorStoreCapabilities("valkey")).toEqual(["Search"]);
+    expect(vectorStoreCapabilities("pg_vector")).toEqual(["Search"]);
+  });
+
+  it("falls back to Search for a provider it has never heard of", () => {
+    expect(vectorStoreCapabilities("some_new_provider")).toEqual(["Search"]);
+    expect(vectorStoreCapabilities(null)).toEqual(["Search"]);
+  });
+
+  it("covers every provider in the provider map, so no row shows a wrong capability set", () => {
+    const slugs = Object.values(vectorStoreProviderMap);
+
+    slugs.forEach((slug) => expect(vectorStoreCapabilities(slug).length).toBeGreaterThan(0));
+    expect(slugs.filter((slug) => vectorStoreCapabilities(slug).length > 1).length).toBeGreaterThan(0);
+  });
+});
+
+describe("isBetaVectorStoreProvider", () => {
+  it("marks mongodb beta without baking the word into its display name", () => {
+    expect(isBetaVectorStoreProvider("mongodb")).toBe(true);
+    expect(VectorStoreProviders.MongoDB).toBe("MongoDB");
+  });
+
+  it("leaves the settled providers unmarked", () => {
+    expect(isBetaVectorStoreProvider("bedrock")).toBe(false);
+    expect(isBetaVectorStoreProvider(undefined)).toBe(false);
   });
 });
