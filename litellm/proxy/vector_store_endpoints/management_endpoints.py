@@ -144,7 +144,7 @@ def _vector_store_info(vector_store: LiteLLM_ManagedVectorStore) -> LiteLLM_Mana
         custom_llm_provider=vector_store.get("custom_llm_provider") or "",
         vector_store_name=vector_store.get("vector_store_name") or None,
         vector_store_description=vector_store.get("vector_store_description") or None,
-        vector_store_metadata=metadata,
+        vector_store_metadata=metadata if isinstance(metadata, dict) else None,
         created_at=vector_store.get("created_at") or None,
         updated_at=vector_store.get("updated_at") or None,
         litellm_credential_name=vector_store.get("litellm_credential_name"),
@@ -606,7 +606,9 @@ async def update_vector_store(
             }
             _reject_environment_references(request_litellm_params)
             merged_litellm_params: Final = {**_saved_raw_litellm_params(saved_store), **request_litellm_params}
-            litellm_params_dict: Final = GenericLiteLLMParams(**merged_litellm_params).model_dump(exclude_none=True)
+            litellm_params_dict: Final = GenericLiteLLMParams.model_validate(merged_litellm_params).model_dump(
+                exclude_none=True
+            )
             update_data["litellm_params"] = safe_dumps(litellm_params_dict)
 
         # Update in database
