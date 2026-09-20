@@ -73,6 +73,15 @@ vi.mock("@/components/vector_store_providers", () => ({
   }),
 }));
 
+const getFileUploadInput = (): HTMLInputElement => document.querySelector('input[type="file"]') as HTMLInputElement;
+
+const SUCCESSFUL_INGEST_RESULT = {
+  id: "test-id",
+  status: "completed" as const,
+  vector_store_id: "vs_123",
+  file_id: "file_123",
+};
+
 describe("CreateVectorStore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -126,7 +135,7 @@ describe("CreateVectorStore", () => {
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
 
     // Find the upload input (it's hidden but accessible)
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
 
     await act(async () => {
       if (uploadInput) {
@@ -141,19 +150,14 @@ describe("CreateVectorStore", () => {
 
   it("should call ragIngestCall when create button is clicked", async () => {
     const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
-    mockRagIngestCall.mockResolvedValue({
-      id: "test-id",
-      status: "completed",
-      vector_store_id: "vs_123",
-      file_id: "file_123",
-    });
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
 
     const onSuccess = vi.fn();
     render(<CreateVectorStore accessToken="test-token" onSuccess={onSuccess} />);
 
     // Create a mock file
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
 
     await act(async () => {
       if (uploadInput) {
@@ -189,18 +193,13 @@ describe("CreateVectorStore", () => {
 
   it("should display success message after successful creation", async () => {
     const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
-    mockRagIngestCall.mockResolvedValue({
-      id: "test-id",
-      status: "completed",
-      vector_store_id: "vs_123",
-      file_id: "file_123",
-    });
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
 
     render(<CreateVectorStore accessToken="test-token" />);
 
     // Create and upload a mock file
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
 
     await act(async () => {
       if (uploadInput) {
@@ -263,7 +262,7 @@ describe("CreateVectorStore", () => {
 
     // Upload a file first
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
 
     await act(async () => {
       if (uploadInput) {
@@ -330,7 +329,7 @@ describe("CreateVectorStore boolean, list and weight provider fields", () => {
 
   const uploadFile = async () => {
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
     await act(async () => {
       fireEvent.change(uploadInput, { target: { files: [file] } });
     });
@@ -347,12 +346,7 @@ describe("CreateVectorStore boolean, list and weight provider fields", () => {
 
   it("submits a boolean field as true and a string-list field as an array, not as literal text", async () => {
     const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
-    mockRagIngestCall.mockResolvedValue({
-      id: "test-id",
-      status: "completed",
-      vector_store_id: "vs_123",
-      file_id: "file_123",
-    });
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
     const user = userEvent.setup({ pointerEventsCheck: 0 });
 
     render(<CreateVectorStore accessToken="test-token" />);
@@ -377,12 +371,7 @@ describe("CreateVectorStore boolean, list and weight provider fields", () => {
 
   it("clamps the weight slider to [0, 1] and submits it as a vector/text split object", async () => {
     const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
-    mockRagIngestCall.mockResolvedValue({
-      id: "test-id",
-      status: "completed",
-      vector_store_id: "vs_123",
-      file_id: "file_123",
-    });
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
 
     render(<CreateVectorStore accessToken="test-token" />);
     await uploadFile();
@@ -440,18 +429,13 @@ describe("CreateVectorStore ingest request body", () => {
 
   it("sends litellm_embedding_model, not embedding_model, and the chunking strategy in the ingest request", async () => {
     const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
-    mockRagIngestCall.mockResolvedValue({
-      id: "test-id",
-      status: "completed",
-      vector_store_id: "vs_123",
-      file_id: "file_123",
-    });
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
     const user = userEvent.setup({ pointerEventsCheck: 0 });
 
     render(<CreateVectorStore accessToken="test-token" />);
 
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
     await act(async () => {
       fireEvent.change(uploadInput, { target: { files: [file] } });
     });
