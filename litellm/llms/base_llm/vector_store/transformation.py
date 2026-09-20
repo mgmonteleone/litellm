@@ -19,6 +19,7 @@ from litellm.types.vector_stores import (
     VectorStoreIndexEndpoints,
     VectorStoreSearchOptionalRequestParams,
     VectorStoreSearchResponse,
+    VectorStoreTestConnectionResponse,
 )
 
 if TYPE_CHECKING:
@@ -216,6 +217,44 @@ class BaseVectorStoreConfig:
         return self.transform_create_vector_store_request(
             vector_store_create_optional_params=vector_store_create_optional_params,
             api_base=api_base,
+        )
+
+    async def atest_connection(
+        self,
+        litellm_params: Mapping[str, object],
+        vector_store_id: str | None,
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
+    ) -> VectorStoreTestConnectionResponse:
+        """
+        OPTIONAL
+
+        Run a provider-specific connection checklist for the dashboard's Test Connection button.
+        Providers override this; the default reports that the check is not available.
+        """
+        return VectorStoreTestConnectionResponse(
+            ok=False,
+            supported=False,
+            custom_llm_provider=self.__class__.__name__,
+            summary="Test connection is not available for this provider yet.",
+            checks=[],  # mutable-ok: the TypedDict declares a list field
+            details=None,
+        )
+
+    async def adiscover(
+        self, kind: str, litellm_params: Mapping[str, object], options: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        """
+        OPTIONAL
+
+        List databases, collections, indexes, or suggested fields so the dashboard can offer choices
+        instead of free-text inputs. Providers without discovery raise a BadRequestError.
+        """
+        from litellm.exceptions import BadRequestError
+
+        raise BadRequestError(
+            message=f"Discovery ({kind}) is not available for this vector store provider.",
+            model=None,
+            llm_provider=self.__class__.__name__,
         )
 
     async def atransform_create_vector_store_request_with_litellm_params(

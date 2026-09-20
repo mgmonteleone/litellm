@@ -77,6 +77,7 @@ async def test_create_request_probes_dimensions_only_when_not_configured(
         "dimensions": configured_dimensions or 3,
         "similarity": "dotProduct",
         "filter_fields": ("metadata.department", "metadata.year"),
+        "text_index_name": None,
         "timeout_ms": 12_000,
     }
     if configured_dimensions is None:
@@ -183,6 +184,7 @@ async def test_public_sdk_create_posts_to_sidecar_and_returns_openai_shape() -> 
             "dimensions": 4,
             "similarity": "cosine",
             "filter_fields": [],
+            "text_index_name": None,
             "timeout_ms": seen[0]["timeout_ms"],
         }
     ]
@@ -243,6 +245,7 @@ async def test_ingestion_embeds_locally_then_creates_index_and_posts_batches() -
     assert (len(first["documents"]), len(second["documents"])) == (200, 1)
     assert (first["replace_existing"], second["replace_existing"]) == (True, False)
     assert first["documents"][0] == {"chunk_index": 0, "text": "chunk 0", "embedding": [0.0, 0.5], "metadata": {}}
+    assert file_id == "file_" + __import__("hashlib").sha256(b"raw").hexdigest()[:32]
     assert second["documents"][0]["chunk_index"] == 200
     assert first["file_id"] == file_id and first["filename"] == "travel.md"
 
@@ -293,3 +296,16 @@ async def test_ingestion_surfaces_old_sidecar_as_actionable_error() -> None:
             await ingestion.store(
                 file_content=b"raw", filename="a.md", content_type="text/markdown", chunks=["a"], embeddings=[[1.0]]
             )
+
+
+def test_custom_metadata_becomes_filterable_chunk_metadata() -> None:
+    from litellm.rag.ingestion.mongodb_ingestion import chunk_metadata, deterministic_file_id
+
+    assert dict(chunk_metadata({"department": "hr", "year": 2026, "$bad": 1, "a.b": 2, "nested": {"x": 1}})) == {
+        "department": "hr",
+        "year": 2026,
+    }
+    assert dict(chunk_metadata(None)) == {}
+    assert deterministic_file_id("a.md", b"x") == deterministic_file_id("renamed-by-proxy.txt", b"x")
+    assert deterministic_file_id("a.md", b"x") != deterministic_file_id("a.md", b"y")
+    assert deterministic_file_id("a.md", None).startswith("file_")

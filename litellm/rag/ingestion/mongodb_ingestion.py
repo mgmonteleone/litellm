@@ -6,6 +6,7 @@ which owns the MongoDB driver. No MongoDB dependency is imported here.
 """
 
 from collections.abc import Mapping, Sequence
+from hashlib import sha256
 from types import MappingProxyType
 from typing import Final
 from urllib.parse import quote
@@ -129,6 +130,7 @@ class MongoDBRAGIngestion(BaseRAGIngestion):
             "dimensions": params.mongodb_dimensions or dimensions,
             "similarity": params.similarity,
             "filter_fields": params.filter_fields,
+            "text_index_name": params.mongodb_text_index,
             "timeout_ms": INGEST_TIMEOUT_MS,
         }
         created: Final = await self._post(client, f"{api_base}/v1/vector_stores", headers, create_body)
@@ -140,10 +142,11 @@ class MongoDBRAGIngestion(BaseRAGIngestion):
             created.json().get("status"),
         )
 
-        file_id: Final = f"file_{uuid4().hex}"
+        file_id: Final = deterministic_file_id(filename, file_content)
+        metadata: Final = chunk_metadata(self.vector_store_config.get("custom_metadata"))
         documents_url: Final = f"{api_base}/v1/vector_stores/{quote(index_name, safe='')}/documents"
         for start in range(0, len(chunks), INGEST_BATCH_SIZE):
-            batch = _documents(chunks, embeddings, start, start + INGEST_BATCH_SIZE)
+            batch = _documents(chunks, embeddings, metadata, start, start + INGEST_BATCH_SIZE)
             await self._post(
                 client,
                 documents_url,
@@ -165,15 +168,43 @@ class MongoDBRAGIngestion(BaseRAGIngestion):
         return index_name, file_id
 
 
+def deterministic_file_id(filename: str | None, file_content: bytes | None) -> str:
+    """Same bytes, same id: re-ingesting a document replaces its chunks instead of duplicating them.
+
+    The id is keyed on content only because the proxy replaces upload names with random safe names.
+    """
+    if file_content is None:
+        return f"file_{uuid4().hex}"
+    return f"file_{sha256(file_content).hexdigest()[:32]}"
+
+
+def chunk_metadata(custom_metadata: object) -> Mapping[str, str | int | float | bool | None]:
+    """Scalar custom_metadata entries become filterable chunk metadata; anything else is ignored."""
+    if not isinstance(custom_metadata, Mapping):
+        return _EMPTY_CONFIG
+    return MappingProxyType(
+        {
+            str(key): value
+            for key, value in custom_metadata.items()
+            if isinstance(key, str) and key and not key.startswith("$") and "." not in key
+            if value is None or isinstance(value, (str, int, float, bool))
+        }
+    )
+
+
 def _documents(
-    chunks: Sequence[str], embeddings: Sequence[Sequence[float]], start: int, stop: int
+    chunks: Sequence[str],
+    embeddings: Sequence[Sequence[float]],
+    metadata: Mapping[str, object],
+    start: int,
+    stop: int,
 ) -> tuple[dict[str, object], ...]:  # mutable-ok: httpx JSON body
     return tuple(
         {  # mutable-ok: JSON transport requires a dict
             "chunk_index": position,
             "text": chunks[position],
             "embedding": tuple(embeddings[position]),
-            "metadata": {},  # mutable-ok: JSON transport requires a dict
+            "metadata": dict(metadata),  # mutable-ok: JSON transport requires a dict
         }
         for position in range(start, min(stop, len(chunks)))
     )

@@ -4,8 +4,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel
-from typing_extensions import TypedDict
+from pydantic import BaseModel, Field
+from typing_extensions import ReadOnly, TypedDict
 
 
 class SupportedVectorStoreIntegrations(str, Enum):
@@ -94,6 +94,83 @@ class VectorStoreSearchResponse(TypedDict, total=False):
     object: Literal["vector_store.search_results.page"]  # Always "vector_store.search_results.page"
     search_query: str | None
     data: list[VectorStoreSearchResult] | None
+
+
+VectorStoreSearchFailureMode = Literal["annotate", "error"]
+
+
+class VectorStoreSearchFailure(TypedDict):
+    """A configured vector store whose search failed, as reported back to the API caller"""
+
+    vector_store_id: ReadOnly[str]
+    custom_llm_provider: ReadOnly[str | None]
+    error: ReadOnly[str]
+
+
+class VectorStoreComparisonFilter(TypedDict, total=False):
+    """OpenAI vector store comparison filter: {"type": "eq", "key": "department", "value": "hr"}"""
+
+    type: ReadOnly[Literal["eq", "ne", "gt", "gte", "lt", "lte", "in", "nin"]]
+    key: ReadOnly[str]
+    value: ReadOnly[
+        str | int | float | bool | None | list[str | int | float | bool | None]
+    ]  # mutable-ok: OpenAI JSON schema
+
+
+class VectorStoreCompoundFilter(TypedDict, total=False):
+    """OpenAI vector store compound filter: {"type": "and", "filters": [...]}"""
+
+    type: ReadOnly[Literal["and", "or"]]
+    filters: ReadOnly[list["VectorStoreComparisonFilter | VectorStoreCompoundFilter"]]  # mutable-ok: OpenAI JSON schema
+
+
+class VectorStoreRankingOptions(TypedDict, total=False):
+    """OpenAI vector store ranking options; providers may accept additional ranker names (MongoDB: "hybrid")."""
+
+    ranker: ReadOnly[str | None]
+    score_threshold: ReadOnly[float | None]
+
+
+CheckStatus = Literal["pass", "warn", "fail", "skip"]
+
+
+class VectorStoreConnectionCheck(TypedDict, total=False):
+    """One step of a provider's connection checklist, with a message that names the fix when it fails."""
+
+    check: ReadOnly[str]
+    status: ReadOnly[CheckStatus]
+    message: ReadOnly[str]
+    details: ReadOnly[dict | None]  # mutable-ok: JSON response
+
+
+class VectorStoreTestConnectionResponse(TypedDict, total=False):
+    """Result of POST /vector_store/test_connection"""
+
+    ok: ReadOnly[bool]
+    supported: ReadOnly[bool]
+    custom_llm_provider: ReadOnly[str]
+    summary: ReadOnly[str]
+    checks: ReadOnly[list[VectorStoreConnectionCheck]]  # mutable-ok: JSON response
+    details: ReadOnly[dict | None]  # mutable-ok: JSON response
+
+
+class VectorStoreTestConnectionRequest(BaseModel):
+    """Test a saved store (vector_store_id) or an unsaved configuration (custom_llm_provider + litellm_params).
+
+    Request litellm_params override the saved ones; a value equal to the redaction sentinel keeps the saved secret.
+    """
+
+    vector_store_id: str | None = None
+    custom_llm_provider: str | None = None
+    litellm_params: dict[str, Any] | None = None  # mutable-ok: request body
+    litellm_credential_name: str | None = None
+
+
+class VectorStoreDiscoverRequest(VectorStoreTestConnectionRequest):
+    """Ask a provider to list databases, collections, indexes, or suggested fields for the dashboard."""
+
+    kind: Literal["databases", "collections", "indexes", "fields"]
+    options: dict[str, Any] = Field(default_factory=dict)  # mutable-ok: request body
 
 
 class VectorStoreSearchOptionalRequestParams(TypedDict, total=False):
