@@ -151,11 +151,11 @@ describe("vectorStoreCapabilities", () => {
     expect(vectorStoreCapabilities(null)).toEqual(["Search"]);
   });
 
-  it("covers every provider in the provider map, so no row shows a wrong capability set", () => {
-    const slugs = Object.values(vectorStoreProviderMap);
-
-    slugs.forEach((slug) => expect(vectorStoreCapabilities(slug).length).toBeGreaterThan(0));
-    expect(slugs.filter((slug) => vectorStoreCapabilities(slug).length > 1).length).toBeGreaterThan(0);
+  it("returns the exact chip set the table renders for each documented provider", () => {
+    expect(vectorStoreCapabilities("mongodb")).toEqual(["Search", "Ingest", "Filters", "Hybrid"]);
+    expect(vectorStoreCapabilities("openai")).toEqual(["Search", "Ingest", "Filters"]);
+    expect(vectorStoreCapabilities("bedrock")).toEqual(["Search", "Ingest", "Filters"]);
+    expect(vectorStoreCapabilities("pg_vector")).toEqual(["Search"]);
   });
 });
 

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { vectorStoreCreateCall, vectorStoreDiscoverCall, vectorStoreTestConnectionCall } from "@/components/networking";
 import { ApiError } from "@/lib/http/client";
 
+import { REDACTION_SENTINEL } from "../connection/connectionCurl";
 import VectorStoreForm from "../VectorStoreForm";
 
 vi.mock("@/components/networking", () => ({
@@ -128,15 +129,24 @@ describe("MongoDB vector store dialog", () => {
     expect(screen.getByText("Sidecar auth")).toBeInTheDocument();
   });
 
-  it("offers a curl for the checklist that carries the endpoint but not the key", async () => {
+  it("copies a curl for the checklist that carries the endpoint but never the raw key", async () => {
     const user = setupUser();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     renderForm();
 
     await chooseMongoDB(user);
     fillConnection();
     await user.click(screen.getByRole("button", { name: /Test connection/ }));
+    await user.click(await screen.findByRole("button", { name: "Copy as curl" }));
 
-    expect(await screen.findByRole("button", { name: "Copy as curl" })).toBeInTheDocument();
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const copied = writeText.mock.calls[0][0] as string;
+    expect(copied).toContain(SIDECAR_URL);
+    // The unsaved key is masked to a placeholder; only a value that was already the proxy's
+    // redaction sentinel is ever echoed back verbatim, and the raw key never appears either way.
+    expect(copied).not.toContain("sidecar-key");
+    expect(copied).not.toContain(REDACTION_SENTINEL);
   });
 
   it("fills the Database field from discovery once the sidecar details are in", async () => {
