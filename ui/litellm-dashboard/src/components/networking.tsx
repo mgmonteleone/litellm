@@ -5766,6 +5766,8 @@ export const ragIngestCall = async (
   vectorStoreName?: string,
   vectorStoreDescription?: string,
   providerSpecificParams?: Record<string, any>,
+  /** RecursiveCharacterTextSplitter args; omitted keeps the backend's own defaults. */
+  chunkingStrategy?: { chunk_size?: number; chunk_overlap?: number },
 ): Promise<any> => {
   try {
     let url = proxyBaseUrl ? `${proxyBaseUrl}/rag/ingest` : `/rag/ingest`;
@@ -5780,6 +5782,9 @@ export const ragIngestCall = async (
           ...(vectorStoreId && { vector_store_id: vectorStoreId }),
           ...(providerSpecificParams && providerSpecificParams),
         },
+        ...(chunkingStrategy && Object.keys(chunkingStrategy).length > 0
+          ? { chunking_strategy: chunkingStrategy }
+          : {}),
       },
     };
 

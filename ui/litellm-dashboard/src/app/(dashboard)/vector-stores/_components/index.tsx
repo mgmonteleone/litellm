@@ -41,6 +41,18 @@ const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID
   const canCreateVectorStores = isProxyAdminRole(userRole || "") && !isViewOnly;
   const defaultTab = canCreateVectorStores ? "create" : "manage";
   const { onTabChange, hasVisited } = useVisitedTabs(defaultTab);
+  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [testVectorStoreId, setTestVectorStoreId] = useState<string | null>(null);
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    onTabChange(tab);
+  };
+
+  const openTestTab = (vectorStoreId: string) => {
+    setTestVectorStoreId(vectorStoreId);
+    handleTabChange("test");
+  };
 
   const fetchVectorStores = async () => {
     if (!accessToken) {
@@ -156,7 +168,7 @@ const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID
           You can use vector stores to store and retrieve LLM embeddings.
         </p>
 
-        <Tabs defaultValue={defaultTab} onValueChange={onTabChange}>
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList variant="line" className="mb-6 h-auto w-full justify-start rounded-none p-0">
             {canCreateVectorStores && (
               <TabsTrigger value="create" className="flex-none rounded-none px-4 py-2">
@@ -178,7 +190,11 @@ const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID
 
           {canCreateVectorStores && (
             <TabsContent keepMounted={hasVisited("create")} value="create">
-              <CreateVectorStore accessToken={accessToken} onSuccess={handleVectorStoreCreated} />
+              <CreateVectorStore
+                accessToken={accessToken}
+                onSuccess={handleVectorStoreCreated}
+                onTestVectorStore={openTestTab}
+              />
             </TabsContent>
           )}
 
@@ -201,7 +217,12 @@ const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID
           </TabsContent>
 
           <TabsContent keepMounted={hasVisited("test")} value="test">
-            <TestVectorStoreTab accessToken={accessToken} vectorStores={vectorStores} />
+            <TestVectorStoreTab
+              key={testVectorStoreId ?? "default"}
+              accessToken={accessToken}
+              vectorStores={vectorStores}
+              preselectedVectorStoreId={testVectorStoreId}
+            />
           </TabsContent>
 
           {isProxyAdminRole(userRole || "") && (

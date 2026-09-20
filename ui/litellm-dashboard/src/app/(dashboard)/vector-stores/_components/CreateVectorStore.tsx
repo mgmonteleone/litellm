@@ -1,6 +1,6 @@
-import React, { useId, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { toast } from "@/lib/toast";
-import { CircleCheck, CircleHelp, Inbox, X } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleHelp, Inbox, X } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { ragIngestCall } from "@/components/networking";
@@ -13,16 +13,34 @@ import {
   getProviderSpecificFields,
   VectorStoreFieldConfig,
 } from "@/components/vector_store_providers";
+import { fetchAvailableModels, ModelGroup } from "@/components/llm_calls/fetch_models";
 import { Logo } from "@/components/molecules/logo/Logo";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import S3VectorsConfig from "./S3VectorsConfig";
+import {
+  buildChunkingStrategy,
+  buildIngestProviderParams,
+  chunkingError,
+  describeIngestTotals,
+  ingestTotals,
+  type ChunkingInput,
+} from "./ingestPayload";
 
 const ACCEPTED_DOCUMENT_EXTENSIONS = ".pdf,.txt,.docx,.md,.doc";
 
@@ -47,12 +65,17 @@ const providerItems = Object.entries(VectorStoreProviders)
 
 const asText = (value: unknown): string => (typeof value === "string" ? value : "");
 
-const IngestSuccessAlert: React.FC<{ ingestResults: RAGIngestResponse[] }> = ({ ingestResults }) => {
+const IngestSuccessAlert: React.FC<{ ingestResults: RAGIngestResponse[]; onTestIt?: () => void }> = ({
+  ingestResults,
+  onTestIt,
+}) => {
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed) {
     return null;
   }
+
+  const vectorStoreId = ingestResults[0]?.vector_store_id;
 
   return (
     <Alert variant="success">
@@ -61,11 +84,16 @@ const IngestSuccessAlert: React.FC<{ ingestResults: RAGIngestResponse[] }> = ({ 
       <AlertDescription>
         <div>
           <p>
-            <strong>Vector Store ID:</strong> {ingestResults[0]?.vector_store_id}
+            <strong>Vector Store ID:</strong> {vectorStoreId}
           </p>
           <p>
-            <strong>Documents Ingested:</strong> {ingestResults.length}
+            <strong>Ingested:</strong> {describeIngestTotals(ingestTotals(ingestResults))}
           </p>
+          {onTestIt && (
+            <Button variant="link" size="sm" className="h-auto p-0" onClick={onTestIt}>
+              Test it
+            </Button>
+          )}
         </div>
       </AlertDescription>
       <AlertAction>
@@ -87,12 +115,82 @@ const labelWithHint = (label: string, hint: string): React.ReactNode => (
   </>
 );
 
+interface SelectOption {
+  value: string;
+  label: string;
+}
+
+const INPUT_TYPE_BY_FIELD_TYPE: Record<string, string> = { password: "password", number: "number" };
+
+interface IngestProviderFieldProps {
+  field: VectorStoreFieldConfig;
+  value: string;
+  onChange: (value: string) => void;
+  embeddingModelOptions: readonly SelectOption[];
+}
+
+/**
+ * The ingest tab rendered every field as free text, so the embedding model had to be typed from
+ * memory and a typo only surfaced as a provider error much later. Select fields now get the same
+ * combobox the add dialog uses.
+ */
+const IngestProviderField: React.FC<IngestProviderFieldProps> = ({ field, value, onChange, embeddingModelOptions }) => {
+  const fieldId = `vector-store-${field.name}`;
+
+  if (field.type === "select") {
+    const options = field.options ?? embeddingModelOptions;
+    return (
+      <Field>
+        <FieldLabel htmlFor={fieldId}>{labelWithHint(field.label, field.tooltip)}</FieldLabel>
+        <Combobox
+          items={options as SelectOption[]}
+          value={options.find((option) => option.value === value) ?? null}
+          onValueChange={(option: SelectOption | null) => onChange(option?.value ?? "")}
+          itemToStringLabel={(option: SelectOption) => option.label}
+          isItemEqualToValue={(option: SelectOption, selected: SelectOption) => option.value === selected.value}
+        >
+          <ComboboxInput id={fieldId} placeholder={field.placeholder} className="w-full" />
+          <ComboboxContent>
+            <ComboboxEmpty>No matching options</ComboboxEmpty>
+            <ComboboxList>
+              {(option: SelectOption) => (
+                <ComboboxItem key={option.value} value={option}>
+                  {option.label}
+                </ComboboxItem>
+              )}
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
+      </Field>
+    );
+  }
+
+  const inputType = INPUT_TYPE_BY_FIELD_TYPE[field.type ?? "text"] ?? "text";
+
+  return (
+    <Field>
+      <FieldLabel htmlFor={fieldId}>{labelWithHint(field.label, field.tooltip)}</FieldLabel>
+      <Input
+        id={fieldId}
+        type={inputType}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={field.placeholder}
+      />
+    </Field>
+  );
+};
+
 interface CreateVectorStoreProps {
   accessToken: string | null;
   onSuccess?: (vectorStoreId: string) => void;
+  /** Opens the test tab with the freshly created store selected. */
+  onTestVectorStore?: (vectorStoreId: string) => void;
 }
 
-const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSuccess }) => {
+const EMPTY_CHUNKING: ChunkingInput = { chunkSize: "", chunkOverlap: "" };
+
+const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSuccess, onTestVectorStore }) => {
   const [documents, setDocuments] = useState<DocumentUpload[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string>("bedrock");
@@ -100,7 +198,20 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
   const [vectorStoreDescription, setVectorStoreDescription] = useState<string>("");
   const [ingestResults, setIngestResults] = useState<RAGIngestResponse[]>([]);
   const [providerParams, setProviderParams] = useState<Record<string, unknown>>({});
+  const [chunking, setChunking] = useState<ChunkingInput>(EMPTY_CHUNKING);
+  const [modelInfo, setModelInfo] = useState<ModelGroup[]>([]);
   const documentsInputId = useId();
+
+  useEffect(() => {
+    if (!accessToken) return;
+    fetchAvailableModels(accessToken)
+      .then((models) => models.length > 0 && setModelInfo(models))
+      .catch((error) => console.error("Error fetching model info:", error));
+  }, [accessToken]);
+
+  const embeddingModelOptions = modelInfo
+    .filter((option) => option.mode === "embedding" || option.mode === null)
+    .map((option) => ({ value: option.model_group, label: option.model_group }));
 
   const isSupportedDocument = (file: File): boolean => {
     if (!ACCEPTED_DOCUMENT_TYPES.includes(file.type)) {
@@ -167,6 +278,12 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
       }
     }
 
+    const chunkingProblem = chunkingError(chunking);
+    if (chunkingProblem) {
+      toast.warning(chunkingProblem);
+      return;
+    }
+
     if (!accessToken) {
       toast.error("No access token available");
       return;
@@ -192,7 +309,8 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
             vectorStoreId, // Use the same vector store ID for subsequent uploads
             vectorStoreName || undefined,
             vectorStoreDescription || undefined,
-            providerParams,
+            buildIngestProviderParams(selectedProvider, providerParams),
+            buildChunkingStrategy(chunking),
           );
 
           // Store the vector store ID from the first successful ingest
@@ -365,19 +483,60 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
               {/* Other Provider-specific fields */}
               {selectedProvider !== "s3_vectors" &&
                 getProviderSpecificFields(selectedProvider).map((field: VectorStoreFieldConfig) => (
-                  <Field key={field.name}>
-                    <FieldLabel htmlFor={`vector-store-${field.name}`}>
-                      {labelWithHint(field.label, field.tooltip)}
+                  <IngestProviderField
+                    key={field.name}
+                    field={field}
+                    value={asText(providerParams[field.name])}
+                    onChange={(value) => setProviderParams((prev) => ({ ...prev, [field.name]: value }))}
+                    embeddingModelOptions={embeddingModelOptions}
+                  />
+                ))}
+
+              <Collapsible>
+                <CollapsibleTrigger
+                  render={
+                    <Button type="button" variant="ghost" size="sm" className="gap-1.5 px-0">
+                      <ChevronDown className="size-4" />
+                      Chunking
+                    </Button>
+                  }
+                />
+                <CollapsibleContent className="flex flex-col gap-3 pt-2">
+                  <Field>
+                    <FieldLabel htmlFor="chunk-size">
+                      {labelWithHint(
+                        "Chunk size",
+                        "Characters per chunk before a document is embedded. Leave blank to use the backend default",
+                      )}
                     </FieldLabel>
                     <Input
-                      id={`vector-store-${field.name}`}
-                      type={field.type === "password" ? "password" : "text"}
-                      value={asText(providerParams[field.name])}
-                      onChange={(e) => setProviderParams((prev) => ({ ...prev, [field.name]: e.target.value }))}
-                      placeholder={field.placeholder}
+                      id="chunk-size"
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="1000"
+                      value={chunking.chunkSize}
+                      onChange={(e) => setChunking((prev) => ({ ...prev, chunkSize: e.target.value }))}
                     />
                   </Field>
-                ))}
+                  <Field>
+                    <FieldLabel htmlFor="chunk-overlap">
+                      {labelWithHint(
+                        "Chunk overlap",
+                        "Characters each chunk repeats from the one before, so a sentence split across a boundary is still findable",
+                      )}
+                    </FieldLabel>
+                    <Input
+                      id="chunk-overlap"
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="200"
+                      value={chunking.chunkOverlap}
+                      onChange={(e) => setChunking((prev) => ({ ...prev, chunkOverlap: e.target.value }))}
+                    />
+                    <FieldDescription>Must be smaller than the chunk size.</FieldDescription>
+                  </Field>
+                </CollapsibleContent>
+              </Collapsible>
             </FieldGroup>
 
             <div className="flex justify-end">
@@ -394,7 +553,16 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
         </Card>
 
         {/* Success Message */}
-        {ingestResults.length > 0 && <IngestSuccessAlert ingestResults={ingestResults} />}
+        {ingestResults.length > 0 && (
+          <IngestSuccessAlert
+            ingestResults={ingestResults}
+            onTestIt={
+              onTestVectorStore && ingestResults[0]?.vector_store_id
+                ? () => onTestVectorStore(ingestResults[0].vector_store_id)
+                : undefined
+            }
+          />
+        )}
       </div>
     </TooltipProvider>
   );
