@@ -1,0 +1,33 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTester.tsx
+  s_d71e62cb6f304c::t_90390b9e175c06 14
+  s_d71e62cb6f304c::t_10e41a27d4c1c2 81-83
+  s_d71e62cb6f304c::t_84ea529a12dee9 37
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTester.test.tsx
+  s_d71e62cb6f304c::t_0161c7af08161c 268-284
+  s_d71e62cb6f304c::t_c3dc9aaaacf952 40
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/litellmParamsDisplay.test.ts
+  s_d71e62cb6f304c::t_b34c83a95d0b96 3
+  s_d71e62cb6f304c::t_9bf27a3d314d10 73-99
+ui/litellm-dashboard/src/components/vector_store_management/types.tsx
+  s_d71e62cb6f304c::t_11044787afbf03 21-26
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/VectorStoreConnectionCard.tsx
+  s_d71e62cb6f304c::t_a4e831449affdd 18
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/litellmParamsDisplay.ts
+  s_d71e62cb6f304c::t_429f53f1cbe2db 50-69,74-76,79-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "3b52ce2b6f89dccea6ba5caebe934665aa3a1f03",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
