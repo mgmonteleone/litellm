@@ -1,5 +1,6 @@
 litellm/proxy/vector_store_endpoints/management_endpoints.py
   s_d71e62cb6f304c::t_5a6b99d7d4aa11 121-123,125-144,518-524,526-536
+  s_d71e62cb6f304c::t_048c5197be46af 124,525
 tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
   s_d71e62cb6f304c::t_bea16697ee9db7 3053-3132
 ---
