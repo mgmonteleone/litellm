@@ -45,6 +45,7 @@ litellm/types/vector_stores.py
   s_d71e62cb6f304c::t_43e6973a1f9b21 7,113-117,123-124,130-154
   s_d71e62cb6f304c::t_4f3a2bb63ab38f 110-112,118-122,125-129,174-175
   s_d71e62cb6f304c::t_d8093aa42a1805 155-173
+  s_d71e62cb6f304c::t_19cd986a3c5bb8 8,99-109
 litellm/rag/ingestion/mongodb_ingestion.py
   s_d71e62cb6f304c::t_4f3a2bb63ab38f 133
   s_d71e62cb6f304c::t_73bc10aeda4b87 172-175,178
