@@ -41496,10 +41496,18 @@ export interface components {
             /** Supported */
             supported?: boolean;
         };
-        /** VectorStoreUpdateRequest */
+        /**
+         * VectorStoreUpdateRequest
+         * @description Request litellm_params merge over the saved ones; a value equal to the redaction sentinel keeps the
+         *     saved secret, exactly as VectorStoreTestConnectionRequest.litellm_params does for test_connection.
+         */
         VectorStoreUpdateRequest: {
             /** Custom Llm Provider */
             custom_llm_provider?: string | null;
+            /** Litellm Params */
+            litellm_params?: {
+                [key: string]: unknown;
+            } | null;
             /** Vector Store Description */
             vector_store_description?: string | null;
             /** Vector Store Id */

@@ -583,7 +583,7 @@ async def update_vector_store(
         # Per-store access control: anyone authenticated who passes the
         # premium-feature gate could otherwise update *any* vector store —
         # including stores belonging to other teams.
-        await _fetch_and_authorize_vector_store(
+        saved_store: Final = await _fetch_and_authorize_vector_store(
             vector_store_id=vector_store_id,
             user_api_key_dict=user_api_key_dict,
             prisma_client=prisma_client,
@@ -593,14 +593,20 @@ async def update_vector_store(
         if update_data.get("vector_store_metadata") is not None:
             update_data["vector_store_metadata"] = safe_dumps(update_data["vector_store_metadata"])
 
-        # Handle litellm_params if provided. As with the create path, the
-        # embedding-config auto-resolve previously persisted cleartext
-        # credentials into the row; each search now embeds the query
-        # through the router at request time, so this row only ever stores
-        # the user-supplied ``litellm_embedding_model`` reference.
+        # Merge request litellm_params over the saved ones, the same way _resolve_connection_target does for
+        # test_connection: request keys win, a value equal to the redaction sentinel keeps the saved secret
+        # instead of overwriting it, and an unresolved os.environ/ reference in the request is rejected rather
+        # than persisted. As with the create path, this stores the raw params (no credential resolution), since
+        # each search embeds the query through the router at request time.
         if "litellm_params" in update_data:
-            _input_litellm_params: Final[dict] = update_data.get("litellm_params", {}) or {}
-            litellm_params_dict: Final = GenericLiteLLMParams(**_input_litellm_params).model_dump(exclude_none=True)
+            request_litellm_params: Final = {
+                key: value
+                for key, value in (update_data.get("litellm_params") or _EMPTY_PARAMS).items()
+                if value != REDACTED_BY_LITELM_STRING
+            }
+            _reject_environment_references(request_litellm_params)
+            merged_litellm_params: Final = {**_saved_raw_litellm_params(saved_store), **request_litellm_params}
+            litellm_params_dict: Final = GenericLiteLLMParams(**merged_litellm_params).model_dump(exclude_none=True)
             update_data["litellm_params"] = safe_dumps(litellm_params_dict)
 
         # Update in database
@@ -632,7 +638,9 @@ async def update_vector_store(
         # credentials) back to the caller — even when the caller only
         # changed unrelated fields like ``vector_store_description``.
         response_vs: Final = LiteLLM_ManagedVectorStore(**updated_vs)
-        response_vs["litellm_params"] = _redact_sensitive_litellm_params(updated_vs.get("litellm_params"))
+        response_vs["litellm_params"] = _redact_sensitive_litellm_params(
+            _parse_stored_json_field(updated_vs.get("litellm_params"), "litellm_params")
+        )
         return {
             "status": "success",
             "message": f"Vector store {vector_store_id} updated successfully",
@@ -684,6 +692,14 @@ def _saved_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str,
     if credential_name and litellm.credential_list:
         merged.update(CredentialAccessor.get_credential_values(credential_name))
     return merged
+
+
+def _saved_raw_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str, object]:  # mutable-ok: merged copy
+    """The saved litellm_params as persisted, with no environment/credential resolution: an update should
+    merge over what is actually stored (which may itself hold an os.environ/ reference), not a live-connection
+    value only meant for the test_connection and search paths."""
+    parsed: Final = _parse_stored_json_field(vector_store.get("litellm_params"), "litellm_params")
+    return dict(parsed) if isinstance(parsed, Mapping) else {}  # mutable-ok: merged copy
 
 
 async def _resolve_connection_target(

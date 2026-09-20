@@ -45718,6 +45718,7 @@
           "type": "object"
         },
         "VectorStoreUpdateRequest": {
+          "description": "Request litellm_params merge over the saved ones; a value equal to the redaction sentinel keeps the\nsaved secret, exactly as VectorStoreTestConnectionRequest.litellm_params does for test_connection.",
           "properties": {
             "custom_llm_provider": {
               "anyOf": [
@@ -45729,6 +45730,18 @@
                 }
               ],
               "title": "Custom Llm Provider"
+            },
+            "litellm_params": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Litellm Params"
             },
             "vector_store_description": {
               "anyOf": [
