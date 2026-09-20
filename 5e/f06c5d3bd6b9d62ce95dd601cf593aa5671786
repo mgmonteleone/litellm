@@ -1,0 +1,22 @@
+tests/test_litellm/llms/vertex_ai/rag_engine/test_ingestion.py
+  s_774787e84e7c8d::t_7776453c69d5d2 1-37,44
+  s_774787e84e7c8d::t_e2d3cce9970c5a 38-43
+litellm/llms/vertex_ai/rag_engine/ingestion.py
+  s_774787e84e7c8d::t_7776453c69d5d2 262,278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "5ef06c5d3bd6b9d62ce95dd601cf593aa5671786",
+  "prompts": {},
+  "sessions": {
+    "s_774787e84e7c8d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a206e1d2-809e-42c8-8f38-2e0db0748598",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
