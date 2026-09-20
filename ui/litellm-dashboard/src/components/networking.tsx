@@ -5717,6 +5717,22 @@ export const vectorStoreInfoCall = async (accessToken: string, vectorStoreId: st
   }
 };
 
+export type VectorStoreTestConnectionResponse = components["schemas"]["VectorStoreTestConnectionResponse"];
+export type VectorStoreConnectionCheck = components["schemas"]["VectorStoreConnectionCheck"];
+export type VectorStoreDiscoverRequest = components["schemas"]["VectorStoreDiscoverRequest"];
+
+export const vectorStoreTestConnectionCall = async (
+  accessToken: string,
+  body: components["schemas"]["VectorStoreTestConnectionRequest"],
+): Promise<VectorStoreTestConnectionResponse> =>
+  await apiClient.post<VectorStoreTestConnectionResponse>(`/vector_store/test_connection`, { accessToken, body });
+
+/** Provider-shaped JSON; callers narrow it with their own parser. */
+export const vectorStoreDiscoverCall = async (
+  accessToken: string,
+  body: VectorStoreDiscoverRequest,
+): Promise<unknown> => await apiClient.post<unknown>(`/vector_store/discover`, { accessToken, body });
+
 export const vectorStoreUpdateCall = async (accessToken: string, formValues: Record<string, any>): Promise<any> => {
   try {
     let url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/update` : `/vector_store/update`;
