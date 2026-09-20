@@ -251,7 +251,19 @@ def embedding_vector(embedding_response: EmbeddingResponse) -> tuple[float, ...]
     vector: Final = embedding_response.data[0]["embedding"]
     if not vector or any(not isinstance(value, (float, int)) or not isfinite(value) for value in vector):
         raise config_error("The embedding model must return a non-empty, finite vector.")
-    return tuple(vector)
+    return tuple(float(value) for value in vector)
+
+
+def sidecar_error_message(response: httpx.Response) -> str:
+    """The message from the sidecar's error envelope, or a bounded slice of the body."""
+    try:
+        payload: Final = response.json()
+    except ValueError:
+        return response.text[:300]
+    error: Final = payload.get("error") if isinstance(payload, Mapping) else None
+    if isinstance(error, Mapping) and isinstance(error.get("message"), str):
+        return str(error["message"])
+    return response.text[:300]
 
 
 class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):

@@ -190,14 +190,19 @@ def _caller_vector_store_options(
     )
 
 
+_PER_REQUEST_CALLER_OPTIONS: Final = _MANAGED_STORE_CALLER_OPTIONS - frozenset(("vector_store_id",))
+
+
 def _managed_store_overrides(managed_store: LiteLLM_ManagedVectorStore | None) -> Mapping[str, object]:
     if managed_store is None:
         return MappingProxyType({})
+    # Per-request caller options (custom_metadata, file_description, ...) never come from the store: a
+    # value persisted by an earlier ingest must not override what this request says about this file.
     return MappingProxyType(
         {
             key: value
             for key, value in build_request_data_from_managed_vector_store(managed_store).items()
-            if value is not None
+            if value is not None and key not in _PER_REQUEST_CALLER_OPTIONS
         }
     )
 
@@ -311,7 +316,7 @@ async def _save_vector_store_to_db_from_rag_ingest(
     # Extract provider-specific params from vector_store_config to save as litellm_params
     # This ensures params like aws_region_name, embedding_model, etc. are available for search
     provider_specific_params: Final = {}
-    excluded_keys: Final = {"custom_llm_provider", "vector_store_id"}
+    excluded_keys: Final = {"custom_llm_provider", "vector_store_id", *_PER_REQUEST_CALLER_OPTIONS}
     for key, value in vector_store_config.items():
         if key not in excluded_keys and value is not None:
             provider_specific_params[key] = value

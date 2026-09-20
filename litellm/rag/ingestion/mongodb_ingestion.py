@@ -21,6 +21,7 @@ from litellm.llms.mongodb.vector_stores.transformation import (
     MongoDBVectorStoreConfig,
     MongoDBVectorStoreParams,
     config_error,
+    sidecar_error_message,
     validated_params,
 )
 from litellm.rag.ingestion.base_ingestion import BaseRAGIngestion
@@ -28,6 +29,7 @@ from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import LlmProviders
 
 INGEST_BATCH_SIZE: Final = 200
+_RESERVED_EMBEDDING_KWARGS: Final = frozenset({"model", "input"})
 INGEST_TIMEOUT_MS: Final = 60_000
 _EMPTY_CONFIG: Final = MappingProxyType({})
 
@@ -50,8 +52,13 @@ class MongoDBRAGIngestion(BaseRAGIngestion):
         )
 
     def _embedding_config(self) -> Mapping[str, object]:
+        """Provider kwargs for the embedding call, minus the arguments this class supplies itself."""
         configured: Final = self.vector_store_config.get("litellm_embedding_config")
-        return configured if isinstance(configured, Mapping) else _EMPTY_CONFIG
+        if not isinstance(configured, Mapping):
+            return _EMPTY_CONFIG
+        return MappingProxyType(
+            {key: value for key, value in configured.items() if key not in _RESERVED_EMBEDDING_KWARGS}
+        )
 
     async def embed(self, chunks: list[str]) -> list[list[float]] | None:  # mutable-ok: BaseRAGIngestion contract
         if not chunks:
@@ -88,7 +95,7 @@ class MongoDBRAGIngestion(BaseRAGIngestion):
         except httpx.HTTPStatusError as error:
             failed: Final = error.response
             raise MongoDBVectorStoreConfig().get_error_class(
-                _error_message(failed), failed.status_code, failed.headers
+                sidecar_error_message(failed), failed.status_code, failed.headers
             ) from None
 
     async def store(
@@ -135,11 +142,11 @@ class MongoDBRAGIngestion(BaseRAGIngestion):
         }
         created: Final = await self._post(client, f"{api_base}/v1/vector_stores", headers, create_body)
         verbose_logger.info(
-            "MongoDB ingest: index %s on %s.%s is %s",
+            "MongoDB ingest: index %s on %s.%s created=%s",
             index_name,
             params.mongodb_database,
             params.mongodb_collection,
-            created.json().get("status"),
+            created.status_code == 201,
         )
 
         file_id: Final = deterministic_file_id(filename, file_content)
@@ -203,19 +210,8 @@ def _documents(
         {  # mutable-ok: JSON transport requires a dict
             "chunk_index": position,
             "text": chunks[position],
-            "embedding": tuple(embeddings[position]),
+            "embedding": tuple(float(value) for value in embeddings[position]),
             "metadata": dict(metadata),  # mutable-ok: JSON transport requires a dict
         }
         for position in range(start, min(stop, len(chunks)))
     )
-
-
-def _error_message(response: httpx.Response) -> str:
-    try:
-        payload: Final = response.json()
-    except ValueError:
-        return response.text[:500]
-    error: Final = payload.get("error") if isinstance(payload, Mapping) else None
-    if isinstance(error, Mapping) and isinstance(error.get("message"), str):
-        return str(error["message"])
-    return response.text[:500]

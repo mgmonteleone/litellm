@@ -58,19 +58,13 @@ def test_internal_user_viewer_rag_ingest_without_vector_store_id_rejected(
     response = client_internal_user_viewer.post(
         "/v1/rag/ingest",
         files={"file": ("sample.txt", io.BytesIO(b"test content"), "text/plain")},
-        data={
-            "request": '{"ingest_options":{"vector_store":{"custom_llm_provider":"openai"}}}'
-        },
+        data={"request": '{"ingest_options":{"vector_store":{"custom_llm_provider":"openai"}}}'},
     )
 
     assert response.status_code == 403
     detail = response.json()
     assert "detail" in detail
-    error_msg = (
-        detail["detail"]["error"]
-        if isinstance(detail["detail"], dict)
-        else str(detail["detail"])
-    )
+    error_msg = detail["detail"]["error"] if isinstance(detail["detail"], dict) else str(detail["detail"])
     assert "internal_user_viewer" in error_msg
     assert "vector_store_id" in error_msg
 
@@ -97,8 +91,7 @@ def test_internal_user_viewer_rag_ingest_with_vector_store_id_passes_check(
 
     # Should not be 403 (role check passed)
     assert response.status_code != 403, (
-        f"internal_user_viewer with vector_store_id should pass role check. "
-        f"Response: {response.json()}"
+        f"internal_user_viewer with vector_store_id should pass role check. Response: {response.json()}"
     )
 
 
@@ -114,15 +107,12 @@ def test_internal_user_rag_ingest_without_vector_store_id_allowed(client_interna
         response = client_internal_user.post(
             "/v1/rag/ingest",
             files={"file": ("sample.txt", io.BytesIO(b"test content"), "text/plain")},
-            data={
-                "request": '{"ingest_options":{"vector_store":{"custom_llm_provider":"openai"}}}'
-            },
+            data={"request": '{"ingest_options":{"vector_store":{"custom_llm_provider":"openai"}}}'},
         )
 
     # Should not be 403
     assert response.status_code != 403, (
-        f"internal_user should be allowed to create new vector stores. "
-        f"Response: {response.json()}"
+        f"internal_user should be allowed to create new vector stores. Response: {response.json()}"
     )
 
 
@@ -170,13 +160,13 @@ def test_rag_ingest_blocks_clientside_credentials(client_internal_user, blocked_
             },
         },
     )
-    assert (
-        response.status_code == 400
-    ), f"Expected 400 when '{blocked_field}' is set clientside, got {response.status_code}: {response.json()}"
+    assert response.status_code == 400, (
+        f"Expected 400 when '{blocked_field}' is set clientside, got {response.status_code}: {response.json()}"
+    )
     body = response.json()
-    assert blocked_field in str(
-        body
-    ), f"Response should mention '{blocked_field}': {body}"
+    assert blocked_field in str(body), f"Response should mention '{blocked_field}': {body}"
+
+
 class TestRagIngestSSRFBlocked:
     """
     aws_sts_endpoint and related credential-redirect fields must be rejected
@@ -193,9 +183,7 @@ class TestRagIngestSSRFBlocked:
             ("aws_bedrock_runtime_endpoint", "https://attacker.example/bedrock"),
         ],
     )
-    def test_ssrf_field_in_vector_store_config_rejected(
-        self, field, value, client_internal_user
-    ):
+    def test_ssrf_field_in_vector_store_config_rejected(self, field, value, client_internal_user):
         payload = {
             "file_url": "https://example.com/doc.pdf",
             "ingest_options": {
@@ -215,9 +203,7 @@ class TestRagIngestSSRFBlocked:
         )
         body = response.json()
         detail = body.get("detail", {})
-        error_text = (
-            detail.get("error", "") if isinstance(detail, dict) else str(detail)
-        )
+        error_text = detail.get("error", "") if isinstance(detail, dict) else str(detail)
         assert field in error_text, f"Error should name the offending field: {error_text}"
 
     def test_clean_bedrock_ingest_options_not_rejected(self, client_internal_user):
@@ -230,14 +216,10 @@ class TestRagIngestSSRFBlocked:
                 "/v1/rag/ingest",
                 json={
                     "file_url": "https://example.com/doc.pdf",
-                    "ingest_options": {
-                        "vector_store": {"custom_llm_provider": "bedrock"}
-                    },
+                    "ingest_options": {"vector_store": {"custom_llm_provider": "bedrock"}},
                 },
             )
-        assert response.status_code != 400, (
-            f"Clean Bedrock ingest_options should not be rejected: {response.json()}"
-        )
+        assert response.status_code != 400, f"Clean Bedrock ingest_options should not be rejected: {response.json()}"
 
 
 S3_REGISTRY_STORE = {
@@ -703,12 +685,14 @@ def test_rag_query_returns_response_cost_header(client_internal_user):
     )
     mock_response._hidden_params["response_cost"] = 3.45e-06
 
-    with patch(
-        "litellm.proxy.rag_endpoints.endpoints.litellm.aquery",
-        new_callable=AsyncMock,
-        return_value=mock_response,
-    ), patch("litellm.vector_store_registry", None), patch(
-        "litellm.proxy.proxy_server.prisma_client", None
+    with (
+        patch(
+            "litellm.proxy.rag_endpoints.endpoints.litellm.aquery",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ),
+        patch("litellm.vector_store_registry", None),
+        patch("litellm.proxy.proxy_server.prisma_client", None),
     ):
         response = client_internal_user.post(
             "/v1/rag/query",
@@ -742,7 +726,9 @@ def test_rag_query_surfaces_upstream_status_code(client_internal_user, upstream_
             new=AsyncMock(side_effect=upstream_error),
         ),
         patch("litellm.vector_store_registry", None),  # test-quality-ok: proxy module global, no injection seam
-        patch("litellm.proxy.proxy_server.prisma_client", None),  # test-quality-ok: proxy module global, no injection seam
+        patch(
+            "litellm.proxy.proxy_server.prisma_client", None
+        ),  # test-quality-ok: proxy module global, no injection seam
     ):
         response = client_internal_user.post(
             "/v1/rag/query",
@@ -779,10 +765,14 @@ def test_rag_query_stream_returns_event_stream(client_internal_user):
             api_key="test-key",
         )
 
-    with patch(
-        "litellm.proxy.rag_endpoints.endpoints.litellm.aquery",
-        new=AsyncMock(side_effect=fake_aquery),
-    ), patch("litellm.vector_store_registry", None), patch("litellm.proxy.proxy_server.prisma_client", None):
+    with (
+        patch(
+            "litellm.proxy.rag_endpoints.endpoints.litellm.aquery",
+            new=AsyncMock(side_effect=fake_aquery),
+        ),
+        patch("litellm.vector_store_registry", None),
+        patch("litellm.proxy.proxy_server.prisma_client", None),
+    ):
         response = client_internal_user.post(
             "/v1/rag/query",
             json={
@@ -825,7 +815,9 @@ def test_rag_query_stream_pings_while_retrieval_is_still_running(client_internal
             new=AsyncMock(side_effect=slow_aquery),
         ),
         patch("litellm.vector_store_registry", None),  # test-quality-ok: proxy module global, no injection seam
-        patch("litellm.proxy.proxy_server.prisma_client", None),  # test-quality-ok: proxy module global, no injection seam
+        patch(
+            "litellm.proxy.proxy_server.prisma_client", None
+        ),  # test-quality-ok: proxy module global, no injection seam
     ):
         response = client_internal_user.post(
             "/v1/rag/query",
@@ -849,9 +841,7 @@ def test_rag_query_stream_pings_while_retrieval_is_still_running(client_internal
     assert response.text.endswith("data: [DONE]\n\n")
 
 
-def test_rag_query_stream_keeps_response_headers_when_retrieval_beats_the_keepalive(
-    client_internal_user, monkeypatch
-):
+def test_rag_query_stream_keeps_response_headers_when_retrieval_beats_the_keepalive(client_internal_user, monkeypatch):
     import litellm as litellm_module
 
     monkeypatch.setattr(litellm_module, "sse_keepalive_ping_interval_seconds", 5)
@@ -873,7 +863,9 @@ def test_rag_query_stream_keeps_response_headers_when_retrieval_beats_the_keepal
             new=AsyncMock(side_effect=fast_aquery),
         ),
         patch("litellm.vector_store_registry", None),  # test-quality-ok: proxy module global, no injection seam
-        patch("litellm.proxy.proxy_server.prisma_client", None),  # test-quality-ok: proxy module global, no injection seam
+        patch(
+            "litellm.proxy.proxy_server.prisma_client", None
+        ),  # test-quality-ok: proxy module global, no injection seam
     ):
         response = client_internal_user.post(
             "/v1/rag/query",
@@ -925,13 +917,17 @@ def test_rag_query_merges_managed_store_params(client_internal_user):
         model="gpt-4o-mini",
     )
 
-    with patch(  # test-quality-ok: aquery is the endpoint's downstream boundary; the forwarded config is what the test asserts
-        "litellm.proxy.rag_endpoints.endpoints.litellm.aquery",
-        new_callable=AsyncMock,
-        return_value=mock_response,
-    ) as mock_aquery, patch.object(litellm, "vector_store_registry", mock_registry), patch(  # test-quality-ok: seeds the managed-store registry the merge under test reads and grants access so real store resolution runs
-        "litellm.proxy.vector_store_endpoints.utils.can_user_access_vector_store",
-        new=AsyncMock(return_value=True),
+    with (
+        patch(  # test-quality-ok: aquery is the endpoint's downstream boundary; the forwarded config is what the test asserts
+            "litellm.proxy.rag_endpoints.endpoints.litellm.aquery",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_aquery,
+        patch.object(litellm, "vector_store_registry", mock_registry),
+        patch(  # test-quality-ok: seeds the managed-store registry the merge under test reads and grants access so real store resolution runs
+            "litellm.proxy.vector_store_endpoints.utils.can_user_access_vector_store",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         response = client_internal_user.post(
             "/v1/rag/query",
@@ -971,13 +967,17 @@ def test_rag_query_store_params_win_over_user_retrieval_config(client_internal_u
         model="gpt-4o-mini",
     )
 
-    with patch(  # test-quality-ok: aquery is the endpoint's downstream boundary; the forwarded config is what the test asserts
-        "litellm.proxy.rag_endpoints.endpoints.litellm.aquery",
-        new_callable=AsyncMock,
-        return_value=mock_response,
-    ) as mock_aquery, patch.object(litellm, "vector_store_registry", mock_registry), patch(  # test-quality-ok: seeds the managed-store registry the merge under test reads and grants access so real store resolution runs
-        "litellm.proxy.vector_store_endpoints.utils.can_user_access_vector_store",
-        new=AsyncMock(return_value=True),
+    with (
+        patch(  # test-quality-ok: aquery is the endpoint's downstream boundary; the forwarded config is what the test asserts
+            "litellm.proxy.rag_endpoints.endpoints.litellm.aquery",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_aquery,
+        patch.object(litellm, "vector_store_registry", mock_registry),
+        patch(  # test-quality-ok: seeds the managed-store registry the merge under test reads and grants access so real store resolution runs
+            "litellm.proxy.vector_store_endpoints.utils.can_user_access_vector_store",
+            new=AsyncMock(return_value=True),
+        ),
     ):
         response = client_internal_user.post(
             "/v1/rag/query",
@@ -1164,9 +1164,7 @@ class TestVectorStoreUploadControls:
             content=b"benign document text\n",
             content_type="text/plain",
         )
-        _options, file_data, _url, _file_id = await parse_rag_ingest_request(
-            request, scanner=EicarTestMalwareScanner()
-        )
+        _options, file_data, _url, _file_id = await parse_rag_ingest_request(request, scanner=EicarTestMalwareScanner())
         assert file_data is not None
         server_filename, content_bytes, secured_content_type = file_data
         assert server_filename != "../../etc/passwd"
@@ -1174,3 +1172,21 @@ class TestVectorStoreUploadControls:
         assert server_filename.endswith(".txt")
         assert secured_content_type == "text/plain"
         assert content_bytes == b"benign document text\n"
+
+
+def test_per_request_caller_options_never_come_from_the_managed_store():
+    from litellm.proxy.rag_endpoints.endpoints import _managed_store_overrides
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    store = LiteLLM_ManagedVectorStore(
+        vector_store_id="policy_index",
+        custom_llm_provider="mongodb",
+        litellm_params={
+            "mongodb_database": "knowledge",
+            "custom_metadata": {"department": "hr"},
+            "file_description": "x",
+        },
+    )
+    overrides = _managed_store_overrides(store)
+    assert overrides["mongodb_database"] == "knowledge"
+    assert "custom_metadata" not in overrides and "file_description" not in overrides

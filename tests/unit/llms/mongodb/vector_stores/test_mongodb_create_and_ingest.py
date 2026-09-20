@@ -309,3 +309,14 @@ def test_custom_metadata_becomes_filterable_chunk_metadata() -> None:
     assert deterministic_file_id("a.md", b"x") == deterministic_file_id("renamed-by-proxy.txt", b"x")
     assert deterministic_file_id("a.md", b"x") != deterministic_file_id("a.md", b"y")
     assert deterministic_file_id("a.md", None).startswith("file_")
+
+
+def test_embedding_config_drops_reserved_kwargs_and_vectors_are_floats() -> None:
+    ingestion: Final = MongoDBRAGIngestion(
+        {"vector_store": {**BASE_PARAMS, "litellm_embedding_config": {"model": "x", "input": "y", "dimensions": 8}}}
+    )
+    assert dict(ingestion._embedding_config()) == {"dimensions": 8}
+    from litellm.rag.ingestion.mongodb_ingestion import _documents
+
+    (document,) = _documents(["a"], [[1, 0]], {}, 0, 1)
+    assert document["embedding"] == (1.0, 0.0) and all(isinstance(v, float) for v in document["embedding"])

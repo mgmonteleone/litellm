@@ -683,19 +683,22 @@ def _assert_proxy_admin(user_api_key_dict: UserAPIKeyAuth, action: str) -> None:
 
 
 def _reject_environment_references(params: Mapping[str, object]) -> None:
-    for key, value in params.items():
-        if isinstance(value, str) and value.startswith("os.environ/"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"litellm_params.{key} references os.environ; supply the resolved value or omit it to use the saved one.",
-            )
+    """Request-supplied values must already be resolved; nested references are rejected like top-level ones."""
+    from litellm.proxy.health_endpoints._health_endpoints import (
+        _reject_os_environ_references,  # pyright: ignore[reportPrivateUsage]  # shared nested-walk guard
+    )
+
+    _reject_os_environ_references(dict(params))  # mutable-ok: the shared guard takes a dict
 
 
 def _saved_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str, object]:  # mutable-ok: merged copy
     from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
 
     raw: Final = vector_store.get("litellm_params")
-    parsed: Final = json.loads(raw) if isinstance(raw, str) else (raw or _EMPTY_PARAMS)
+    try:
+        parsed: Final = json.loads(raw) if isinstance(raw, str) else (raw or _EMPTY_PARAMS)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="The saved vector store has malformed litellm_params.") from None
     merged: Final = dict(parsed if isinstance(parsed, Mapping) else _EMPTY_PARAMS)  # mutable-ok: merged copy
     credential_name: Final = vector_store.get("litellm_credential_name")
     if credential_name and litellm.credential_list:
@@ -829,7 +832,7 @@ async def vector_store_test_connection(
             ok=False,
             supported=True,
             custom_llm_provider=provider,
-            summary=str(error)[:500],
+            summary=f"Test connection failed unexpectedly ({type(error).__name__}); see the proxy logs.",
             checks=[],  # mutable-ok: the TypedDict declares a list field
             details=None,
         )
