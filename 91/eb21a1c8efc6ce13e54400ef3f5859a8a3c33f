@@ -2,6 +2,8 @@ litellm/llms/mongodb/vector_stores/transformation.py
   s_d71e62cb6f304c::t_a6575bced4f8fb 49,366
 tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_filters_and_ranking.py
   s_d71e62cb6f304c::t_a6575bced4f8fb 201-205
+tests/test_litellm/proxy/rag_endpoints/test_rag_endpoints.py
+  s_d71e62cb6f304c::t_c462718d1a7199 689-690
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -9,6 +11,14 @@ tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_filters_and_ranking.p
   "base_commit_sha": "91eb21a1c8efc6ce13e54400ef3f5859a8a3c33f",
   "prompts": {},
   "sessions": {
+    "s_25c805ebe232f3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f961db08-89fd-42a6-98be-0d21942ae41b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    },
     "s_d71e62cb6f304c": {
       "agent_id": {
         "tool": "claude",
