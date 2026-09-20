@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Providers, providerLogoMap } from "@/components/provider_info_helpers";
 import {
   getProviderSpecificFields,
+  isBetaVectorStoreProvider,
+  vectorStoreCapabilities,
   getVectorStoreProviderLogoAndName,
   VectorStoreProviders,
   vectorStoreProviderLogoMap,
@@ -39,10 +41,18 @@ describe("getVectorStoreProviderLogoAndName", () => {
       "api_key",
       "mongodb_database",
       "mongodb_collection",
-      "embedding_model",
       "mongodb_embedding_field",
       "mongodb_text_field",
+      "mongodb_dimensions",
+      "mongodb_similarity",
+      "mongodb_filter_fields",
+      "embedding_model",
       "mongodb_num_candidates",
+      "mongodb_hybrid_search",
+      "mongodb_text_index",
+      "mongodb_hybrid_weights",
+      "mongodb_exact_search",
+      "mongodb_score_threshold",
     ]);
   });
 
@@ -123,5 +133,40 @@ describe("getVectorStoreProviderLogoAndName", () => {
       logo: "",
       displayName: "totally_unknown",
     });
+  });
+});
+
+describe("vectorStoreCapabilities", () => {
+  it("credits MongoDB with the four capabilities its adapter implements", () => {
+    expect(vectorStoreCapabilities("mongodb")).toEqual(["Search", "Ingest", "Filters", "Hybrid"]);
+  });
+
+  it("gives a search-only provider just Search, so the chips are not decorative", () => {
+    expect(vectorStoreCapabilities("valkey")).toEqual(["Search"]);
+    expect(vectorStoreCapabilities("pg_vector")).toEqual(["Search"]);
+  });
+
+  it("falls back to Search for a provider it has never heard of", () => {
+    expect(vectorStoreCapabilities("some_new_provider")).toEqual(["Search"]);
+    expect(vectorStoreCapabilities(null)).toEqual(["Search"]);
+  });
+
+  it("returns the exact chip set the table renders for each documented provider", () => {
+    expect(vectorStoreCapabilities("mongodb")).toEqual(["Search", "Ingest", "Filters", "Hybrid"]);
+    expect(vectorStoreCapabilities("openai")).toEqual(["Search", "Ingest", "Filters"]);
+    expect(vectorStoreCapabilities("bedrock")).toEqual(["Search", "Ingest", "Filters"]);
+    expect(vectorStoreCapabilities("pg_vector")).toEqual(["Search"]);
+  });
+});
+
+describe("isBetaVectorStoreProvider", () => {
+  it("marks mongodb beta without baking the word into its display name", () => {
+    expect(isBetaVectorStoreProvider("mongodb")).toBe(true);
+    expect(VectorStoreProviders.MongoDB).toBe("MongoDB");
+  });
+
+  it("leaves the settled providers unmarked", () => {
+    expect(isBetaVectorStoreProvider("bedrock")).toBe(false);
+    expect(isBetaVectorStoreProvider(undefined)).toBe(false);
   });
 });

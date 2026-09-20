@@ -5717,6 +5717,23 @@ export const vectorStoreInfoCall = async (accessToken: string, vectorStoreId: st
   }
 };
 
+export type VectorStoreTestConnectionResponse = components["schemas"]["VectorStoreTestConnectionResponse"];
+export type VectorStoreConnectionCheck = components["schemas"]["VectorStoreConnectionCheck"];
+export type VectorStoreDiscoverRequest = components["schemas"]["VectorStoreDiscoverRequest"];
+
+export const vectorStoreTestConnectionCall = async (
+  accessToken: string,
+  body: components["schemas"]["VectorStoreTestConnectionRequest"],
+): Promise<VectorStoreTestConnectionResponse> =>
+  await apiClient.post<VectorStoreTestConnectionResponse>(`/vector_store/test_connection`, { accessToken, body });
+
+/** Provider-shaped JSON; callers narrow it with their own parser. */
+export const vectorStoreDiscoverCall = async (
+  accessToken: string,
+  body: VectorStoreDiscoverRequest,
+  signal?: AbortSignal,
+): Promise<unknown> => await apiClient.post<unknown>(`/vector_store/discover`, { accessToken, body, signal });
+
 export const vectorStoreUpdateCall = async (accessToken: string, formValues: Record<string, any>): Promise<any> => {
   try {
     let url = proxyBaseUrl ? `${proxyBaseUrl}/vector_store/update` : `/vector_store/update`;
@@ -5750,6 +5767,8 @@ export const ragIngestCall = async (
   vectorStoreName?: string,
   vectorStoreDescription?: string,
   providerSpecificParams?: Record<string, any>,
+  /** RecursiveCharacterTextSplitter args; omitted keeps the backend's own defaults. */
+  chunkingStrategy?: { chunk_size?: number; chunk_overlap?: number },
 ): Promise<any> => {
   try {
     let url = proxyBaseUrl ? `${proxyBaseUrl}/rag/ingest` : `/rag/ingest`;
@@ -5764,6 +5783,9 @@ export const ragIngestCall = async (
           ...(vectorStoreId && { vector_store_id: vectorStoreId }),
           ...(providerSpecificParams && providerSpecificParams),
         },
+        ...(chunkingStrategy && Object.keys(chunkingStrategy).length > 0
+          ? { chunking_strategy: chunkingStrategy }
+          : {}),
       },
     };
 
@@ -6908,6 +6930,8 @@ export const vectorStoreSearchCall = async (
   accessToken: string,
   vectorStoreId: string,
   query: string,
+  /** Extra OpenAI search params (max_num_results, filters, ranking_options); omitted keys keep provider defaults. */
+  options?: Record<string, unknown>,
 ): Promise<any> => {
   try {
     const url = `${getProxyBaseUrl()}/v1/vector_stores/${vectorStoreId}/search`;
@@ -6919,6 +6943,7 @@ export const vectorStoreSearchCall = async (
       },
       body: JSON.stringify({
         query: query,
+        ...options,
       }),
     });
 

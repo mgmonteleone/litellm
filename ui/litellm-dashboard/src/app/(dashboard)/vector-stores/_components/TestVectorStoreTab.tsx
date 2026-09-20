@@ -14,12 +14,22 @@ import { VectorStore } from "@/components/vector_store_management/types";
 interface TestVectorStoreTabProps {
   accessToken: string | null;
   vectorStores: VectorStore[];
+  /** Selects this store when the ingest tab hands over a freshly created one. */
+  preselectedVectorStoreId?: string | null;
 }
 
 const storeLabel = (store: VectorStore) => store.vector_store_name || store.vector_store_id;
 
-const TestVectorStoreTab: React.FC<TestVectorStoreTabProps> = ({ accessToken, vectorStores }) => {
-  const [selectedVectorStore, setSelectedVectorStore] = useState<VectorStore | null>(vectorStores[0] ?? null);
+const TestVectorStoreTab: React.FC<TestVectorStoreTabProps> = ({
+  accessToken,
+  vectorStores,
+  preselectedVectorStoreId,
+}) => {
+  // The selection is derived rather than synced, so a store list that loads after mount still
+  // resolves to something. The parent remounts this tab when it hands over a new store.
+  const [chosenId, setChosenId] = useState<string | null>(preselectedVectorStoreId ?? null);
+  const selectedVectorStore =
+    vectorStores.find((store) => store.vector_store_id === chosenId) ?? vectorStores[0] ?? null;
 
   if (!accessToken) {
     return (
@@ -55,7 +65,7 @@ const TestVectorStoreTab: React.FC<TestVectorStoreTabProps> = ({ accessToken, ve
           <Combobox
             items={vectorStores}
             value={selectedVectorStore}
-            onValueChange={setSelectedVectorStore}
+            onValueChange={(store: VectorStore | null) => setChosenId(store?.vector_store_id ?? null)}
             itemToStringLabel={storeLabel}
           >
             <ComboboxInput className="w-full" placeholder="Select a vector store" />
@@ -79,7 +89,14 @@ const TestVectorStoreTab: React.FC<TestVectorStoreTabProps> = ({ accessToken, ve
       </Card>
 
       {selectedVectorStore && (
-        <VectorStoreTester vectorStoreId={selectedVectorStore.vector_store_id} accessToken={accessToken} />
+        // Keyed on the store id so switching stores remounts the tester instead of reusing one
+        // whose search options (hybrid, filters) were built for the previous store's capabilities.
+        <VectorStoreTester
+          key={selectedVectorStore.vector_store_id}
+          vectorStoreId={selectedVectorStore.vector_store_id}
+          accessToken={accessToken}
+          litellmParams={selectedVectorStore.litellm_params}
+        />
       )}
     </div>
   );

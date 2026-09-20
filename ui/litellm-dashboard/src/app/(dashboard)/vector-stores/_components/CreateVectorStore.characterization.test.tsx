@@ -111,6 +111,7 @@ describe("CreateVectorStore submit payload characterization", () => {
       undefined,
       undefined,
       {},
+      undefined,
     );
   });
 
@@ -135,6 +136,7 @@ describe("CreateVectorStore submit payload characterization", () => {
       "  Product Docs  ",
       "All the guides",
       {},
+      undefined,
     );
   });
 
@@ -158,6 +160,7 @@ describe("CreateVectorStore submit payload characterization", () => {
       undefined,
       undefined,
       { api_base: "http://pg.internal:8000", api_key: "sk-secret" },
+      undefined,
     );
   });
 
@@ -227,5 +230,61 @@ describe("CreateVectorStore submit payload characterization", () => {
     await clickCreate();
 
     expect(networking.ragIngestCall).not.toHaveBeenCalled();
+  });
+});
+
+describe("CreateVectorStore chunking and counts", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(networking.ragIngestCall).mockResolvedValue({ id: "1", status: "completed", vector_store_id: "vs_new" });
+    vi.mocked(fetchModels.fetchAvailableModels).mockResolvedValue([]);
+  });
+
+  it("sends the chunking strategy alongside the provider params", async () => {
+    const user = userEvent.setup();
+    render(<CreateVectorStore accessToken="test-token" />);
+    await uploadFile();
+
+    await user.click(screen.getByRole("button", { name: "Chunking" }));
+    fireEvent.change(screen.getByLabelText(/Chunk size/), { target: { value: "800" } });
+    fireEvent.change(screen.getByLabelText(/Chunk overlap/), { target: { value: "120" } });
+    await clickCreate();
+
+    await waitFor(() => expect(networking.ragIngestCall).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(networking.ragIngestCall).mock.calls[0][7]).toEqual({ chunk_size: 800, chunk_overlap: 120 });
+  });
+
+  it("refuses an overlap that is not smaller than the chunk instead of sending it", async () => {
+    const user = userEvent.setup();
+    render(<CreateVectorStore accessToken="test-token" />);
+    await uploadFile();
+
+    await user.click(screen.getByRole("button", { name: "Chunking" }));
+    fireEvent.change(screen.getByLabelText(/Chunk size/), { target: { value: "500" } });
+    fireEvent.change(screen.getByLabelText(/Chunk overlap/), { target: { value: "500" } });
+    await clickCreate();
+
+    expect(networking.ragIngestCall).not.toHaveBeenCalled();
+  });
+
+  it("reports the document count in the success alert", async () => {
+    render(<CreateVectorStore accessToken="test-token" />);
+    await uploadFile();
+    await clickCreate();
+
+    expect(await screen.findByText("1 document")).toBeInTheDocument();
+    expect(screen.getByText("vs_new")).toBeInTheDocument();
+  });
+
+  it("offers a Test it link that hands the new store to the test tab", async () => {
+    const user = userEvent.setup();
+    const onTestVectorStore = vi.fn();
+    render(<CreateVectorStore accessToken="test-token" onTestVectorStore={onTestVectorStore} />);
+    await uploadFile();
+    await clickCreate();
+
+    await user.click(await screen.findByRole("button", { name: "Test it" }));
+
+    expect(onTestVectorStore).toHaveBeenCalledWith("vs_new");
   });
 });

@@ -1,0 +1,91 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it } from "vitest";
+
+import type { VectorStoreTestConnectionResponse } from "@/components/networking";
+
+import ConnectionChecklist from "./ConnectionChecklist";
+
+const FAILING: VectorStoreTestConnectionResponse = {
+  ok: false,
+  summary: "Cannot reach the sidecar at http://127.0.0.1:8080 (ConnectError).",
+  checks: [
+    {
+      check: "sidecar_reachable",
+      status: "fail",
+      message: "Cannot reach the sidecar at http://127.0.0.1:8080. Check the URL and that the container is running.",
+    },
+    {
+      check: "embedding_model",
+      status: "warn",
+      message: "Embedding model returns 3072-dimensional vectors.",
+      details: { model: "text-embedding-3-large", dimensions: 3072 },
+    },
+    { check: "hybrid_search", status: "skip", message: "Hybrid search is off for this store." },
+  ],
+};
+
+describe("ConnectionChecklist", () => {
+  it("leads with the failure summary so the admin sees the first thing to fix", () => {
+    render(<ConnectionChecklist result={FAILING} />);
+
+    expect(screen.getByText("Connection failed")).toBeInTheDocument();
+    expect(screen.getByText(FAILING.summary as string)).toBeInTheDocument();
+  });
+
+  it("renders one row per check with its fix message", () => {
+    render(<ConnectionChecklist result={FAILING} />);
+
+    expect(screen.getByText("Sidecar reachable")).toBeInTheDocument();
+    expect(screen.getByText(/Check the URL and that the container is running/)).toBeInTheDocument();
+    expect(screen.getByText("Hybrid search")).toBeInTheDocument();
+  });
+
+  it("marks each row with its own status so failures stand apart from warnings and skips", () => {
+    render(<ConnectionChecklist result={FAILING} />);
+
+    expect(screen.getByLabelText("Failed")).toBeInTheDocument();
+    expect(screen.getByLabelText("Warning")).toBeInTheDocument();
+    expect(screen.getByLabelText("Skipped")).toBeInTheDocument();
+  });
+
+  it("hides the raw details behind Show details, and only for rows that have any", () => {
+    render(<ConnectionChecklist result={FAILING} />);
+
+    expect(screen.getAllByRole("button", { name: "Show details" })).toHaveLength(1);
+    expect(screen.queryByText(/text-embedding-3-large/)).not.toBeInTheDocument();
+  });
+
+  it("reveals the details payload when Show details is clicked", async () => {
+    const user = userEvent.setup();
+    render(<ConnectionChecklist result={FAILING} />);
+
+    await user.click(screen.getByRole("button", { name: "Show details" }));
+
+    expect(screen.getByText(/text-embedding-3-large/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument();
+  });
+
+  it("offers the curl only when the caller supplies one", () => {
+    const { rerender } = render(<ConnectionChecklist result={FAILING} />);
+    expect(screen.queryByRole("button", { name: "Copy as curl" })).not.toBeInTheDocument();
+
+    rerender(<ConnectionChecklist result={FAILING} curlCommand="curl -X POST ..." />);
+    expect(screen.getByRole("button", { name: "Copy as curl" })).toBeInTheDocument();
+  });
+
+  it("reports success when every check passed", () => {
+    render(
+      <ConnectionChecklist
+        result={{
+          ok: true,
+          summary: "All checks passed.",
+          checks: [{ check: "mongodb_ping", status: "pass", message: "MongoDB is reachable." }],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Connection verified")).toBeInTheDocument();
+    expect(screen.getByLabelText("Passed")).toBeInTheDocument();
+  });
+});

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import { ArrowLeft, CircleHelp } from "lucide-react";
 import { z } from "zod/v4";
 import {
@@ -8,10 +8,19 @@ import {
   CredentialItem,
 } from "@/components/networking";
 import { VectorStore } from "@/components/vector_store_management/types";
-import { Providers, provider_map } from "@/components/provider_info_helpers";
-import { getVectorStoreProviderLogoAndName } from "@/components/vector_store_providers";
+import {
+  getVectorStoreProviderLogoAndName,
+  isBetaVectorStoreProvider,
+  VectorStoreProviders,
+  vectorStoreProviderLogoMap,
+  vectorStoreProviderMap,
+} from "@/components/vector_store_providers";
+import BetaBadge from "@/components/BetaBadge";
 import { Logo } from "@/components/molecules/logo/Logo";
 import VectorStoreTester from "./VectorStoreTester";
+import IngestedFilesCard from "./IngestedFilesCard";
+import VectorStoreConnectionCard from "./connection/VectorStoreConnectionCard";
+import { useVectorStoreConnectionTest } from "./connection/useVectorStoreConnectionTest";
 import { toast } from "@/lib/toast";
 import { FieldGroup } from "@/components/ui/field";
 import { FormField } from "@/components/shared/form/FormField";
@@ -71,6 +80,9 @@ interface CredentialOption {
   value: string | null;
 }
 
+const providerLabel = (provider: string, displayName: string): React.ReactNode =>
+  isBetaVectorStoreProvider(provider) ? <BetaBadge>{displayName}</BetaBadge> : <span>{displayName}</span>;
+
 const labelWithHint = (label: string, hint: string): React.ReactNode => (
   <>
     {label}
@@ -94,6 +106,11 @@ const VectorStoreInfoView: React.FC<VectorStoreInfoViewProps> = ({
   const [isEditing, setIsEditing] = useState<boolean>(editVectorStore);
   const [metadataString, setMetadataString] = useState<string>("{}");
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
+  const connectionTest = useVectorStoreConnectionTest(accessToken);
+
+  const runConnectionTest = useCallback(() => {
+    void connectionTest.run({ vector_store_id: vectorStoreId });
+  }, [connectionTest, vectorStoreId]);
 
   const fetchVectorStoreDetails = async () => {
     if (!accessToken) return;
@@ -281,14 +298,16 @@ const VectorStoreInfoView: React.FC<VectorStoreInfoViewProps> = ({
                                 </SelectValue>
                               </SelectTrigger>
                               <SelectContent>
-                                {Object.entries(Providers)
-                                  .filter(([providerEnum]) => providerEnum === "Bedrock")
-                                  .map(([providerEnum, providerDisplayName]) => (
-                                    <SelectItem key={providerEnum} value={provider_map[providerEnum]}>
-                                      <Logo provider={providerEnum} label={providerDisplayName} className="w-5 h-5" />
-                                      <span>{providerDisplayName}</span>
-                                    </SelectItem>
-                                  ))}
+                                {Object.entries(VectorStoreProviders).map(([providerEnum, providerDisplayName]) => (
+                                  <SelectItem key={providerEnum} value={vectorStoreProviderMap[providerEnum]}>
+                                    <Logo
+                                      src={vectorStoreProviderLogoMap[providerDisplayName]}
+                                      label={providerDisplayName}
+                                      className="w-5 h-5"
+                                    />
+                                    {providerLabel(vectorStoreProviderMap[providerEnum], providerDisplayName)}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           )}
@@ -370,11 +389,21 @@ const VectorStoreInfoView: React.FC<VectorStoreInfoViewProps> = ({
               </Card>
             </div>
           ) : (
-            <div>
+            <div className="space-y-4">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium">Vector Store Details</h3>
                 {is_admin && <Button onClick={startEditing}>Edit Vector Store</Button>}
               </div>
+
+              <VectorStoreConnectionCard
+                provider={vectorStoreDetails.custom_llm_provider || "bedrock"}
+                litellmParams={vectorStoreDetails.litellm_params}
+                connectionTest={connectionTest}
+                onRunConnectionTest={runConnectionTest}
+              />
+
+              <IngestedFilesCard files={vectorStoreDetails.vector_store_metadata?.ingested_files} />
+
               <Card>
                 <CardContent>
                   <div className="space-y-4">
@@ -401,6 +430,7 @@ const VectorStoreInfoView: React.FC<VectorStoreInfoViewProps> = ({
                             <>
                               <Logo src={logo} label={displayName} className="w-5 h-5" />
                               <Badge variant="secondary">{displayName}</Badge>
+                              {isBetaVectorStoreProvider(provider) && <BetaBadge />}
                             </>
                           );
                         })()}
@@ -432,7 +462,13 @@ const VectorStoreInfoView: React.FC<VectorStoreInfoViewProps> = ({
         </TabsContent>
 
         <TabsContent value="test" keepMounted>
-          <VectorStoreTester vectorStoreId={vectorStoreDetails.vector_store_id} accessToken={accessToken || ""} />
+          {/* Keyed on the store id so search options built for one store's capabilities can't leak into another's. */}
+          <VectorStoreTester
+            key={vectorStoreDetails.vector_store_id}
+            vectorStoreId={vectorStoreDetails.vector_store_id}
+            accessToken={accessToken || ""}
+            litellmParams={vectorStoreDetails.litellm_params}
+          />
         </TabsContent>
       </Tabs>
     </div>

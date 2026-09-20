@@ -3,10 +3,15 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import CreateVectorStore from "./CreateVectorStore";
 import * as networking from "@/components/networking";
+import { getProviderSpecificFields } from "@/components/vector_store_providers";
 
 // Mock the networking module
 vi.mock("@/components/networking", () => ({
   ragIngestCall: vi.fn(),
+}));
+
+vi.mock("@/components/llm_calls/fetch_models", () => ({
+  fetchAvailableModels: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock vector_store_providers
@@ -17,6 +22,7 @@ vi.mock("@/components/vector_store_providers", () => ({
     AZURE_OPENAI: "Azure OpenAI",
     S3Vectors: "AWS S3 Vectors",
     Valkey: "Valkey",
+    MongoDB: "MongoDB",
   },
   vectorStoreProviderMap: {
     BEDROCK: "bedrock",
@@ -24,6 +30,7 @@ vi.mock("@/components/vector_store_providers", () => ({
     AZURE_OPENAI: "azure_openai",
     S3Vectors: "s3_vectors",
     Valkey: "valkey",
+    MongoDB: "mongodb",
   },
   vectorStoreProviderLogoMap: {
     "Amazon Bedrock": "https://example.com/bedrock.png",
@@ -31,6 +38,7 @@ vi.mock("@/components/vector_store_providers", () => ({
     "Azure OpenAI": "https://example.com/azure.png",
     "AWS S3 Vectors": "https://example.com/aws.png",
     Valkey: "https://example.com/valkey.svg",
+    MongoDB: "https://example.com/mongodb.svg",
   },
   getProviderSpecificFields: vi.fn((provider: string) => {
     if (provider === "s3_vectors") {
@@ -64,6 +72,15 @@ vi.mock("@/components/vector_store_providers", () => ({
     return [];
   }),
 }));
+
+const getFileUploadInput = (): HTMLInputElement => document.querySelector('input[type="file"]') as HTMLInputElement;
+
+const SUCCESSFUL_INGEST_RESULT = {
+  id: "test-id",
+  status: "completed" as const,
+  vector_store_id: "vs_123",
+  file_id: "file_123",
+};
 
 describe("CreateVectorStore", () => {
   beforeEach(() => {
@@ -118,7 +135,7 @@ describe("CreateVectorStore", () => {
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
 
     // Find the upload input (it's hidden but accessible)
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
 
     await act(async () => {
       if (uploadInput) {
@@ -133,19 +150,14 @@ describe("CreateVectorStore", () => {
 
   it("should call ragIngestCall when create button is clicked", async () => {
     const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
-    mockRagIngestCall.mockResolvedValue({
-      id: "test-id",
-      status: "completed",
-      vector_store_id: "vs_123",
-      file_id: "file_123",
-    });
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
 
     const onSuccess = vi.fn();
     render(<CreateVectorStore accessToken="test-token" onSuccess={onSuccess} />);
 
     // Create a mock file
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
 
     await act(async () => {
       if (uploadInput) {
@@ -174,24 +186,20 @@ describe("CreateVectorStore", () => {
         undefined,
         undefined,
         {},
+        undefined,
       );
     });
   });
 
   it("should display success message after successful creation", async () => {
     const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
-    mockRagIngestCall.mockResolvedValue({
-      id: "test-id",
-      status: "completed",
-      vector_store_id: "vs_123",
-      file_id: "file_123",
-    });
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
 
     render(<CreateVectorStore accessToken="test-token" />);
 
     // Create and upload a mock file
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
 
     await act(async () => {
       if (uploadInput) {
@@ -254,7 +262,7 @@ describe("CreateVectorStore", () => {
 
     // Upload a file first
     const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
-    const uploadInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const uploadInput = getFileUploadInput();
 
     await act(async () => {
       if (uploadInput) {
@@ -282,5 +290,180 @@ describe("CreateVectorStore", () => {
 
     // Should show validation warning (mocked message.warning would be called)
     // The actual validation happens in the component
+  });
+});
+
+describe("CreateVectorStore boolean, list and weight provider fields", () => {
+  const BOOLEAN_LIST_WEIGHT_FIELDS = [
+    {
+      name: "hybrid_enabled",
+      label: "Hybrid Search",
+      tooltip: "Blend vector similarity with keyword matching",
+      required: false,
+      type: "boolean" as const,
+    },
+    {
+      name: "filter_fields",
+      label: "Filter Fields",
+      tooltip: "Fields to filter on, comma separated",
+      placeholder: "metadata.department, metadata.year",
+      required: false,
+      type: "string-list" as const,
+    },
+    {
+      name: "vector_weight",
+      label: "Vector Weight",
+      tooltip: "How much of the rank comes from vector similarity",
+      required: false,
+      type: "weight-split" as const,
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The default selected provider (bedrock) gets these fields for this describe block only.
+    vi.mocked(getProviderSpecificFields).mockImplementation((provider: string) =>
+      provider === "bedrock" ? BOOLEAN_LIST_WEIGHT_FIELDS : [],
+    );
+  });
+
+  const uploadFile = async () => {
+    const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
+    const uploadInput = getFileUploadInput();
+    await act(async () => {
+      fireEvent.change(uploadInput, { target: { files: [file] } });
+    });
+    expect(await screen.findByText("Uploaded Documents (1)")).toBeInTheDocument();
+  };
+
+  it("renders a switch for a boolean field and a slider for a weight-split field, not bare text inputs", () => {
+    render(<CreateVectorStore accessToken="test-token" />);
+
+    expect(screen.getByRole("switch", { name: /Hybrid Search/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("slider", { hidden: true }).length).toBeGreaterThan(0);
+    expect(screen.getByPlaceholderText("metadata.department, metadata.year")).toBeInTheDocument();
+  });
+
+  it("submits a boolean field as true and a string-list field as an array, not as literal text", async () => {
+    const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+    render(<CreateVectorStore accessToken="test-token" />);
+    await uploadFile();
+
+    await user.click(screen.getByRole("switch", { name: /Hybrid Search/ }));
+    fireEvent.change(screen.getByPlaceholderText("metadata.department, metadata.year"), {
+      target: { value: "metadata.department, metadata.year" },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Create Vector Store/i }));
+    });
+
+    await waitFor(() => expect(mockRagIngestCall).toHaveBeenCalledTimes(1));
+    const providerParams = mockRagIngestCall.mock.calls[0][6];
+    expect(providerParams).toMatchObject({
+      hybrid_enabled: true,
+      filter_fields: ["metadata.department", "metadata.year"],
+    });
+  });
+
+  it("clamps the weight slider to [0, 1] and submits it as a vector/text split object", async () => {
+    const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
+
+    render(<CreateVectorStore accessToken="test-token" />);
+    await uploadFile();
+
+    const slider = screen.getAllByRole("slider", { hidden: true })[0];
+    fireEvent.keyDown(slider, { key: "ArrowRight", keyCode: 39, which: 39 });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Create Vector Store/i }));
+    });
+
+    await waitFor(() => expect(mockRagIngestCall).toHaveBeenCalledTimes(1));
+    const providerParams = mockRagIngestCall.mock.calls[0][6] as Record<string, unknown>;
+    const weight = providerParams.vector_weight as { vector: number; text: number };
+    expect(weight.vector).toBeGreaterThanOrEqual(0);
+    expect(weight.vector).toBeLessThanOrEqual(1);
+    expect(weight.vector + weight.text).toBeCloseTo(1);
+  });
+});
+
+describe("CreateVectorStore ingest request body", () => {
+  const MONGO_INGEST_FIELDS = [
+    {
+      name: "api_base",
+      label: "Sidecar URL",
+      tooltip: "The MongoDB sidecar URL",
+      placeholder: "http://127.0.0.1:8080",
+      required: true,
+      type: "text" as const,
+    },
+    {
+      name: "api_key",
+      label: "Sidecar API Key",
+      tooltip: "The MongoDB sidecar API key",
+      placeholder: "sidecar-api-key",
+      required: true,
+      type: "text" as const,
+    },
+    {
+      name: "embedding_model",
+      label: "Embedding Model",
+      tooltip: "The embedding model that produced the stored vectors",
+      placeholder: "text-embedding-3-small",
+      required: true,
+      type: "text" as const,
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getProviderSpecificFields).mockImplementation((provider: string) =>
+      provider === "mongodb" ? MONGO_INGEST_FIELDS : [],
+    );
+  });
+
+  it("sends litellm_embedding_model, not embedding_model, and the chunking strategy in the ingest request", async () => {
+    const mockRagIngestCall = vi.spyOn(networking, "ragIngestCall");
+    mockRagIngestCall.mockResolvedValue(SUCCESSFUL_INGEST_RESULT);
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+    render(<CreateVectorStore accessToken="test-token" />);
+
+    const file = new File(["test content"], "test.pdf", { type: "application/pdf" });
+    const uploadInput = getFileUploadInput();
+    await act(async () => {
+      fireEvent.change(uploadInput, { target: { files: [file] } });
+    });
+    expect(await screen.findByText("Uploaded Documents (1)")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /Provider/ }));
+    await user.click(await screen.findByText("MongoDB"));
+
+    fireEvent.change(screen.getByPlaceholderText("http://127.0.0.1:8080"), {
+      target: { value: "http://127.0.0.1:8080" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("sidecar-api-key"), { target: { value: "sidecar-key" } });
+    fireEvent.change(screen.getByPlaceholderText("text-embedding-3-small"), {
+      target: { value: "text-embedding-3-small" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Chunking" }));
+    fireEvent.change(screen.getByPlaceholderText("1000"), { target: { value: "800" } });
+    fireEvent.change(screen.getByPlaceholderText("200"), { target: { value: "100" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Create Vector Store/i }));
+    });
+
+    await waitFor(() => expect(mockRagIngestCall).toHaveBeenCalledTimes(1));
+    const [, , , , , , providerParams, chunkingStrategy] = mockRagIngestCall.mock.calls[0];
+    expect(providerParams).toMatchObject({ litellm_embedding_model: "text-embedding-3-small" });
+    expect(providerParams).not.toHaveProperty("embedding_model");
+    expect(chunkingStrategy).toEqual({ chunk_size: 800, chunk_overlap: 100 });
   });
 });
