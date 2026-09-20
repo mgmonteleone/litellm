@@ -49,6 +49,30 @@ export const vectorStoreProviderLogoMap: Record<string, string> = {
   [VectorStoreProviders.Valkey]: valkeyLogo.src,
 };
 
+export const VECTOR_STORE_CAPABILITIES = ["Search", "Ingest", "Filters", "Hybrid"] as const;
+
+export type VectorStoreCapability = (typeof VECTOR_STORE_CAPABILITIES)[number];
+
+/**
+ * What each provider's adapter supports today, kept in the UI until the proxy exposes
+ * GET /vector_store/providers. Every provider searches; the rest vary.
+ */
+const CAPABILITIES_BY_PROVIDER: Readonly<Record<string, readonly VectorStoreCapability[]>> = {
+  bedrock: ["Search", "Ingest", "Filters"],
+  pg_vector: ["Search"],
+  vertex_ai: ["Search", "Ingest"],
+  "vertex_ai/search_api": ["Search"],
+  openai: ["Search", "Ingest", "Filters"],
+  azure: ["Search", "Ingest", "Filters"],
+  milvus: ["Search"],
+  mongodb: ["Search", "Ingest", "Filters", "Hybrid"],
+  s3_vectors: ["Search", "Ingest"],
+  valkey: ["Search"],
+};
+
+export const vectorStoreCapabilities = (providerValue: string | null | undefined): readonly VectorStoreCapability[] =>
+  CAPABILITIES_BY_PROVIDER[(providerValue ?? "").toLowerCase()] ?? ["Search"];
+
 /**
  * "weight-split" holds one number in [0, 1] and expands to {vector, text} weights that sum to 1.
  * "string-list" holds a comma-separated string and expands to an array.
