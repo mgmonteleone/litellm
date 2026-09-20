@@ -1,0 +1,23 @@
+# Local MongoDB with Atlas Search + Vector Search (mongot) for LiteLLM development.
+# Usage: docker compose -f dev/mongodb/docker-compose.yml up -d
+services:
+  atlas-local:
+    image: mongodb/mongodb-atlas-local:8.2
+    container_name: litellm-atlas-local
+    ports:
+      - "127.0.0.1:27017:27017"
+    environment:
+      MONGODB_INITDB_ROOT_USERNAME: litellm
+      MONGODB_INITDB_ROOT_PASSWORD: litellm-dev-password
+    volumes:
+      - atlas-local-data:/data/db
+      - atlas-local-config:/data/configdb
+    healthcheck:
+      test: ["CMD", "runner", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+volumes:
+  atlas-local-data:
+  atlas-local-config:
