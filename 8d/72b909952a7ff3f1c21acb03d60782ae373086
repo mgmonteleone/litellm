@@ -1,0 +1,37 @@
+litellm/llms/mongodb/vector_stores/diagnostics.py
+  s_d71e62cb6f304c::t_faa2371584ecc7 22,206,309
+  s_d71e62cb6f304c::t_0ca472dcb91cd9 85-87
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_test_connection.py
+  s_d71e62cb6f304c::t_defb483318bd53 185-198
+tests/unit/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_defb483318bd53 312-322
+litellm/proxy/rag_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_faa2371584ecc7 194-195,199-200,205,319
+  s_d71e62cb6f304c::t_42e6b1aefb7ef4 193
+litellm/rag/ingestion/mongodb_ingestion.py
+  s_d71e62cb6f304c::t_faa2371584ecc7 24,32,55,57-58,98,145,149,213
+  s_d71e62cb6f304c::t_0ca472dcb91cd9 59-61
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_faa2371584ecc7 686-691,698-701,835
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_faa2371584ecc7 254-266
+tests/test_litellm/proxy/rag_endpoints/test_rag_endpoints.py
+  s_d71e62cb6f304c::t_620d63881eb7bb 61,67,94,110,115,163-165,167-169,186,206,219,222,688-695,729-731,768-775,818-820,844,866-868,920-930,970-980,1167,1184-1188
+  s_d71e62cb6f304c::t_defb483318bd53 1175-1183,1189-1192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "8d72b909952a7ff3f1c21acb03d60782ae373086",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
