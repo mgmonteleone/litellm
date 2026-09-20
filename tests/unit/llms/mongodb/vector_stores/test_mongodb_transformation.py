@@ -253,39 +253,45 @@ def test_unknown_store_params_are_named_with_the_closest_supported_key(typo: str
 
 
 def test_unknown_store_param_without_a_close_match_is_still_named() -> None:
+    """A garbled mongodb_ field is always a typo in this store's own namespace, close match or not."""
     from litellm.llms.mongodb.vector_stores.transformation import validated_params
 
-    with pytest.raises(litellm.BadRequestError, match=r"'zzzzzzzz'"):
-        validated_params({**BASE_PARAMS, "zzzzzzzz": 1})
+    with pytest.raises(litellm.BadRequestError, match=r"'mongodb_zzzzzzzz'"):
+        validated_params({**BASE_PARAMS, "mongodb_zzzzzzzz": 1})
 
 
-def test_generic_and_plumbing_params_are_not_mistaken_for_typos() -> None:
-    """The registry, the SDK and the proxy all merge their own keys into litellm_params."""
-    from litellm.llms.mongodb.vector_stores.transformation import validated_params
-    from litellm.types.utils import all_litellm_params
-    from litellm.types.vector_stores import MANAGED_STORE_CALLER_OPTIONS
+@pytest.mark.parametrize(
+    ("typo", "suggestion"),
+    [
+        ("embedding_model", "litellm_embedding_model"),
+        ("dimensions", "mongodb_dimensions"),
+    ],
+)
+def test_proxy_plumbing_does_not_mask_real_typos(typo: str, suggestion: str) -> None:
+    """The plumbing tolerance below must not swallow a genuine typo made alongside it."""
+    from litellm.types.router import GenericLiteLLMParams
 
-    registry_defaults: Final = {
-        "use_xai_oauth": False,
-        "use_litellm_proxy": False,
-        "use_in_pass_through": False,
-        "allow_client_keepalive_override": False,
-        "merge_reasoning_content_in_choices": False,
-    }
-    generic_store_keys: Final = {
-        "vector_store_name": "handbook",
-        "vector_store_description": "policies",
-        "vector_store_metadata": {"ingested_files": []},
-        "litellm_credential_name": "mongo-creds",
-        "custom_llm_provider": "mongodb",
-    }
-    plumbing: Final = dict.fromkeys(all_litellm_params, None)
-    caller_options: Final = dict.fromkeys(MANAGED_STORE_CALLER_OPTIONS, None)
-
-    params: Final = validated_params(
-        {**BASE_PARAMS, **registry_defaults, **generic_store_keys, **caller_options, **plumbing}
+    litellm_params: Final = GenericLiteLLMParams(
+        **{**BASE_PARAMS, "model": None, "user": "some-user", "disable_fallbacks": True, typo: "x"}
     )
-    assert params.mongodb_database == "policies"
+
+    with pytest.raises(litellm.BadRequestError, match=rf"did you mean '{suggestion}'"):
+        MongoDBVectorStoreConfig().validate_environment(headers={}, litellm_params=litellm_params)
+
+
+def test_proxy_plumbing_params_are_not_mistaken_for_typos() -> None:
+    """common_request_processing.py writes model=None into every vector store search's litellm_params, and
+    litellm_pre_call_utils.py merges in user and disable_fallbacks from the virtual key. None of the three
+    are MongoDB parameters, and a MongoDB store search must not 400 because of them."""
+    from litellm.types.router import GenericLiteLLMParams
+
+    litellm_params: Final = GenericLiteLLMParams(
+        **{**BASE_PARAMS, "model": None, "user": "some-user", "disable_fallbacks": True}
+    )
+
+    result: Final = MongoDBVectorStoreConfig().validate_environment(headers={}, litellm_params=litellm_params)
+
+    assert result["Authorization"] == "Bearer test-sidecar-key"
 
 
 def test_validate_environment_rejects_unknown_params_too() -> None:

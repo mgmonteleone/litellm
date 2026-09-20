@@ -184,9 +184,14 @@ class MongoDBVectorStoreParams(BaseModel):
 
 
 _MONGODB_PARAM_PREFIX: Final = "mongodb_"
+_EMBEDDING_PARAM_PREFIX: Final = "litellm_embedding_"
 _KNOWN_MONGODB_PARAMS: Final = frozenset(
     name for name in MongoDBVectorStoreParams.model_fields if name.startswith(_MONGODB_PARAM_PREFIX)
 )
+_KNOWN_EMBEDDING_PARAMS: Final = frozenset(
+    name for name in MongoDBVectorStoreParams.model_fields if name.startswith(_EMBEDDING_PARAM_PREFIX)
+)
+_MONGODB_NAMESPACE_FIELDS: Final = _KNOWN_MONGODB_PARAMS | _KNOWN_EMBEDDING_PARAMS
 _GENERIC_STORE_PARAMS: Final = frozenset(
     {
         "custom_llm_provider",
@@ -208,15 +213,37 @@ _SUPPORTED_PARAMS: Final = frozenset(
         *all_litellm_params,
     }
 )
-_SUGGESTION_CANDIDATES: Final = tuple(
-    sorted(_KNOWN_MONGODB_PARAMS | _GENERIC_STORE_PARAMS | {"litellm_embedding_model", "litellm_embedding_config"})
-)
+_SUGGESTION_CANDIDATES: Final = tuple(sorted(_MONGODB_NAMESPACE_FIELDS | _GENERIC_STORE_PARAMS))
 _RESPONSE_ADAPTER: Final = TypeAdapter(VectorStoreSearchResponse)
+_MAX_RENDERED_KEY_LENGTH: Final = 64
+# 0.7 catches a dropped/garbled "mongodb_"/"litellm_embedding_" prefix (e.g. "dimensions", "hybrid_search")
+# while staying well clear of proxy plumbing keys like "user" or "litellm_call_id", which score under 0.65.
+_TYPO_MATCH_CUTOFF: Final = 0.7
 
 
-def _unknown_param_hint(key: str) -> str:
-    closest: Final = get_close_matches(key, _SUGGESTION_CANDIDATES, n=1)
-    return f"'{key}' (did you mean '{closest[0]}'?)" if closest else f"'{key}'"
+def _is_mongodb_namespaced(key: str) -> bool:
+    return key.startswith(_MONGODB_PARAM_PREFIX) or key.startswith(_EMBEDDING_PARAM_PREFIX)
+
+
+def _typo_hint(key: str) -> str | None:
+    matches: Final = get_close_matches(key, _SUGGESTION_CANDIDATES, n=1, cutoff=_TYPO_MATCH_CUTOFF)
+    return matches[0] if matches else None
+
+
+def _rejected_param(key: str) -> tuple[str, str | None] | None:
+    """A key the operator meant for this store: either a garbled mongodb_/litellm_embedding_ field, or an
+    unrecognised key close enough to a real one to be a typo. Everything else is plumbing and passes through."""
+    if _is_mongodb_namespaced(key):
+        return None if key in _MONGODB_NAMESPACE_FIELDS else (key, _typo_hint(key))
+    if key in _SUPPORTED_PARAMS:
+        return None
+    hint: Final = _typo_hint(key)
+    return (key, hint) if hint is not None else None
+
+
+def _render_rejection(key: str, hint: str | None) -> str:
+    rendered: Final = repr(key)[:_MAX_RENDERED_KEY_LENGTH]
+    return f"{rendered} (did you mean '{hint}'?)" if hint else rendered
 
 
 def reject_unknown_params(litellm_params: Mapping[str, object]) -> None:
@@ -227,10 +254,11 @@ def reject_unknown_params(litellm_params: Mapping[str, object]) -> None:
             "MongoDB vector stores now use the BETA sidecar. Move mongodb_connection_string to "
             "MONGODB_CONNECTION_STRING in the sidecar, remove it from LiteLLM, and configure api_base and api_key."
         )
-    unknown: Final = sorted(key for key in litellm_params if key not in _SUPPORTED_PARAMS)
-    if unknown:
+    rejected: Final = sorted(pair for key in litellm_params if (pair := _rejected_param(key)) is not None)
+    if rejected:
         raise config_error(
-            f"Unrecognised MongoDB vector store parameter(s): {', '.join(_unknown_param_hint(key) for key in unknown)}. "
+            "Unrecognised MongoDB vector store parameter(s): "
+            f"{', '.join(_render_rejection(key, hint) for key, hint in rejected)}. "
             f"Supported MongoDB parameters: {', '.join(sorted(_KNOWN_MONGODB_PARAMS))}, "
             "litellm_embedding_model, litellm_embedding_config."
         )
