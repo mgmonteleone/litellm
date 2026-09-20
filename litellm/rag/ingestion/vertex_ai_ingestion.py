@@ -114,6 +114,7 @@ class VertexAIRAGIngestion(BaseRAGIngestion, VertexBase):
         chunks: list[str],
         embeddings: list[list[float]] | None,
         existing_file_id: str | None = None,
+        display_filename: str | None = None,
     ) -> tuple[str | None, str | None]:
         """
         Store content in Vertex AI RAG corpus.

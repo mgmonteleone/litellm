@@ -5,7 +5,8 @@ strict UTF-8 decode), never by trusting the client-supplied filename or
 content-type. Uploads are restricted to an allowlist of non-executable formats,
 capped in size, screened for archives, and passed through a dependency-injected
 malware scanner before they are accepted. Accepted uploads are given a
-server-generated filename so the client-controlled name never reaches storage.
+server-generated filename so the client-controlled name never reaches storage,
+plus a sanitized copy of the uploaded name that is only ever displayed back.
 """
 
 from __future__ import annotations
@@ -14,12 +15,16 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Final, Protocol, TypeAlias, runtime_checkable
 
 from typing_extensions import assert_never
 
 MAX_UPLOAD_SIZE_BYTES: Final = 512 * 1024 * 1024
+MAX_DISPLAY_FILENAME_LENGTH: Final = 120
+DISPLAY_FILENAME_FALLBACK: Final = "document"
+_MAX_DISPLAY_FILENAME_EXTENSION_LENGTH: Final = 16
 
 EICAR_TEST_SIGNATURE: Final = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
 
@@ -126,6 +131,7 @@ ContentInspection: TypeAlias = AllowedContent | DisallowedContent
 @dataclass(frozen=True, slots=True)
 class SecuredUpload:
     safe_filename: str
+    display_filename: str
     content_type: str
     detected_format: DetectedFormat
     size_bytes: int
@@ -206,6 +212,23 @@ def generate_safe_filename(detected_format: DetectedFormat) -> str:
     return f"{uuid.uuid4().hex}.{_SAFE_EXTENSION[detected_format]}"
 
 
+def sanitize_display_filename(filename: str) -> str:
+    """Reduce a client-supplied upload name to something safe to show back to a reader.
+
+    Path components, separators and non-printable characters are dropped and the length
+    is capped while the extension is kept. The result is a label only: the bytes are
+    still stored under the name :func:`generate_safe_filename` produces.
+    """
+    basename: Final = PurePosixPath(filename.replace("\\", "/")).name
+    cleaned: Final = "".join(character for character in basename if character.isprintable()).strip(" .")
+    if not cleaned:
+        return DISPLAY_FILENAME_FALLBACK
+    if len(cleaned) <= MAX_DISPLAY_FILENAME_LENGTH:
+        return cleaned
+    extension: Final = PurePosixPath(cleaned).suffix[:_MAX_DISPLAY_FILENAME_EXTENSION_LENGTH]
+    return cleaned[: MAX_DISPLAY_FILENAME_LENGTH - len(extension)] + extension
+
+
 def _reject_disallowed(kind: DisallowedKind) -> RejectedUpload:
     match kind:
         case DisallowedKind.ARCHIVE:
@@ -246,6 +269,7 @@ def _scan_rejection(content: bytes, scanner: MalwareScanner) -> RejectedUpload |
 
 def validate_upload(
     *,
+    filename: str,
     content: bytes,
     scanner: MalwareScanner,
     max_size_bytes: int = MAX_UPLOAD_SIZE_BYTES,
@@ -269,6 +293,7 @@ def validate_upload(
 
     return SecuredUpload(
         safe_filename=generate_safe_filename(inspection.format),
+        display_filename=sanitize_display_filename(filename),
         content_type=_SAFE_CONTENT_TYPE[inspection.format],
         detected_format=inspection.format,
         size_bytes=size,

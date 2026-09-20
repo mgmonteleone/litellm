@@ -99,6 +99,7 @@ async def _execute_ingest_pipeline(
     file_url: str | None = None,
     file_id: str | None = None,
     router: Router | None = None,
+    display_filename: str | None = None,
 ) -> RAGIngestResponse:
     """
     Execute the RAG ingest pipeline using provider-specific implementation.
@@ -109,6 +110,8 @@ async def _execute_ingest_pipeline(
         file_url: URL to fetch file from
         file_id: Existing file ID to use
         router: Optional LiteLLM router for load balancing
+        display_filename: Name to record and show the document under, when it differs
+            from the storage name in ``file_data``
 
     Returns:
         RAGIngestResponse with status and IDs
@@ -131,6 +134,7 @@ async def _execute_ingest_pipeline(
         file_data=file_data,
         file_url=file_url,
         file_id=file_id,
+        display_filename=display_filename,
     )
 
 
@@ -145,6 +149,7 @@ async def aingest(
     file_url: str | None = None,
     file_id: str | None = None,
     timeout: float | httpx.Timeout | None = None,
+    display_filename: str | None = None,
     **kwargs,
 ) -> RAGIngestResponse:
     """
@@ -183,6 +188,7 @@ async def aingest(
             file_url=file_url,
             file_id=file_id,
             timeout=timeout,
+            display_filename=display_filename,
             **kwargs,
         )
 
@@ -453,6 +459,7 @@ def ingest(
     file_url: str | None = None,
     file_id: str | None = None,
     timeout: float | httpx.Timeout | None = None,
+    display_filename: str | None = None,
     **kwargs,
 ) -> RAGIngestResponse | Coroutine[None, None, RAGIngestResponse]:
     """
@@ -500,6 +507,7 @@ def ingest(
                 file_url=file_url,
                 file_id=file_id,
                 router=router,
+                display_filename=display_filename,
             )
         else:
             return asyncio.get_event_loop().run_until_complete(
@@ -509,6 +517,7 @@ def ingest(
                     file_url=file_url,
                     file_id=file_id,
                     router=router,
+                    display_filename=display_filename,
                 )
             )
     except Exception as e:
