@@ -199,15 +199,33 @@ describe("VectorStoreTester options", () => {
     mockSearch.mockResolvedValue(searchResponse);
   });
 
-  it("sends the default result count and nothing else the admin did not set", async () => {
+  it("shows the provider's own default result count without sending it unless the admin changes it", async () => {
     const user = userEvent.setup();
     renderTester();
+
+    expect(screen.getAllByRole("slider", { hidden: true })[0]).toHaveAttribute("aria-valuenow", "5");
 
     fireEvent.change(queryInput(), { target: { value: "hello" } });
     await user.click(searchButton());
 
     await waitFor(() => expect(mockSearch).toHaveBeenCalledTimes(1));
-    expect(searchOptions()).toEqual({ max_num_results: 5 });
+    expect(searchOptions()).toEqual({});
+  });
+
+  it("sends max_num_results once the admin moves the slider away from the default", async () => {
+    const user = userEvent.setup();
+    renderTester();
+
+    fireEvent.keyDown(screen.getAllByRole("slider", { hidden: true })[0], {
+      key: "ArrowRight",
+      keyCode: 39,
+      which: 39,
+    });
+    fireEvent.change(queryInput(), { target: { value: "hello" } });
+    await user.click(searchButton());
+
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledTimes(1));
+    expect(searchOptions()).toMatchObject({ max_num_results: 6 });
   });
 
   it("sends a score threshold as a number under ranking_options", async () => {

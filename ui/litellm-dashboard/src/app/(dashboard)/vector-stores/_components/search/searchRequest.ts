@@ -1,5 +1,8 @@
 import type { VectorStoreFilter } from "./searchFilters";
 
+/** What the provider itself defaults to when max_num_results is left out of the request. */
+export const DEFAULT_MAX_NUM_RESULTS = 5;
+
 export interface SearchOptions {
   maxNumResults?: number;
   scoreThreshold?: number;

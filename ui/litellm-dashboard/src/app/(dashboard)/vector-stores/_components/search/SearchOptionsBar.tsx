@@ -13,9 +13,11 @@ import { Switch } from "@/components/ui/switch";
 
 import SearchFilterBuilder from "./SearchFilterBuilder";
 import type { FilterGroup } from "./searchFilters";
+import { DEFAULT_MAX_NUM_RESULTS } from "./searchRequest";
 
 export interface SearchOptionsState {
-  maxNumResults: number;
+  /** Undefined until the admin moves the slider, so the provider's own default is sent as-is. */
+  maxNumResults: number | undefined;
   scoreThreshold: string;
   hybrid: boolean;
   filters: FilterGroup;
@@ -43,12 +45,14 @@ export const SearchOptionsBar: React.FC<SearchOptionsBarProps> = ({ value, onCha
             min={1}
             max={50}
             step={1}
-            value={value.maxNumResults}
+            value={value.maxNumResults ?? DEFAULT_MAX_NUM_RESULTS}
             onValueChange={(next: number | readonly number[]) =>
               onChange({ ...value, maxNumResults: Array.isArray(next) ? next[0] : (next as number) })
             }
           />
-          <span className="w-6 text-sm tabular-nums text-muted-foreground">{value.maxNumResults}</span>
+          <span className="w-6 text-sm tabular-nums text-muted-foreground">
+            {value.maxNumResults ?? DEFAULT_MAX_NUM_RESULTS}
+          </span>
         </div>
       </Field>
 

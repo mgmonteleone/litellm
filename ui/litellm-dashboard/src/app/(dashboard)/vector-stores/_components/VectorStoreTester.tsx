@@ -66,7 +66,7 @@ const SearchEntryBody: React.FC<{ entry: SearchEntry }> = ({ entry }) => {
 };
 
 const initialOptions = (filterKeys: readonly string[]): SearchOptionsState => ({
-  maxNumResults: 5,
+  maxNumResults: undefined,
   scoreThreshold: "",
   hybrid: false,
   filters: newGroup([newCondition(filterKeys[0] ?? "")]),
