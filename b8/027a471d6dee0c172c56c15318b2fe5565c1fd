@@ -1,0 +1,47 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchResultCard.test.tsx
+  s_d71e62cb6f304c::t_c4dbd9133eacc7 1-79
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTester.tsx
+  s_d71e62cb6f304c::t_1d188dfe325ce6 44-47,65
+  s_d71e62cb6f304c::t_65184ce6cb1a0e 172
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/searchFilters.ts
+  s_d71e62cb6f304c::t_0c8dd98c48498d 86-96
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchFilterBuilder.tsx
+  s_d71e62cb6f304c::t_761756c94464b5 88-93
+  s_d71e62cb6f304c::t_4b3331d357fcbd 13,35-50,52-60
+  s_d71e62cb6f304c::t_f6af6b96ff762c 62-66,68-69,72-74,79,81-85
+  s_25c805ebe232f3::t_29a222af8b5721 61
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/searchFilters.test.ts
+  s_d71e62cb6f304c::t_ad3914a0c46098 21-42
+  s_d71e62cb6f304c::t_d1e9254a988808 6
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchFilterBuilder.test.tsx
+  s_d71e62cb6f304c::t_2ff87514a2f4c8 1-52
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchResultCard.tsx
+  s_d71e62cb6f304c::t_8ca49bf3ee4be7 108-123
+  s_d71e62cb6f304c::t_8d169dfa2f8a26 26-42
+  s_d71e62cb6f304c::t_0fa6606cc61ce4 7
+  s_d71e62cb6f304c::t_2197eb4cb86ff5 67-68,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "b8027a471d6dee0c172c56c15318b2fe5565c1fd",
+  "prompts": {},
+  "sessions": {
+    "s_25c805ebe232f3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f961db08-89fd-42a6-98be-0d21942ae41b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    },
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
