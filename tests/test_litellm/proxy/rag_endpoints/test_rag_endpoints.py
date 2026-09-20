@@ -282,7 +282,7 @@ VERTEX_REGISTRY_STORE = {
 }
 UNSUPPORTED_INGEST_PROVIDER_ERROR = (
     "Provider '{provider}' is not supported for RAG ingestion. "
-    "Supported providers: openai, bedrock, gemini, s3_vectors, vertex_ai"
+    "Supported providers: openai, bedrock, gemini, mongodb, s3_vectors, vertex_ai"
 )
 
 

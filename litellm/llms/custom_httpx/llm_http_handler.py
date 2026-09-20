@@ -10232,9 +10232,10 @@ class BaseLLMHTTPHandler:
         (
             url,
             request_body,
-        ) = vector_store_provider_config.transform_create_vector_store_request(
+        ) = await vector_store_provider_config.atransform_create_vector_store_request_with_litellm_params(
             vector_store_create_optional_params=vector_store_create_optional_params,
             api_base=api_base,
+            litellm_params=dict(litellm_params),  # mutable-ok: the provider hook takes a plain mapping copy
         )
 
         logging_obj.pre_call(
@@ -10304,9 +10305,10 @@ class BaseLLMHTTPHandler:
         (
             url,
             request_body,
-        ) = vector_store_provider_config.transform_create_vector_store_request(
+        ) = vector_store_provider_config.transform_create_vector_store_request_with_litellm_params(
             vector_store_create_optional_params=vector_store_create_optional_params,
             api_base=api_base,
+            litellm_params=dict(litellm_params),  # mutable-ok: the provider hook takes a plain mapping copy
         )
 
         logging_obj.pre_call(
