@@ -1,0 +1,19 @@
+ui/litellm-dashboard/src/lib/http/schema.d.ts
+  s_d71e62cb6f304c::t_37fa69267387d8 65140-65141,65143-65151,65153-65165,65196,65201-65204,65206-65212,65214-65226,66965-66972,66974-66982,66984-66996,67090-67094,67096,67103-67106,67108-67114,67116-67123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "e7383cc048aa64e04d3ae81983e006fcf7e15e1f",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
