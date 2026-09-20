@@ -462,7 +462,9 @@ const VectorStoreInfoView: React.FC<VectorStoreInfoViewProps> = ({
         </TabsContent>
 
         <TabsContent value="test" keepMounted>
+          {/* Keyed on the store id so search options built for one store's capabilities can't leak into another's. */}
           <VectorStoreTester
+            key={vectorStoreDetails.vector_store_id}
             vectorStoreId={vectorStoreDetails.vector_store_id}
             accessToken={accessToken || ""}
             litellmParams={vectorStoreDetails.litellm_params}

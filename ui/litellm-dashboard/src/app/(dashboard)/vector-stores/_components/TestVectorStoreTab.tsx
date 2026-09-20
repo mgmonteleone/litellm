@@ -89,7 +89,10 @@ const TestVectorStoreTab: React.FC<TestVectorStoreTabProps> = ({
       </Card>
 
       {selectedVectorStore && (
+        // Keyed on the store id so switching stores remounts the tester instead of reusing one
+        // whose search options (hybrid, filters) were built for the previous store's capabilities.
         <VectorStoreTester
+          key={selectedVectorStore.vector_store_id}
           vectorStoreId={selectedVectorStore.vector_store_id}
           accessToken={accessToken}
           litellmParams={selectedVectorStore.litellm_params}
