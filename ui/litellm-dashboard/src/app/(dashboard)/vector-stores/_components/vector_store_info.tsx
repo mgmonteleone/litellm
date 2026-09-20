@@ -462,7 +462,11 @@ const VectorStoreInfoView: React.FC<VectorStoreInfoViewProps> = ({
         </TabsContent>
 
         <TabsContent value="test" keepMounted>
-          <VectorStoreTester vectorStoreId={vectorStoreDetails.vector_store_id} accessToken={accessToken || ""} />
+          <VectorStoreTester
+            vectorStoreId={vectorStoreDetails.vector_store_id}
+            accessToken={accessToken || ""}
+            litellmParams={vectorStoreDetails.litellm_params}
+          />
         </TabsContent>
       </Tabs>
     </div>

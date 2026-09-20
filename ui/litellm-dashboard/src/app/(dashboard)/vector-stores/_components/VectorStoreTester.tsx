@@ -1,76 +1,113 @@
-import React, { useState } from "react";
+"use client";
+
+import React, { useMemo, useState } from "react";
+import { Database, Send } from "lucide-react";
+
+import { getProxyBaseUrl, vectorStoreSearchCall } from "@/components/networking";
+import CopyButton from "@/components/shared/CopyButton";
 import { toast } from "@/lib/toast";
-import { ChevronDown, ChevronRight, Database, Send } from "lucide-react";
-import { vectorStoreSearchCall } from "@/components/networking";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 
-interface VectorStoreContent {
-  text: string;
-  type: string;
-}
-
-interface VectorStoreResult {
-  score: number;
-  content: VectorStoreContent[];
-  file_id?: string;
-  filename?: string;
-  attributes?: Record<string, any>;
-}
+import SearchOptionsBar, { type SearchOptionsState } from "./search/SearchOptionsBar";
+import SearchResultCard, { type SearchResult } from "./search/SearchResultCard";
+import { newCondition, newGroup, toOpenAIFilter } from "./search/searchFilters";
+import { buildSearchRequest, searchAsCurl, searchAsPython } from "./search/searchRequest";
 
 interface VectorStoreSearchResponse {
-  object: string;
-  search_query: string;
-  data: VectorStoreResult[];
+  object?: string;
+  search_query?: string;
+  data?: SearchResult[];
 }
 
-interface VectorStoreTesterProps {
+interface SearchEntry {
+  query: string;
+  response: VectorStoreSearchResponse | null;
+  error: string | null;
+  timestamp: number;
+}
+
+export interface VectorStoreTesterProps {
   vectorStoreId: string;
   accessToken: string;
+  /** The store's saved params; supplies the filter fields and whether hybrid is configured. */
+  litellmParams?: Record<string, unknown> | null;
   className?: string;
 }
 
-export const VectorStoreTester: React.FC<VectorStoreTesterProps> = ({ vectorStoreId, accessToken, className = "" }) => {
+const asStringList = (value: unknown): readonly string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+
+const SearchEntryBody: React.FC<{ entry: SearchEntry }> = ({ entry }) => {
+  if (entry.error) {
+    return <p className="text-sm break-words text-destructive">{entry.error}</p>;
+  }
+  const results = entry.response?.data ?? [];
+  if (results.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">No results. Loosen the filters or lower the score threshold.</p>
+    );
+  }
+  return (
+    <ul className="space-y-2">
+      {results.map((result, index) => (
+        <SearchResultCard
+          key={`${result.file_id ?? index}-${index}`}
+          result={result}
+          index={index}
+          topScore={results[0].score}
+        />
+      ))}
+    </ul>
+  );
+};
+
+const initialOptions = (filterKeys: readonly string[]): SearchOptionsState => ({
+  maxNumResults: 5,
+  scoreThreshold: "",
+  hybrid: false,
+  filters: newGroup([newCondition(filterKeys[0] ?? "")]),
+});
+
+export const VectorStoreTester: React.FC<VectorStoreTesterProps> = ({
+  vectorStoreId,
+  accessToken,
+  litellmParams,
+  className = "",
+}) => {
+  const filterKeys = useMemo(() => asStringList(litellmParams?.mongodb_filter_fields), [litellmParams]);
+  const hybridSupported = litellmParams?.mongodb_hybrid_search === true || Boolean(litellmParams?.mongodb_text_index);
+
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<
-    {
-      query: string;
-      response: VectorStoreSearchResponse | null;
-      error: string | null;
-      timestamp: number;
-    }[]
-  >([]);
-  const [expandedResults, setExpandedResults] = useState<Record<string, boolean>>({});
+  const [options, setOptions] = useState<SearchOptionsState>(() => initialOptions(filterKeys));
+  const [history, setHistory] = useState<SearchEntry[]>([]);
+
+  const threshold = Number(options.scoreThreshold);
+  const requestBody = buildSearchRequest(query || "your question here", {
+    maxNumResults: options.maxNumResults,
+    scoreThreshold: options.scoreThreshold.trim() !== "" && Number.isFinite(threshold) ? threshold : undefined,
+    hybrid: options.hybrid,
+    filters: toOpenAIFilter(options.filters),
+  });
 
   const handleSearch = async () => {
     if (!query.trim()) {
       toast.warning("Please enter a search query");
       return;
     }
-
     setIsLoading(true);
-
+    const { query: _sentQuery, ...searchOptions } = requestBody;
     try {
-      const response = await vectorStoreSearchCall(accessToken, vectorStoreId, query);
-
-      const historyEntry = {
-        query,
-        response,
-        error: null,
-        timestamp: Date.now(),
-      };
-
-      setSearchHistory((prev) => [historyEntry, ...prev]);
+      const response = await vectorStoreSearchCall(accessToken, vectorStoreId, query, searchOptions);
+      setHistory((previous) => [{ query, response, error: null, timestamp: Date.now() }, ...previous]);
       setQuery("");
     } catch (error) {
-      console.error("Error searching vector store:", error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      toast.fromError(errorMessage);
-      setSearchHistory((prev) => [{ query, response: null, error: errorMessage, timestamp: Date.now() }, ...prev]);
+      const message = error instanceof Error ? error.message : String(error);
+      toast.fromError(message);
+      setHistory((previous) => [{ query, response: null, error: message, timestamp: Date.now() }, ...previous]);
     } finally {
       setIsLoading(false);
     }
@@ -79,171 +116,54 @@ export const VectorStoreTester: React.FC<VectorStoreTesterProps> = ({ vectorStor
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      handleSearch();
+      void handleSearch();
     }
-  };
-
-  const formatTimestamp = (timestamp: number): string => {
-    return new Date(timestamp).toLocaleString();
-  };
-
-  const clearHistory = () => {
-    setSearchHistory([]);
-    setExpandedResults({});
-    toast.success("Search history cleared");
-  };
-
-  const toggleResultExpansion = (historyIndex: number, resultIndex: number) => {
-    const key = `${historyIndex}-${resultIndex}`;
-    setExpandedResults((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
   };
 
   return (
     <Card className={`w-full py-0 shadow-md ${className}`}>
       <div className="flex h-150 flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between border-b p-4">
           <div className="flex items-center">
             <Database className="mr-2 size-4 text-primary" />
             <h4 className="text-base font-medium text-foreground">Test Vector Store</h4>
           </div>
-          {searchHistory.length > 0 && (
-            <Button variant="outline" size="sm" onClick={clearHistory}>
-              Clear History
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            <CopyButton value={searchAsCurl(getProxyBaseUrl(), vectorStoreId, requestBody)} label="Copy as curl" />
+            <CopyButton value={searchAsPython(getProxyBaseUrl(), vectorStoreId, requestBody)} label="Copy as Python" />
+            {history.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => setHistory([])}>
+                Clear history
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Results Area */}
-        <div className="flex-1 overflow-auto p-4 pb-0">
-          {searchHistory.length === 0 ? (
+        <SearchOptionsBar
+          value={options}
+          onChange={setOptions}
+          filterKeys={filterKeys}
+          hybridSupported={hybridSupported}
+        />
+
+        <div className="flex-1 overflow-auto p-4">
+          {history.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
               <Database className="mb-4 size-12" />
               <p className="text-sm">Test your vector store by entering a search query below</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {searchHistory.map((entry, index) => (
-                <div key={index} className="space-y-2">
-                  {/* User Query */}
-                  <div className="text-right">
-                    <div className="inline-block max-w-[80%] rounded-lg bg-muted p-3 shadow-xs ring-1 ring-foreground/10">
-                      <div className="mb-1 flex items-center gap-2">
-                        <strong className="text-sm">Query</strong>
-                        <span className="text-xs text-muted-foreground">{formatTimestamp(entry.timestamp)}</span>
-                      </div>
-                      <div className="text-left">{entry.query}</div>
-                    </div>
+            <div className="space-y-5">
+              {history.map((entry) => (
+                <div key={entry.timestamp} className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-sm font-medium">{entry.query}</p>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(entry.timestamp).toLocaleTimeString()}
+                    </span>
                   </div>
 
-                  {/* Vector Store Response */}
-                  <div className="text-left">
-                    <div className="inline-block max-w-[80%] rounded-lg bg-card p-3 shadow-xs ring-1 ring-foreground/10">
-                      <div className="mb-2 flex items-center gap-2">
-                        <Database className="size-4 text-primary" />
-                        <strong className="text-sm">Vector Store Results</strong>
-                        {entry.response && (
-                          <span className="rounded-sm bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                            {entry.response.data?.length || 0} results
-                          </span>
-                        )}
-                      </div>
-
-                      {entry.response && entry.response.data && entry.response.data.length > 0 ? (
-                        <div className="space-y-3">
-                          {entry.response.data.map((result, resultIndex) => {
-                            const isExpanded = expandedResults[`${index}-${resultIndex}`] || false;
-
-                            return (
-                              <div key={resultIndex} className="overflow-hidden rounded-lg border bg-muted/50">
-                                {/* Clickable Header */}
-                                <div
-                                  className="flex cursor-pointer items-center justify-between p-3 transition-colors hover:bg-muted"
-                                  onClick={() => toggleResultExpansion(index, resultIndex)}
-                                >
-                                  <div className="flex items-center">
-                                    {isExpanded ? (
-                                      <ChevronDown className="mr-2 size-4 text-muted-foreground" />
-                                    ) : (
-                                      <ChevronRight className="mr-2 size-4 text-muted-foreground" />
-                                    )}
-                                    <span className="text-sm font-medium">Result {resultIndex + 1}</span>
-                                    {/* Show preview of content when collapsed */}
-                                    {!isExpanded && result.content && result.content[0] && (
-                                      <span className="ml-2 max-w-md truncate text-xs text-muted-foreground">
-                                        - {result.content[0].text.substring(0, 100)}...
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="rounded-sm bg-muted px-2 py-1 text-xs text-foreground">
-                                    Score: {result.score.toFixed(4)}
-                                  </span>
-                                </div>
-
-                                {/* Expandable Content */}
-                                {isExpanded && (
-                                  <div className="border-t bg-card p-3">
-                                    {/* Content */}
-                                    {result.content &&
-                                      result.content.map((content, contentIndex) => (
-                                        <div key={contentIndex} className="mb-3">
-                                          <div className="mb-1 text-xs text-muted-foreground">
-                                            Content ({content.type})
-                                          </div>
-                                          <div className="max-h-40 overflow-y-auto rounded-sm border bg-muted/50 p-3 text-sm text-foreground">
-                                            {content.text}
-                                          </div>
-                                        </div>
-                                      ))}
-
-                                    {/* Metadata */}
-                                    {(result.file_id || result.filename || result.attributes) && (
-                                      <div className="mt-3 border-t pt-3">
-                                        <div className="mb-2 text-xs font-medium text-muted-foreground">Metadata</div>
-                                        <div className="space-y-2 text-xs">
-                                          {result.file_id && (
-                                            <div className="rounded-sm bg-muted/50 p-2">
-                                              <span className="font-medium">File ID:</span> {result.file_id}
-                                            </div>
-                                          )}
-                                          {result.filename && (
-                                            <div className="rounded-sm bg-muted/50 p-2">
-                                              <span className="font-medium">Filename:</span> {result.filename}
-                                            </div>
-                                          )}
-                                          {result.attributes && Object.keys(result.attributes).length > 0 && (
-                                            <div className="rounded-sm bg-muted/50 p-2">
-                                              <span className="mb-1 block font-medium">Attributes:</span>
-                                              <pre className="overflow-x-auto rounded-sm border bg-card p-2 text-xs">
-                                                {JSON.stringify(result.attributes, null, 2)}
-                                              </pre>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div
-                          className={
-                            entry.error ? "text-sm break-words text-destructive" : "text-sm text-muted-foreground"
-                          }
-                        >
-                          {entry.error ? `Search failed: ${entry.error}` : "No results found"}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {index < searchHistory.length - 1 && <Separator />}
+                  <SearchEntryBody entry={entry} />
                 </div>
               ))}
             </div>
@@ -256,18 +176,18 @@ export const VectorStoreTester: React.FC<VectorStoreTesterProps> = ({ vectorStor
           )}
         </div>
 
-        {/* Input Area */}
         <div className="border-t bg-card p-4">
           <div className="flex items-end space-x-2">
             <div className="flex-1">
               <Textarea
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Enter your search query... (Shift+Enter for new line)"
                 disabled={isLoading}
                 rows={1}
                 className="field-sizing-fixed max-h-24 min-h-9 resize-none"
+                aria-label="Search query"
               />
             </div>
             <Button onClick={handleSearch} disabled={isLoading || !query.trim()}>

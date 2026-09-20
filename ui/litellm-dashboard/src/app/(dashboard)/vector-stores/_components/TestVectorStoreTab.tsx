@@ -79,7 +79,11 @@ const TestVectorStoreTab: React.FC<TestVectorStoreTabProps> = ({ accessToken, ve
       </Card>
 
       {selectedVectorStore && (
-        <VectorStoreTester vectorStoreId={selectedVectorStore.vector_store_id} accessToken={accessToken} />
+        <VectorStoreTester
+          vectorStoreId={selectedVectorStore.vector_store_id}
+          accessToken={accessToken}
+          litellmParams={selectedVectorStore.litellm_params}
+        />
       )}
     </div>
   );
