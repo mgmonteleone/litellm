@@ -3122,3 +3122,83 @@ class TestListToleratesEmptyIdRows:
         assert response["total_count"] == 1
         assert response["data"][0]["litellm_params"]["api_key"] != "sk-secret"
         assert [store.get("vector_store_id") for store in registry.vector_stores] == ["vs_real"]
+
+
+class TestVectorStoreInfoReadsTheDatabase:
+    """Info must not serve the in-memory copy, which lags the DB by up to one sync interval."""
+
+    @staticmethod
+    def _admin() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(token="sk-test", key_name="sk-...test", user_role=LitellmUserRoles.PROXY_ADMIN)
+
+    @staticmethod
+    async def _info(vector_store_id: str, mock_prisma, registry):
+        from litellm.proxy.vector_store_endpoints.management_endpoints import get_vector_store_info
+        from litellm.types.vector_stores import VectorStoreInfoRequest
+
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma),
+            patch.object(litellm, "vector_store_registry", registry),
+        ):
+            return await get_vector_store_info(
+                data=VectorStoreInfoRequest(vector_store_id=vector_store_id),
+                user_api_key_dict=TestVectorStoreInfoReadsTheDatabase._admin(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_fresh_db_row_wins_over_the_stale_in_memory_copy(self):
+        """Two ingests update the row; memory still holds the pre-ingest copy until the next sync."""
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        stale: LiteLLM_ManagedVectorStore = {
+            "vector_store_id": "vs_1",
+            "custom_llm_provider": "mongodb",
+            "vector_store_metadata": None,
+            "litellm_params": {"mongodb_database": "knowledge", "api_key": "sk-secret"},
+        }
+        fresh_metadata = {"ingested_files": [{"file_id": "f1", "filename": "travel.md"}]}
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
+            return_value=MagicMock(
+                model_dump=lambda: {
+                    **stale,
+                    "vector_store_metadata": json.dumps(fresh_metadata),
+                }
+            )
+        )
+
+        response = await self._info("vs_1", mock_prisma, VectorStoreRegistry(vector_stores=[stale]))
+
+        assert response["vector_store"].vector_store_metadata == fresh_metadata
+        assert response["vector_store"].litellm_params["api_key"] != "sk-secret"
+        assert response["vector_store"].litellm_params["mongodb_database"] == "knowledge"
+
+    @pytest.mark.asyncio
+    async def test_config_registered_store_without_a_row_still_resolves_from_memory(self):
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        config_store: LiteLLM_ManagedVectorStore = {
+            "vector_store_id": "vs_config",
+            "custom_llm_provider": "mongodb",
+            "vector_store_metadata": {"source": "config"},
+            "litellm_params": {"mongodb_database": "knowledge"},
+        }
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+
+        response = await self._info("vs_config", mock_prisma, VectorStoreRegistry(vector_stores=[config_store]))
+
+        assert response["vector_store"].vector_store_id == "vs_config"
+        assert response["vector_store"].vector_store_metadata == {"source": "config"}
+
+    @pytest.mark.asyncio
+    async def test_unknown_store_is_a_404(self):
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await self._info("vs_missing", mock_prisma, VectorStoreRegistry(vector_stores=[]))
+
+        assert exc_info.value.status_code == 404

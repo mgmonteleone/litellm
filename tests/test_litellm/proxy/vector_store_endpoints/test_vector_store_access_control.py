@@ -287,7 +287,7 @@ async def test_get_vector_store_info_dashboard_session_resolves_real_teams(
             )
         except HTTPException as exc:
             return exc.status_code
-        assert response["vector_store"]["vector_store_id"] == "vs_team_a"
+        assert response["vector_store"].vector_store_id == "vs_team_a"
         return 200
 
     with (

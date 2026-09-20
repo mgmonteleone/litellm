@@ -118,6 +118,30 @@ def _redact_sensitive_litellm_params(litellm_params: object, _depth: int = 0) ->
     return out
 
 
+def _registry_vector_store(vector_store_id: str) -> LiteLLM_ManagedVectorStore | None:
+    if litellm.vector_store_registry is None:
+        return None
+    return litellm.vector_store_registry.get_litellm_managed_vector_store_from_registry(vector_store_id=vector_store_id)
+
+
+def _vector_store_info(vector_store: LiteLLM_ManagedVectorStore) -> LiteLLM_ManagedVectorStoresTable:
+    """Build the info response, parsing metadata the database may hold as a JSON string."""
+    stored_metadata: Final = vector_store.get("vector_store_metadata")
+    return LiteLLM_ManagedVectorStoresTable(
+        vector_store_id=vector_store.get("vector_store_id") or "",
+        custom_llm_provider=vector_store.get("custom_llm_provider") or "",
+        vector_store_name=vector_store.get("vector_store_name") or None,
+        vector_store_description=vector_store.get("vector_store_description") or None,
+        vector_store_metadata=json.loads(stored_metadata) if isinstance(stored_metadata, str) else stored_metadata,
+        created_at=vector_store.get("created_at") or None,
+        updated_at=vector_store.get("updated_at") or None,
+        litellm_credential_name=vector_store.get("litellm_credential_name"),
+        litellm_params=_redact_sensitive_litellm_params(vector_store.get("litellm_params")),
+        team_id=vector_store.get("team_id") or None,
+        user_id=vector_store.get("user_id") or None,
+    )
+
+
 async def _fetch_and_authorize_vector_store(
     vector_store_id: str,
     user_api_key_dict: UserAPIKeyAuth,
@@ -491,50 +515,25 @@ async def get_vector_store_info(
         raise HTTPException(status_code=500, detail="Database not connected")
 
     try:
-        if litellm.vector_store_registry is not None:
-            vector_store: Final = litellm.vector_store_registry.get_litellm_managed_vector_store_from_registry(
-                vector_store_id=data.vector_store_id
-            )
-            if vector_store is not None:
-                # Check access control
-                if not await _check_vector_store_access(vector_store, user_api_key_dict):
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Access denied: You do not have permission to access this vector store",
-                    )
-
-                vector_store_metadata: Final = vector_store.get("vector_store_metadata")
-                # Parse metadata if it's a JSON string
-                parsed_metadata: dict | None = None
-                if isinstance(vector_store_metadata, str):
-                    parsed_metadata = json.loads(vector_store_metadata)
-                elif isinstance(vector_store_metadata, dict):
-                    parsed_metadata = vector_store_metadata
-
-                vector_store_pydantic_obj: Final = LiteLLM_ManagedVectorStoresTable(
-                    vector_store_id=vector_store.get("vector_store_id") or "",
-                    custom_llm_provider=vector_store.get("custom_llm_provider") or "",
-                    vector_store_name=vector_store.get("vector_store_name") or None,
-                    vector_store_description=vector_store.get("vector_store_description") or None,
-                    vector_store_metadata=parsed_metadata,
-                    created_at=vector_store.get("created_at") or None,
-                    updated_at=vector_store.get("updated_at") or None,
-                    litellm_credential_name=vector_store.get("litellm_credential_name"),
-                    litellm_params=_redact_sensitive_litellm_params(vector_store.get("litellm_params")),
-                    team_id=vector_store.get("team_id") or None,
-                    user_id=vector_store.get("user_id") or None,
-                )
-                return {"vector_store": vector_store_pydantic_obj}
-
-        vector_store_typed: Final = await _fetch_and_authorize_vector_store(
-            vector_store_id=data.vector_store_id,
-            user_api_key_dict=user_api_key_dict,
-            prisma_client=prisma_client,
+        # The database is the source of truth. Memory only answers for config-registered stores, which
+        # have no row, so info never serves a copy the ten-second registry sync has not caught up with.
+        row: Final = await _vector_store_table(prisma_client).find_unique(
+            where={"vector_store_id": data.vector_store_id}
         )
-        vector_store_dict: Final = dict(vector_store_typed)
-        if "litellm_params" in vector_store_dict:
-            vector_store_dict["litellm_params"] = _redact_sensitive_litellm_params(vector_store_dict["litellm_params"])
-        return {"vector_store": vector_store_dict}
+        vector_store: Final = (
+            _row_to_vector_store(row) if row is not None else _registry_vector_store(data.vector_store_id)
+        )
+        if vector_store is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Vector store with ID {data.vector_store_id} not found",
+            )
+        if not await _check_vector_store_access(vector_store, user_api_key_dict):
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: You do not have permission to access this vector store",
+            )
+        return {"vector_store": _vector_store_info(vector_store)}
     except HTTPException:
         # Preserve 403/404 from the access-control / not-found checks above;
         # the catch-all below would otherwise rewrite them as 500.
