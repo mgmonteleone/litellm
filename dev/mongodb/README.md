@@ -14,7 +14,7 @@ LiteLLM dashboard (:3000, npm run dev)                                          
 3. Fill in `.env` at the repo root: `LITELLM_MASTER_KEY`, `DATABASE_URL`, `MONGODB_SIDECAR_API_KEY`, plus the embedding server the smoke script uses (`EMBEDDING_MODEL`, `EMBEDDING_API_BASE`, `EMBEDDING_API_KEY`). Two working options:
    - **LM Studio, fully local**: load `text-embedding-nomic-embed-text-v1.5` in LM Studio (768 dimensions) and use `openai/text-embedding-nomic-embed-text-v1.5` at `http://localhost:1234/v1`. The proxy config registers it as `nomic-embed-local`.
    - **Cloud LiteLLM router**: set `UPSTREAM_LITELLM_API_BASE` + `UPSTREAM_LITELLM_API_KEY` (a virtual key) and point `EMBEDDING_*` at it once the router has an embedding deployment (`text-embedding-3-small`).
-4. Create `dev/mongodb/sidecar.env` (gitignored) with `MONGODB_CONNECTION_STRING`, the same `MONGODB_SIDECAR_API_KEY`, and `MONGODB_SIDECAR_ALLOW_DISCOVERY=true`.
+4. Create `dev/mongodb/sidecar.env` (gitignored) with `MONGODB_CONNECTION_STRING`, the same `MONGODB_SIDECAR_API_KEY`, and `MONGODB_SIDECAR_ALLOW_DISCOVERY=true` (discovery is off by default in the sidecar; the rig opts in so the dashboard dropdowns work).
 
 ## Start the pieces
 
