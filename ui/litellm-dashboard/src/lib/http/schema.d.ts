@@ -20891,6 +20891,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/vector_store/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discover Vector Store Resources
+         * @description List databases, collections, indexes, or suggested fields for a provider so the dashboard can offer
+         *     dropdowns instead of free-text inputs. Proxy admins only.
+         *
+         *     Example: `{"custom_llm_provider": "mongodb", "kind": "collections",
+         *                "litellm_params": {"api_base": "http://127.0.0.1:8080", "api_key": "..."},
+         *                "options": {"mongodb_database": "knowledge"}}`
+         */
+        post: operations["discover_vector_store_resources_v1_vector_store_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/vector_store/list": {
         parameters: {
             query?: never;
@@ -20911,6 +20936,36 @@ export interface paths {
         get: operations["list_vector_stores_v1_vector_store_list_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/vector_store/test_connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Vector Store Test Connection
+         * @description Run the provider's connection checklist for a saved store or an unsaved configuration.
+         *
+         *     Each check reports pass, warn, fail, or skip with a message that names the fix. Proxy admins only.
+         *
+         *     Example request (unsaved configuration):
+         *     ```json
+         *     {"custom_llm_provider": "mongodb", "vector_store_id": "policy_index",
+         *      "litellm_params": {"api_base": "http://127.0.0.1:8080", "api_key": "...", "mongodb_database": "knowledge",
+         *                         "mongodb_collection": "policies", "litellm_embedding_model": "text-embedding-3-small"}}
+         *     ```
+         *     Example request (saved store, keep the saved secret): `{"vector_store_id": "policy_index"}`
+         */
+        post: operations["vector_store_test_connection_v1_vector_store_test_connection_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -22174,6 +22229,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vector_store/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discover Vector Store Resources
+         * @description List databases, collections, indexes, or suggested fields for a provider so the dashboard can offer
+         *     dropdowns instead of free-text inputs. Proxy admins only.
+         *
+         *     Example: `{"custom_llm_provider": "mongodb", "kind": "collections",
+         *                "litellm_params": {"api_base": "http://127.0.0.1:8080", "api_key": "..."},
+         *                "options": {"mongodb_database": "knowledge"}}`
+         */
+        post: operations["discover_vector_store_resources_vector_store_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vector_store/info": {
         parameters: {
             query?: never;
@@ -22241,6 +22321,36 @@ export interface paths {
          *     - vector_store_metadata: Optional[Dict] - Additional metadata for the vector store
          */
         post: operations["new_vector_store_vector_store_new_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vector_store/test_connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Vector Store Test Connection
+         * @description Run the provider's connection checklist for a saved store or an unsaved configuration.
+         *
+         *     Each check reports pass, warn, fail, or skip with a message that names the fix. Proxy admins only.
+         *
+         *     Example request (unsaved configuration):
+         *     ```json
+         *     {"custom_llm_provider": "mongodb", "vector_store_id": "policy_index",
+         *      "litellm_params": {"api_base": "http://127.0.0.1:8080", "api_key": "...", "mongodb_database": "knowledge",
+         *                         "mongodb_collection": "policies", "litellm_embedding_model": "text-embedding-3-small"}}
+         *     ```
+         *     Example request (saved store, keep the saved secret): `{"vector_store_id": "policy_index"}`
+         */
+        post: operations["vector_store_test_connection_vector_store_test_connection_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -41294,15 +41404,97 @@ export interface components {
              */
             status?: string | null;
         };
+        /**
+         * VectorStoreConnectionCheck
+         * @description One step of a provider's connection checklist, with a message that names the fix when it fails.
+         */
+        VectorStoreConnectionCheck: {
+            /** Check */
+            check?: string;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            } | null;
+            /** Message */
+            message?: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status?: "pass" | "warn" | "fail" | "skip";
+        };
         /** VectorStoreDeleteRequest */
         VectorStoreDeleteRequest: {
             /** Vector Store Id */
             vector_store_id: string;
         };
+        /**
+         * VectorStoreDiscoverRequest
+         * @description Ask a provider to list databases, collections, indexes, or suggested fields for the dashboard.
+         */
+        VectorStoreDiscoverRequest: {
+            /** Custom Llm Provider */
+            custom_llm_provider?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "databases" | "collections" | "indexes" | "fields";
+            /** Litellm Credential Name */
+            litellm_credential_name?: string | null;
+            /** Litellm Params */
+            litellm_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Options */
+            options?: {
+                [key: string]: unknown;
+            };
+            /** Vector Store Id */
+            vector_store_id?: string | null;
+        };
         /** VectorStoreInfoRequest */
         VectorStoreInfoRequest: {
             /** Vector Store Id */
             vector_store_id: string;
+        };
+        /**
+         * VectorStoreTestConnectionRequest
+         * @description Test a saved store (vector_store_id) or an unsaved configuration (custom_llm_provider + litellm_params).
+         *
+         *     Request litellm_params override the saved ones; a value equal to the redaction sentinel keeps the saved secret.
+         */
+        VectorStoreTestConnectionRequest: {
+            /** Custom Llm Provider */
+            custom_llm_provider?: string | null;
+            /** Litellm Credential Name */
+            litellm_credential_name?: string | null;
+            /** Litellm Params */
+            litellm_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Vector Store Id */
+            vector_store_id?: string | null;
+        };
+        /**
+         * VectorStoreTestConnectionResponse
+         * @description Result of POST /vector_store/test_connection
+         */
+        VectorStoreTestConnectionResponse: {
+            /** Checks */
+            checks?: components["schemas"]["VectorStoreConnectionCheck"][];
+            /** Custom Llm Provider */
+            custom_llm_provider?: string;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            } | null;
+            /** Ok */
+            ok?: boolean;
+            /** Summary */
+            summary?: string;
+            /** Supported */
+            supported?: boolean;
         };
         /** VectorStoreUpdateRequest */
         VectorStoreUpdateRequest: {
@@ -68479,6 +68671,41 @@ export interface operations {
             };
         };
     };
+    discover_vector_store_resources_v1_vector_store_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VectorStoreDiscoverRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_vector_stores_v1_vector_store_list_get: {
         parameters: {
             query?: {
@@ -68498,6 +68725,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LiteLLM_ManagedVectorStoreListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vector_store_test_connection_v1_vector_store_test_connection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VectorStoreTestConnectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreTestConnectionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -70248,6 +70508,41 @@ export interface operations {
             };
         };
     };
+    discover_vector_store_resources_vector_store_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VectorStoreDiscoverRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_vector_store_info_vector_store_info_post: {
         parameters: {
             query?: never;
@@ -70333,6 +70628,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vector_store_test_connection_vector_store_test_connection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VectorStoreTestConnectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreTestConnectionResponse"];
                 };
             };
             /** @description Validation Error */

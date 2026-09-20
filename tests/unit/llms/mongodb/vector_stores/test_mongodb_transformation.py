@@ -76,6 +76,7 @@ async def test_search_preserves_embedding_and_http_contract(
         "mongodb_embedding_field": "stored_vector",
         "mongodb_num_candidates": candidates,
         "max_num_results": limit or 10,
+        "include_metadata": True,
         "timeout_ms": 750,
     }
     executor.call.assert_called_once_with("embedding-alias", "travel policy", {"dimensions": 3})
@@ -98,7 +99,15 @@ async def test_search_preserves_embedding_and_http_contract(
         ("travel", {}, {"max_num_results": 0}),
         ("travel", {}, {"max_num_results": 51}),
         ("travel", {}, {"filters": {}}),
-        ("travel", {}, {"ranking_options": {}}),
+        ("travel", {}, {"filters": {"type": "regex", "key": "a", "value": "b"}}),
+        ("travel", {}, {"ranking_options": {"ranker": "bm25"}}),
+        ("travel", {}, {"ranking_options": {"score_threshold": 2}}),
+        ("travel", {"mongodb_hybrid_search": True}, {}),
+        (
+            "travel",
+            {"mongodb_hybrid_search": True, "mongodb_text_index": "t"},
+            {"ranking_options": {"score_threshold": 0.5}},
+        ),
         ("travel", {}, {"rewrite_query": False}),
     ],
 )
