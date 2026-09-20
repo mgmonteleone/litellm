@@ -39,10 +39,18 @@ describe("getVectorStoreProviderLogoAndName", () => {
       "api_key",
       "mongodb_database",
       "mongodb_collection",
-      "embedding_model",
       "mongodb_embedding_field",
       "mongodb_text_field",
+      "mongodb_dimensions",
+      "mongodb_similarity",
+      "mongodb_filter_fields",
+      "embedding_model",
       "mongodb_num_candidates",
+      "mongodb_hybrid_search",
+      "mongodb_text_index",
+      "mongodb_hybrid_weights",
+      "mongodb_exact_search",
+      "mongodb_score_threshold",
     ]);
   });
 

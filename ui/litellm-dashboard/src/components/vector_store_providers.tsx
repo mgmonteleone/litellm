@@ -14,9 +14,14 @@ export enum VectorStoreProviders {
   OpenAI = "OpenAI",
   Azure = "Azure OpenAI",
   Milvus = "Milvus",
-  MongoDB = "MongoDB (BETA)",
+  MongoDB = "MongoDB",
   Valkey = "Valkey",
 }
+
+const BETA_VECTOR_STORE_PROVIDERS: ReadonlySet<string> = new Set(["mongodb"]);
+
+export const isBetaVectorStoreProvider = (providerValue: string | null | undefined): boolean =>
+  typeof providerValue === "string" && BETA_VECTOR_STORE_PROVIDERS.has(providerValue.toLowerCase());
 
 export const vectorStoreProviderMap: Record<string, string> = {
   Bedrock: "bedrock",
@@ -44,6 +49,23 @@ export const vectorStoreProviderLogoMap: Record<string, string> = {
   [VectorStoreProviders.Valkey]: valkeyLogo.src,
 };
 
+/**
+ * "weight-split" holds one number in [0, 1] and expands to {vector, text} weights that sum to 1.
+ * "string-list" holds a comma-separated string and expands to an array.
+ */
+export type VectorStoreFieldType =
+  | "text"
+  | "password"
+  | "select"
+  | "number"
+  | "boolean"
+  | "string-list"
+  | "weight-split";
+
+export type VectorStoreFieldGroup = "connection" | "data" | "index" | "embedding" | "advanced";
+
+export type VectorStoreDiscoveryKind = "databases" | "collections" | "vector_fields" | "text_fields" | "filter_fields";
+
 // Define field types for provider-specific configurations
 export interface VectorStoreFieldConfig {
   name: string;
@@ -51,9 +73,14 @@ export interface VectorStoreFieldConfig {
   tooltip: string;
   placeholder?: string;
   required: boolean;
-  type?: "text" | "password" | "select";
+  type?: VectorStoreFieldType;
   options?: { value: string; label: string }[];
   initialValue?: string;
+  group?: VectorStoreFieldGroup;
+  /** Populates this field's combobox from POST /vector_store/discover. */
+  discovery?: VectorStoreDiscoveryKind;
+  /** Rendered only when the provider's capabilities report this feature. */
+  requiresCapability?: string;
 }
 
 // Provider-specific field configurations
@@ -181,6 +208,7 @@ export const vectorStoreProviderFields: Record<string, VectorStoreFieldConfig[]>
       placeholder: "http://127.0.0.1:8080",
       required: true,
       type: "text",
+      group: "connection",
     },
     {
       name: "api_key",
@@ -189,6 +217,7 @@ export const vectorStoreProviderFields: Record<string, VectorStoreFieldConfig[]>
       placeholder: "Enter sidecar API key",
       required: true,
       type: "password",
+      group: "connection",
     },
     {
       name: "mongodb_database",
@@ -197,6 +226,8 @@ export const vectorStoreProviderFields: Record<string, VectorStoreFieldConfig[]>
       placeholder: "sample_mflix",
       required: true,
       type: "text",
+      group: "data",
+      discovery: "databases",
     },
     {
       name: "mongodb_collection",
@@ -205,15 +236,8 @@ export const vectorStoreProviderFields: Record<string, VectorStoreFieldConfig[]>
       placeholder: "embedded_movies",
       required: true,
       type: "text",
-    },
-    {
-      name: "embedding_model",
-      label: "Embedding Model",
-      tooltip:
-        "The embedding model on this proxy that created the vectors already stored in your collection. LiteLLM embeds every search query with it, so it must be the same model. A different model of the same size will not error, it will just return wrong results. Add it under Models first if it is not listed",
-      placeholder: "text-embedding-3-small",
-      required: true,
-      type: "select",
+      group: "data",
+      discovery: "collections",
     },
     {
       name: "mongodb_embedding_field",
@@ -224,6 +248,8 @@ export const vectorStoreProviderFields: Record<string, VectorStoreFieldConfig[]>
       required: false,
       type: "text",
       initialValue: "embedding",
+      group: "data",
+      discovery: "vector_fields",
     },
     {
       name: "mongodb_text_field",
@@ -234,6 +260,53 @@ export const vectorStoreProviderFields: Record<string, VectorStoreFieldConfig[]>
       required: false,
       type: "text",
       initialValue: "text",
+      group: "data",
+      discovery: "text_fields",
+    },
+    {
+      name: "mongodb_dimensions",
+      label: "Index Dimensions",
+      tooltip:
+        "How many numbers each vector holds. It must equal what the embedding model returns. Used when LiteLLM creates the index for you; leave blank when you point at an index that already exists",
+      placeholder: "1536",
+      required: false,
+      type: "number",
+      group: "index",
+    },
+    {
+      name: "mongodb_similarity",
+      label: "Similarity",
+      tooltip:
+        "How MongoDB compares two vectors. Use cosine unless the model's documentation says otherwise; dotProduct needs normalised vectors. Used when LiteLLM creates the index",
+      required: false,
+      type: "select",
+      options: [
+        { value: "cosine", label: "cosine" },
+        { value: "euclidean", label: "euclidean" },
+        { value: "dotProduct", label: "dotProduct" },
+      ],
+      group: "index",
+    },
+    {
+      name: "mongodb_filter_fields",
+      label: "Filter Fields",
+      tooltip:
+        "Document fields you want to filter searches on, comma separated (for example metadata.department). MongoDB can only filter on fields the index declares, so listing them here is what makes the filter builder on the Test tab work",
+      placeholder: "metadata.department, metadata.year",
+      required: false,
+      type: "string-list",
+      group: "index",
+      discovery: "filter_fields",
+    },
+    {
+      name: "embedding_model",
+      label: "Embedding Model",
+      tooltip:
+        "The embedding model on this proxy that created the vectors already stored in your collection. LiteLLM embeds every search query with it, so it must be the same model. A different model of the same size will not error, it will just return wrong results. Add it under Models first if it is not listed",
+      placeholder: "text-embedding-3-small",
+      required: true,
+      type: "select",
+      group: "embedding",
     },
     {
       name: "mongodb_num_candidates",
@@ -242,7 +315,58 @@ export const vectorStoreProviderFields: Record<string, VectorStoreFieldConfig[]>
         "How many nearest neighbours MongoDB examines before returning the top results. Higher is more accurate and slower. Leave blank to let LiteLLM scale it with the requested result count",
       placeholder: "100",
       required: false,
+      type: "number",
+      group: "advanced",
+    },
+    {
+      name: "mongodb_hybrid_search",
+      label: "Hybrid Search",
+      tooltip:
+        "Blend vector similarity with keyword matching using $rankFusion. Needs MongoDB 8.1 or newer and an Atlas Search text index on the same collection",
+      required: false,
+      type: "boolean",
+      group: "advanced",
+      requiresCapability: "hybrid",
+    },
+    {
+      name: "mongodb_text_index",
+      label: "Text Index",
+      tooltip:
+        "Name of the Atlas Search text index hybrid search reads. LiteLLM creates one alongside the vector index when it creates the store for you",
+      placeholder: "policy_text_index",
+      required: false,
       type: "text",
+      group: "advanced",
+      requiresCapability: "hybrid",
+    },
+    {
+      name: "mongodb_hybrid_weights",
+      label: "Vector Weight",
+      tooltip:
+        "How much of a hybrid result's rank comes from vector similarity. The rest goes to keyword matching, so 0.7 means 70 percent vector and 30 percent text",
+      required: false,
+      type: "weight-split",
+      group: "advanced",
+      requiresCapability: "hybrid",
+    },
+    {
+      name: "mongodb_exact_search",
+      label: "Exact Search",
+      tooltip:
+        "Scan every vector instead of using the approximate index. Exact on small collections, far slower on large ones",
+      required: false,
+      type: "boolean",
+      group: "advanced",
+    },
+    {
+      name: "mongodb_score_threshold",
+      label: "Score Threshold",
+      tooltip:
+        "Drop results scoring below this value. Leave blank to return whatever the index ranks highest, however weak the match",
+      placeholder: "0.5",
+      required: false,
+      type: "number",
+      group: "advanced",
     },
   ],
   valkey: [
