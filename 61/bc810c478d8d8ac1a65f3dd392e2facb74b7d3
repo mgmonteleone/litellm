@@ -1,0 +1,42 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/IngestedFilesCard.tsx
+  s_d71e62cb6f304c::t_90fb3d12b390d0 1-62
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionStatus.test.ts
+  s_d71e62cb6f304c::t_cbf6aaaec6eb49 1-56
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionStatus.ts
+  s_d71e62cb6f304c::t_cb313fb1fae912 39-40
+  s_d71e62cb6f304c::t_8618caee38f4dd 1-38,41-43
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/litellmParamsDisplay.ts
+  s_d71e62cb6f304c::t_05355054d570fb 1-26,33-67
+  s_d71e62cb6f304c::t_122e6fcfc88ade 27-32
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/VectorStoreConnectionCard.tsx
+  s_d71e62cb6f304c::t_442be92c0fb5cd 1-83
+  s_d71e62cb6f304c::t_c949a2c875c973 84-89
+ui/litellm-dashboard/src/components/vector_store_management/types.tsx
+  s_d71e62cb6f304c::t_669b78ca53a1c3 21-22
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/litellmParamsDisplay.test.ts
+  s_d71e62cb6f304c::t_a02c26ae1652b7 1-82
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.integration.test.tsx
+  s_d71e62cb6f304c::t_0183356242ae72 5-10,19-20,29-72,212-291
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.test.tsx
+  s_d71e62cb6f304c::t_649a37867e4b4a 13-14
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.tsx
+  s_d71e62cb6f304c::t_024663e283012f 1,11-18,21-23,83-85,109-113,301-310,392,397-406,433
+ui/litellm-dashboard/tsconfig.tsbuildinfo
+  s_d71e62cb6f304c::t_e27cd628df854e 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "61bc810c478d8d8ac1a65f3dd392e2facb74b7d3",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
