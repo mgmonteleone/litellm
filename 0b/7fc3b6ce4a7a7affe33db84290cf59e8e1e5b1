@@ -1,0 +1,24 @@
+MONGODB_INTEGRATION_PLAN.md
+  s_d71e62cb6f304c::t_dfd981029de360 21-22
+  s_d71e62cb6f304c::t_635e893a07d891 19-20,23
+dev/mongodb/smoke_sdk.py
+  s_d71e62cb6f304c::t_b655f328f3128f 124-134,137-148
+  s_d71e62cb6f304c::t_803db5610c2ed6 34-39
+  s_d71e62cb6f304c::t_4732e319544590 51-53,87,90-96,135-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "0b7fc3b6ce4a7a7affe33db84290cf59e8e1e5b1",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
