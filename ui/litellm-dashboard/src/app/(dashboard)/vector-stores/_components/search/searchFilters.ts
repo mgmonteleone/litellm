@@ -83,6 +83,17 @@ export const toOpenAIFilter = (group: FilterGroup): VectorStoreFilter | undefine
   return { type: group.join, filters };
 };
 
+/**
+ * Search results show a flattened attribute key (e.g. "department") while MongoDB's declared
+ * filter fields are dotted paths (e.g. "metadata.department"). Typing what's on screen would
+ * otherwise build a filter on a field name MongoDB never indexed, matching nothing.
+ */
+export const correctFilterKey = (rawKey: string, filterFields: readonly string[]): string => {
+  if (filterFields.includes(rawKey)) return rawKey;
+  const withMetadataPrefix = `metadata.${rawKey}`;
+  return filterFields.includes(withMetadataPrefix) ? withMetadataPrefix : rawKey;
+};
+
 let nextId = 0;
 
 export const newId = (): string => `filter-${(nextId += 1)}`;

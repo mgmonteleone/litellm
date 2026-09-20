@@ -4,6 +4,7 @@ import React from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Meter, MeterIndicator, MeterTrack } from "@/components/shared/Meter";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export interface SearchResultContent {
   text?: string;
@@ -21,6 +22,23 @@ export interface SearchResult {
 
 /** MongoDB's chunk index rides along in attributes; it belongs in the title, not in the chips. */
 const TITLE_ATTRIBUTES = new Set(["chunk_index"]);
+
+/**
+ * Fields the ingest pipeline stamps on every chunk. They never correspond to a declared filter
+ * field, so a coincidental name match (e.g. a store that declares metadata.content_type) must
+ * not relabel them.
+ */
+const RESERVED_CHUNK_ATTRIBUTES = new Set(["chunk_index", "ingested_at", "content_type"]);
+
+/**
+ * A result's attributes are flattened (e.g. "department"), while the store's declared filter
+ * fields are dotted paths (e.g. "metadata.department"). Matching on the last path segment finds
+ * the field an admin would actually need to type into the filter builder to query on this chip.
+ */
+export const filterPathForAttribute = (key: string, filterFields: readonly string[]): string | null => {
+  if (RESERVED_CHUNK_ATTRIBUTES.has(key)) return null;
+  return filterFields.find((field) => field.split(".").pop() === key) ?? null;
+};
 
 const resultTitle = (result: SearchResult, index: number): string => {
   const name = result.filename ?? result.file_id ?? `Result ${index + 1}`;
@@ -46,9 +64,11 @@ interface SearchResultCardProps {
   index: number;
   /** The top score in this response, so the bars are relative to the best match. */
   topScore: number;
+  /** The store's declared filter fields (mongodb_filter_fields), used to label chips by their full path. */
+  filterFields?: readonly string[];
 }
 
-export const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index, topScore }) => {
+export const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index, topScore, filterFields = [] }) => {
   const ratio = topScore > 0 ? Math.min(result.score / topScore, 1) : 0;
   const contributions = hybridContributions(result.score_details);
   const chips = Object.entries(result.attributes ?? {}).filter(([key]) => !TITLE_ATTRIBUTES.has(key));
@@ -85,12 +105,22 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, inde
 
       {chips.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {chips.map(([key, value]) => (
-            <Badge key={key} variant="outline" className="font-normal">
-              <span className="text-muted-foreground">{key}</span>
-              <span className="ml-1">{formatAttribute(value)}</span>
-            </Badge>
-          ))}
+          {chips.map(([key, value]) => {
+            const filterPath = filterPathForAttribute(key, filterFields);
+            return (
+              <Badge key={key} variant="outline" className="font-normal">
+                {filterPath ? (
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="text-muted-foreground">{filterPath}</span>} />
+                    <TooltipContent>{`filter on ${filterPath}`}</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <span className="text-muted-foreground">{key}</span>
+                )}
+                <span className="ml-1">{formatAttribute(value)}</span>
+              </Badge>
+            );
+          })}
         </div>
       )}
     </li>

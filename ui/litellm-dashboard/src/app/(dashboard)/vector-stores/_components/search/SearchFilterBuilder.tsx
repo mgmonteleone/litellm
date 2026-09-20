@@ -10,6 +10,7 @@ import { cn } from "@/lib/cva.config";
 
 import {
   appendChild,
+  correctFilterKey,
   FILTER_OPERATORS,
   isGroup,
   isListOperator,
@@ -31,65 +32,65 @@ interface ConditionRowProps {
   onRemove: () => void;
 }
 
-const ConditionRow: React.FC<ConditionRowProps> = ({ condition, filterKeys, onChange, onRemove }) => (
-  <div className="flex flex-wrap items-center gap-2">
-    {filterKeys.length > 0 ? (
-      <Select
+/**
+ * A result chip shows a filter field's last segment (e.g. "department" for "metadata.department"),
+ * so typing that name here has to land on the same declared path or MongoDB matches nothing.
+ * The field stays free text, with the store's declared fields offered as suggestions, so an
+ * admin can still type a field the store doesn't declare.
+ */
+const ConditionRow: React.FC<ConditionRowProps> = ({ condition, filterKeys, onChange, onRemove }) => {
+  const datalistId = `filter-field-suggestions-${condition.id}`;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Input
+        className="w-56"
+        aria-label="Filter field"
+        list={filterKeys.length > 0 ? datalistId : undefined}
+        placeholder="metadata.department"
         value={condition.key}
-        onValueChange={(value: string | null) => value !== null && onChange({ ...condition, key: value })}
+        onChange={(event) => onChange({ ...condition, key: correctFilterKey(event.target.value, filterKeys) })}
+      />
+      {filterKeys.length > 0 && (
+        <datalist id={datalistId}>
+          {filterKeys.map((key) => (
+            <option key={key} value={key} />
+          ))}
+        </datalist>
+      )}
+
+      <Select
+        value={condition.operator}
+        onValueChange={(value: string | null) =>
+          value !== null && onChange({ ...condition, operator: value as FilterOperator })
+        }
       >
-        <SelectTrigger className="w-56" aria-label="Filter field">
-          <SelectValue placeholder="Field" />
+        <SelectTrigger className="w-36" aria-label="Filter operator">
+          <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {filterKeys.map((key) => (
-            <SelectItem key={key} value={key}>
-              {key}
+          {FILTER_OPERATORS.map((operator) => (
+            <SelectItem key={operator} value={operator}>
+              {OPERATOR_LABELS[operator]}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-    ) : (
+
       <Input
-        className="w-56"
-        aria-label="Filter field"
-        placeholder="metadata.department"
-        value={condition.key}
-        onChange={(event) => onChange({ ...condition, key: event.target.value })}
+        className="w-48 flex-1"
+        aria-label="Filter value"
+        placeholder={isListOperator(condition.operator) ? "hr, finance" : "hr"}
+        value={condition.value}
+        onChange={(event) => onChange({ ...condition, value: event.target.value })}
       />
-    )}
 
-    <Select
-      value={condition.operator}
-      onValueChange={(value: string | null) =>
-        value !== null && onChange({ ...condition, operator: value as FilterOperator })
-      }
-    >
-      <SelectTrigger className="w-36" aria-label="Filter operator">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {FILTER_OPERATORS.map((operator) => (
-          <SelectItem key={operator} value={operator}>
-            {OPERATOR_LABELS[operator]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-
-    <Input
-      className="w-48 flex-1"
-      aria-label="Filter value"
-      placeholder={isListOperator(condition.operator) ? "hr, finance" : "hr"}
-      value={condition.value}
-      onChange={(event) => onChange({ ...condition, value: event.target.value })}
-    />
-
-    <Button type="button" variant="ghost" size="icon-sm" aria-label="Remove filter" onClick={onRemove}>
-      <X className="size-4" />
-    </Button>
-  </div>
-);
+      <Button type="button" variant="ghost" size="icon-sm" aria-label="Remove filter" onClick={onRemove}>
+        <X className="size-4" />
+      </Button>
+    </div>
+  );
+};
 
 interface GroupEditorProps {
   group: FilterGroup;
