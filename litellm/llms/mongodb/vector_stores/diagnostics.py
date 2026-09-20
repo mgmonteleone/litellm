@@ -19,6 +19,7 @@ from litellm.llms.mongodb.vector_stores.transformation import (
     MongoDBVectorStoreConfig,
     MongoDBVectorStoreParams,
     embedding_vector,
+    sidecar_error_message,
     validated_params,
 )
 from litellm.types.router import GenericLiteLLMParams
@@ -45,17 +46,6 @@ def check(
         message=message,
         details=dict(details) if details is not None else None,  # mutable-ok: JSON response
     )
-
-
-def _message(response: httpx.Response) -> str:
-    try:
-        payload: Final = response.json()
-    except ValueError:
-        return response.text[:300]
-    error: Final = payload.get("error") if isinstance(payload, Mapping) else None
-    if isinstance(error, Mapping) and isinstance(error.get("message"), str):
-        return str(error["message"])
-    return response.text[:300]
 
 
 def _resolve(
@@ -92,7 +82,9 @@ async def _capabilities(
             None,
         )
     if response.status_code != 200:
-        return check("sidecar_auth", "fail", f"Sidecar returned {response.status_code}: {_message(response)}"), None
+        return check(
+            "sidecar_auth", "fail", f"Sidecar returned {response.status_code}: {sidecar_error_message(response)}"
+        ), None
     payload: Final = response.json()
     if not isinstance(payload, Mapping):
         return check("sidecar_auth", "fail", "The sidecar returned an unexpected capabilities payload."), None
@@ -211,7 +203,7 @@ async def run_test_connection(
                     for key in ("server_version", "index_dimensions", "document_count")
                 }
         except httpx.HTTPStatusError as error:
-            checks.append(check("mongodb_checklist", "fail", _message(error.response)))
+            checks.append(check("mongodb_checklist", "fail", sidecar_error_message(error.response)))
         except (httpx.HTTPError, ValueError) as error:
             checks.append(check("mongodb_checklist", "fail", f"The sidecar checklist failed: {type(error).__name__}."))
 
@@ -314,7 +306,7 @@ async def run_discovery(
     url: Final = f"{api_base}/v1/discovery/{quote(kind, safe='')}"
     response: Final = await client.get(url, params=query, headers=headers, timeout=PROBE_TIMEOUT_SECONDS)
     if response.status_code != 200:
-        raise config.get_error_class(_message(response), response.status_code, response.headers)
+        raise config.get_error_class(sidecar_error_message(response), response.status_code, response.headers)
     payload: Final = response.json()
     if not isinstance(payload, Mapping):
         raise BadRequestError(

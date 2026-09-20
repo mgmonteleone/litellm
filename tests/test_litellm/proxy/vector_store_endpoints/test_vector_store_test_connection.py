@@ -182,3 +182,17 @@ async def test_embedding_probe_goes_through_the_proxy_router_when_available(fake
     routed, direct = fake_config.executors
     assert isinstance(routed, RouterVectorStoreEmbeddingExecutor) and routed.router is router
     assert direct is None
+
+
+@pytest.mark.asyncio
+async def test_nested_environment_references_are_rejected(fake_config) -> None:
+    with pytest.raises(HTTPException) as error:
+        await vector_store_test_connection(
+            VectorStoreTestConnectionRequest(
+                custom_llm_provider="mongodb",
+                litellm_params={"litellm_embedding_config": {"api_key": "os.environ/SECRET"}},
+            ),
+            ADMIN,
+        )
+    assert error.value.status_code == 400
+    assert fake_config.test_calls == []
