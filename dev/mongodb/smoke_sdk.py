@@ -28,10 +28,15 @@ ROOT: Final = Path(__file__).resolve().parents[2]
 ENV: Final = {**dotenv_values(ROOT / ".env"), **os.environ}
 SIDECAR: Final = "http://127.0.0.1:8080"
 DIMENSIONS: Final = 64
-INDEX: Final = "litellm_smoke_index" if not ENV.get("EMBEDDING_API_KEY") else "litellm_smoke_index_real"
 EMBEDDING_MODEL: Final = ENV.get("EMBEDDING_MODEL", "openai/text-embedding-3-small")
 EMBEDDING_BASE: Final = ENV.get("EMBEDDING_API_BASE", ENV.get("UPSTREAM_LITELLM_API_BASE", ""))
 EMBEDDING_KEY: Final = ENV.get("EMBEDDING_API_KEY", ENV.get("UPSTREAM_LITELLM_API_KEY", ""))
+# One index per embedding model: an index is bound to the vector size of the model that fills it.
+INDEX: Final = (
+    "litellm_smoke_fake"
+    if not EMBEDDING_KEY
+    else "litellm_smoke_" + "".join(c if c.isalnum() else "_" for c in EMBEDDING_MODEL.split("/")[-1])
+)
 STORE: Final = {
     "api_base": SIDECAR,
     "api_key": ENV.get("MONGODB_SIDECAR_API_KEY", ""),
@@ -43,9 +48,9 @@ STORE: Final = {
     "mongodb_filter_fields": ["metadata.department"],
 }
 DOCUMENTS: Final = {
-    "travel.md": "Employees fly economy on trips under six hours. Business class needs VP approval.",
-    "expenses.md": "Submit expense reports within thirty days. Receipts are required above twenty-five dollars.",
-    "remote.md": "Remote work is allowed three days per week. Core hours are ten to three in your local time zone.",
+    "travel.md": ("hr", "Employees fly economy on trips under six hours. Business class needs VP approval."),
+    "expenses.md": ("finance", "Submit expense reports within thirty days. Receipts are required above twenty-five dollars."),
+    "remote.md": ("hr", "Remote work is allowed three days per week. Core hours are ten to three in your local time zone."),
 }
 
 
@@ -79,10 +84,16 @@ async def run(fake: bool) -> None:
     print("      ->", created["status"], created["metadata"])
 
     print("[2/4] ingest documents via litellm.aingest")
-    for filename, text in DOCUMENTS.items():
+    for filename, (department, text) in DOCUMENTS.items():
         result: Final = await litellm.aingest(
             ingest_options={
-                "vector_store": {"custom_llm_provider": "mongodb", "vector_store_id": INDEX, **STORE, **extra},
+                "vector_store": {
+                    "custom_llm_provider": "mongodb",
+                    "vector_store_id": INDEX,
+                    "custom_metadata": {"department": department},
+                    **STORE,
+                    **extra,
+                },
                 "chunking_strategy": {"type": "static", "chunk_size": 120, "chunk_overlap": 20},
             },
             file_data=(filename, text.encode(), "text/markdown"),
@@ -110,6 +121,31 @@ async def run(fake: bool) -> None:
     for hit in response["data"]:
         print(f"      -> score={hit['score']:.3f} file={hit['filename']} text={hit['content'][0]['text'][:70]!r}")
     assert all(hit["filename"] and hit["content"][0]["text"] for hit in response["data"])
+
+    print("[3b] filtered search (OpenAI filter schema -> MQL -> $vectorSearch.filter)")
+    filtered: Final = await litellm.vector_stores.asearch(
+        vector_store_id=INDEX,
+        query=query,
+        custom_llm_provider="mongodb",
+        max_num_results=5,
+        filters={"type": "eq", "key": "metadata.department", "value": "finance"},
+        _direct_vector_store_embedding_executor=FakeExecutor() if fake else None,
+        **STORE,
+    )
+    print(f"      -> {len(filtered['data'])} hit(s); attributes={[h['attributes'] for h in filtered['data']]}")
+    assert filtered["data"] and all(h["attributes"]["department"] == "finance" for h in filtered["data"])
+
+    print("[3c] score threshold 0.99 should return nothing")
+    strict: Final = await litellm.vector_stores.asearch(
+        vector_store_id=INDEX,
+        query=query,
+        custom_llm_provider="mongodb",
+        ranking_options={"score_threshold": 0.99},
+        _direct_vector_store_embedding_executor=FakeExecutor() if fake else None,
+        **STORE,
+    )
+    print(f"      -> {len(strict['data'])} hit(s)")
+    assert strict["data"] == [] or all(h["score"] >= 0.99 for h in strict["data"])
     if fake:
         print("[4/4] OK: chain works (ranking not asserted with the hash-based stand-in embedding)")
     else:
