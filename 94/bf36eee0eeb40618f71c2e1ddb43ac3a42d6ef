@@ -1,3 +1,35 @@
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_tenant_guard.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 281
+tests/test_litellm/proxy/rag_endpoints/test_rag_endpoints.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 1167,1177-1257
+litellm/rag/ingestion/mongodb_ingestion.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 109,154,169,176,183
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 229,233,252-280
+tests/test_litellm/proxy/rag_endpoints/test_upload_security.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 15,26,59-61,103,112,137,144,150,162,165,181-209
+litellm/proxy/rag_endpoints/upload_security.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 8-9,18,25-27,134,215-231,272,296
+litellm/rag/main.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 102,113-114,137,152,191,462,510,520
+litellm/llms/vertex_ai/rag_engine/ingestion.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 262
+litellm/proxy/rag_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 214,223-224,244,272,333,404-406,412,418,429-430,433,492-494,537,600,672,693
+litellm/rag/ingestion/base_ingestion.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 278,287,292-293,304,313-314,360
+litellm/rag/ingestion/s3_vectors_ingestion.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 434
+litellm/rag/ingestion/bedrock_ingestion.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 638
+tests/test_litellm/test_rag_openai_ingestion.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 83
+litellm/rag/ingestion/openai_ingestion.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 62
+litellm/rag/ingestion/gemini_ingestion.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 65
+litellm/rag/ingestion/vertex_ai_ingestion.py
+  s_d71e62cb6f304c::t_c033d2fdf03e87 117
 ---
 {
   "schema_version": "authorship/3.0.0",
