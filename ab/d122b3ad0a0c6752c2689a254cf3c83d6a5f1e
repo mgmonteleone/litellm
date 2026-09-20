@@ -1,0 +1,41 @@
+litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py
+  s_25c805ebe232f3::t_b985ca07092471 25
+litellm/proxy/proxy_server.py
+  s_d71e62cb6f304c::t_4edbb47842999b 7868-7869,7871
+litellm/proxy/vector_store_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_e7c3ae4e3297d7 26-29,70
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_df1c3124c52cf7 55-58,360-370,669-671
+litellm/vector_stores/vector_store_registry.py
+  s_25c805ebe232f3::t_cc36be0f29bcc8 3,5,20,105-119,124,450,505-523
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_e3a47755f2b6c0 2992-3009
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_test_connection.py
+  s_d71e62cb6f304c::t_8ed512e4c999e1 199-214
+tests/test_litellm/vector_stores/test_vector_store_registry.py
+  s_d71e62cb6f304c::t_7eec6fa3aba1ef 1-2,178-246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "abd122b3ad0a0c6752c2689a254cf3c83d6a5f1e",
+  "prompts": {},
+  "sessions": {
+    "s_25c805ebe232f3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f961db08-89fd-42a6-98be-0d21942ae41b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    },
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
