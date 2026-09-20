@@ -37,9 +37,11 @@ import { useZodForm } from "@/lib/forms/useZodForm";
 import { useVectorStoreConnectionTest } from "./connection/useVectorStoreConnectionTest";
 import VectorStoreField, { type SelectOption } from "./fields/VectorStoreField";
 import MongoDBSetupAlert from "./mongodb/MongoDBSetupAlert";
+import { supportsFeature } from "./mongodb/mongodbConnection";
 import MongoDBStoreFields from "./mongodb/MongoDBStoreFields";
 import {
   buildVectorStoreLitellmParams,
+  clearUnsupportedCapabilityFields,
   isSupportedProviderField,
   vectorStoreSchema,
   type VectorStoreFormValues,
@@ -155,6 +157,11 @@ const VectorStoreForm: React.FC<VectorStoreFormProps> = ({
         return;
       }
 
+      const submittedValues = clearUnsupportedCapabilityFields(
+        formValues.custom_llm_provider,
+        formValues,
+        (capability) => supportsFeature(connectionTest.result, capability),
+      );
       await vectorStoreCreateCall(accessToken, {
         vector_store_id: formValues.vector_store_id,
         custom_llm_provider: formValues.custom_llm_provider,
@@ -162,7 +169,7 @@ const VectorStoreForm: React.FC<VectorStoreFormProps> = ({
         vector_store_description: formValues.vector_store_description,
         vector_store_metadata: metadata,
         litellm_credential_name: formValues.litellm_credential_name,
-        litellm_params: buildVectorStoreLitellmParams(formValues.custom_llm_provider, formValues),
+        litellm_params: buildVectorStoreLitellmParams(formValues.custom_llm_provider, submittedValues),
       });
       toast.success("Vector store created successfully");
       form.reset(EMPTY_VALUES);

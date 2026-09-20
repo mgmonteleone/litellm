@@ -247,6 +247,40 @@ describe("MongoDB vector store dialog", () => {
     expect(payload.litellm_params).not.toHaveProperty("embedding_model");
   });
 
+  it("drops the hybrid fields from the saved params once the sidecar stops reporting hybrid support", async () => {
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+    fillConnection();
+    fireEvent.change(screen.getByPlaceholderText("policy_vector_index"), { target: { value: "policy_index" } });
+    fireEvent.change(screen.getByPlaceholderText("sample_mflix"), { target: { value: "knowledge" } });
+    fireEvent.change(screen.getByPlaceholderText("embedded_movies"), { target: { value: "policies" } });
+    await chooseEmbeddingModel(user);
+    await user.click(screen.getByRole("button", { name: /Test connection/ }));
+    await screen.findByText("Connection verified");
+    await user.click(screen.getByRole("button", { name: "Advanced" }));
+
+    await user.click(screen.getByRole("switch", { name: /Hybrid Search/ }));
+    fireEvent.change(screen.getByPlaceholderText("policy_text_index"), { target: { value: "policy_text_index" } });
+
+    // The cluster (or connection) changes and a second checklist run reports hybrid unsupported.
+    mockTest.mockResolvedValue({
+      ...PASSING_RESULT,
+      checks: [{ ...PASSING_RESULT.checks[0], details: { features: { hybrid: false } } }],
+    });
+    await user.click(screen.getByRole("button", { name: /Test connection/ }));
+    await screen.findByText(/Hybrid search settings appear once Test connection/);
+
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    await vi.waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    const payload = mockCreate.mock.calls[0][1];
+    expect(payload.litellm_params).not.toHaveProperty("mongodb_hybrid_search");
+    expect(payload.litellm_params).not.toHaveProperty("mongodb_text_index");
+    expect(payload.litellm_params).not.toHaveProperty("mongodb_hybrid_weights");
+  });
+
   it("offers the create-a-new-index fields only on the create branch", async () => {
     const user = setupUser();
     renderForm();

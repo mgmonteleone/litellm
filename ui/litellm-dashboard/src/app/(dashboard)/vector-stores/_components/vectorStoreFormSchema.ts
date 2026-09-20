@@ -159,3 +159,29 @@ export const buildVectorStoreLitellmParams = (
       .map((field) => [paramName(provider, field), coerceFieldValue(field, formValues[field.name])] as const)
       .filter(([, value]) => value !== undefined),
   );
+
+/**
+ * A capability-gated field (e.g. hybrid search) stays registered in the form even while it's
+ * hidden, so a value entered before the sidecar reported the capability unsupported would
+ * otherwise still reach the saved store. Clearing it here, right before the params are built,
+ * means what's saved always matches what the checklist most recently reported.
+ */
+export const clearUnsupportedCapabilityFields = (
+  provider: string,
+  formValues: Record<string, unknown>,
+  isCapabilitySupported: (capability: string) => boolean,
+): Record<string, unknown> => {
+  const capabilityByField = new Map(
+    getProviderSpecificFields(provider)
+      .filter((field): field is VectorStoreFieldConfig & { requiresCapability: string } =>
+        Boolean(field.requiresCapability),
+      )
+      .map((field) => [field.name, field.requiresCapability]),
+  );
+  return Object.fromEntries(
+    Object.entries(formValues).map(([name, value]) => {
+      const capability = capabilityByField.get(name);
+      return [name, capability && !isCapabilitySupported(capability) ? undefined : value];
+    }),
+  );
+};
