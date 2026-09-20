@@ -1,0 +1,28 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTester.test.tsx
+  s_d71e62cb6f304c::t_3491591aa32c48 202,207-218,228
+  s_d71e62cb6f304c::t_1d3466dd3fa6da 206
+  s_d71e62cb6f304c::t_aafaa4a186d0fb 219-223
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTester.tsx
+  s_d71e62cb6f304c::t_5a9c5c5df43ca4 69
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchOptionsBar.tsx
+  s_d71e62cb6f304c::t_f8e49425d890a8 48,53-55
+  s_d71e62cb6f304c::t_3328b5020afd48 16,19-20
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/searchRequest.ts
+  s_d71e62cb6f304c::t_bda55ae05c0a98 3-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "b750029f46b82f54fd05edd5f4b4083af76490ad",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
