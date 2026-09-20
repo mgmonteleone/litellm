@@ -22,6 +22,7 @@ from litellm.types.vector_stores import (
     VectorStoreSearchResponse,
     VectorStoreSearchResult,
 )
+from litellm.vector_stores.vector_store_registry import resolve_litellm_params_references
 
 if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
@@ -135,7 +136,9 @@ class VectorStorePreCallHook(CustomLogger):
                 # Get vector store id from the vector store config
                 vector_store_id = vector_store_to_run.get("vector_store_id", "")
                 custom_llm_provider = vector_store_to_run.get("custom_llm_provider")
-                litellm_params_for_vector_store = vector_store_to_run.get("litellm_params", {}) or {}
+                litellm_params_for_vector_store = resolve_litellm_params_references(
+                    vector_store_to_run.get("litellm_params")
+                )
                 request_litellm_params = litellm_logging_obj.model_call_details.get("litellm_params", {})
                 request_metadata = (
                     request_litellm_params.get("metadata", {}) if isinstance(request_litellm_params, dict) else {}

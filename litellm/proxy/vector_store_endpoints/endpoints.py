@@ -23,7 +23,10 @@ from litellm.proxy.vector_store_endpoints.utils import (
 )
 from litellm.repositories.table_repositories import ManagedVectorStoreIndexRepository
 from litellm.types.vector_stores import IndexCreateRequest, IndexListResponse
-from litellm.vector_stores.vector_store_registry import VectorStoreIndexRegistry
+from litellm.vector_stores.vector_store_registry import (
+    VectorStoreIndexRegistry,
+    resolve_litellm_params_references,
+)
 
 router: Final = APIRouter()
 
@@ -64,8 +67,7 @@ def build_request_data_from_managed_vector_store(
             if key in vector_store
         }
     )
-    litellm_params: Final = vector_store.get("litellm_params") or MappingProxyType({})
-    return MappingProxyType({**top_level, **litellm_params})
+    return MappingProxyType({**top_level, **resolve_litellm_params_references(vector_store.get("litellm_params"))})
 
 
 async def _update_request_data_with_litellm_managed_vector_store_registry(

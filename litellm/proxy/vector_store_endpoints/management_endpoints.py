@@ -8,7 +8,6 @@ All /vector_store management endpoints
 /vector_store/list
 """
 
-import copy
 import json
 from collections.abc import Mapping
 from types import MappingProxyType
@@ -53,7 +52,10 @@ from litellm.types.vector_stores import (
     VectorStoreTestConnectionResponse,
     VectorStoreUpdateRequest,
 )
-from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+from litellm.vector_stores.vector_store_registry import (
+    VectorStoreRegistry,
+    resolve_litellm_params_references,
+)
 
 router: Final = APIRouter()
 
@@ -352,55 +354,20 @@ async def list_vector_stores(
 
     from litellm.proxy.proxy_server import prisma_client
 
-    vector_store_map: Final[dict[str, LiteLLM_ManagedVectorStore]] = {}
-    db_vector_store_ids: Final[set] = set()
-
     try:
-        # Get vector stores from database first (source of truth)
         vector_stores_from_db: Final = await VectorStoreRegistry._get_vector_stores_from_db(prisma_client=prisma_client)
-
-        # Build map from database vector stores
-        for vector_store in vector_stores_from_db:
-            vector_store_id = vector_store.get("vector_store_id", None)
-            if vector_store_id:
-                vector_store_map[vector_store_id] = vector_store
-                db_vector_store_ids.add(vector_store_id)
-
-        # Process in-memory vector stores
         if litellm.vector_store_registry is not None:
-            in_memory_vector_stores: Final = copy.deepcopy(litellm.vector_store_registry.vector_stores)
-
-            vector_stores_to_delete_from_memory: Final[list[str]] = []
-
-            for vector_store in in_memory_vector_stores:
-                vector_store_id = vector_store.get("vector_store_id", None)
-                if not vector_store_id:
-                    continue
-
-                # If vector store is in memory but NOT in database, it was deleted
-                if vector_store_id not in db_vector_store_ids:
-                    verbose_proxy_logger.info(
-                        "Vector store %s exists in memory but not in database - marking for deletion from cache",
-                        vector_store_id,
-                    )
-                    vector_stores_to_delete_from_memory.append(vector_store_id)
-                # If not in our map yet, add it (only in-memory, not in DB)
-                elif vector_store_id not in vector_store_map:
-                    vector_store_map[vector_store_id] = vector_store
-
-            # Synchronize in-memory registry with database
-            # 1. Remove deleted vector stores from memory
-            for vs_id in vector_stores_to_delete_from_memory:
-                litellm.vector_store_registry.delete_vector_store_from_registry(vector_store_id=vs_id)
-                verbose_proxy_logger.debug("Removed deleted vector store %s from in-memory registry", vs_id)
-
-            # 2. Update in-memory registry with database versions (for updates)
-            for vector_store in vector_stores_from_db:
-                vector_store_id = vector_store.get("vector_store_id", None)
-                if vector_store_id:
-                    litellm.vector_store_registry.update_vector_store_in_registry(
-                        vector_store_id=vector_store_id, updated_data=vector_store
-                    )
+            litellm.vector_store_registry.sync_with_db(vector_stores_from_db)
+        # Config-registered stores exist only in memory; database rows win for any id in both.
+        vector_store_map: Final = {
+            store_id: store
+            for source in (
+                litellm.vector_store_registry.vector_stores if litellm.vector_store_registry is not None else (),
+                vector_stores_from_db,
+            )
+            for store in source
+            if (store_id := store.get("vector_store_id"))
+        }
 
         # Filter vector stores based on access control
         accessible_vector_stores: Final = []
@@ -699,7 +666,9 @@ def _saved_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str,
         parsed: Final = json.loads(raw) if isinstance(raw, str) else (raw or _EMPTY_PARAMS)
     except ValueError:
         raise HTTPException(status_code=400, detail="The saved vector store has malformed litellm_params.") from None
-    merged: Final = dict(parsed if isinstance(parsed, Mapping) else _EMPTY_PARAMS)  # mutable-ok: merged copy
+    merged: Final = dict(  # mutable-ok: merged copy
+        resolve_litellm_params_references(parsed if isinstance(parsed, Mapping) else None)
+    )
     credential_name: Final = vector_store.get("litellm_credential_name")
     if credential_name and litellm.credential_list:
         merged.update(CredentialAccessor.get_credential_values(credential_name))

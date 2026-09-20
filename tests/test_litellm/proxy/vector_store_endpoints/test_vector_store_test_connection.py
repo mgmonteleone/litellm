@@ -196,3 +196,19 @@ async def test_nested_environment_references_are_rejected(fake_config) -> None:
         )
     assert error.value.status_code == 400
     assert fake_config.test_calls == []
+
+
+@pytest.mark.asyncio
+async def test_saved_environment_references_are_resolved_before_the_provider_sees_them(
+    fake_config, monkeypatch
+) -> None:
+    monkeypatch.setenv("SIDECAR_KEY_FOR_TEST", "from-environment")
+    store: Final = LiteLLM_ManagedVectorStore(
+        vector_store_id="policy_index",
+        custom_llm_provider="mongodb",
+        litellm_params={"api_base": "http://127.0.0.1:8080", "api_key": "os.environ/SIDECAR_KEY_FOR_TEST"},
+    )
+    with patch.object(litellm, "vector_store_registry", VectorStoreRegistry(vector_stores=[store])):
+        await vector_store_test_connection(VectorStoreTestConnectionRequest(vector_store_id="policy_index"), ADMIN)
+    merged, _ = fake_config.test_calls[0]
+    assert merged["api_key"] == "from-environment"
