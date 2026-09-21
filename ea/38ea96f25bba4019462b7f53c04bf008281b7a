@@ -1,0 +1,45 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionEditForm.test.tsx
+  s_d71e62cb6f304c::t_6479585f5ebe48 1-122
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionEditForm.tsx
+  s_d71e62cb6f304c::t_f5e77f7d6f45bd 1-72,79-156
+  s_d71e62cb6f304c::t_d577dbb11ad819 73-78
+  s_d71e62cb6f304c::t_119999d08b4977 157-159
+MONGODB_INTEGRATION_PLAN.md
+  s_d71e62cb6f304c::t_e0a8736f72c76c 22
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.integration.test.tsx
+  s_d71e62cb6f304c::t_fd5a1f6f1f515c 300-341
+  s_d71e62cb6f304c::t_def93e46c448a0 226-227
+  s_d71e62cb6f304c::t_acc739193b1900 7,21,25-28,36
+  s_d71e62cb6f304c::t_09f0f29c8be72c 342-344
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/VectorStoreConnectionCard.tsx
+  s_d71e62cb6f304c::t_5ff024949b5f74 3
+  s_d71e62cb6f304c::t_17ed6d982aa57a 12,14,18,20,23-26,34,39-41,43,46-66,77-92
+  s_d71e62cb6f304c::t_84ffea390345df 93
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionEditPayload.test.ts
+  s_d71e62cb6f304c::t_13bc64011a22fa 8,13-14
+  s_d71e62cb6f304c::t_e38c0b40a1d412 44,49-50
+  s_d71e62cb6f304c::t_256223c551c217 1-7,9-12,15-43,45-48,51-101
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.tsx
+  s_d71e62cb6f304c::t_0f4343e15e66d1 399,404-406
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionEditPayload.ts
+  s_d71e62cb6f304c::t_54e6989836dacf 1-51,54-68
+  s_d71e62cb6f304c::t_9babdf46b0aa23 52-53
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vectorStoreFormSchema.ts
+  s_d71e62cb6f304c::t_9791bf4654173d 147-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "ea38ea96f25bba4019462b7f53c04bf008281b7a",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
