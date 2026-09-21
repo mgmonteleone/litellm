@@ -21756,6 +21756,10 @@ export interface paths {
          * Update Vector Store
          * @description Update vector store details in both database and in-memory registry.
          *     The updated data is immediately synchronized to the in-memory registry.
+         *
+         *     A ``litellm_params`` value equal to the redaction sentinel ``REDACTED_BY_LITELM`` (single L) keeps the
+         *     saved secret instead of overwriting it; a near-miss like the double-L ``REDACTED_BY_LITELLM`` is rejected
+         *     with a 400 rather than persisted as the literal credential.
          */
         post: operations["update_vector_store_vector_store_update_post"];
         delete?: never;
