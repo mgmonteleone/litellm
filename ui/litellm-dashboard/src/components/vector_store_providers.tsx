@@ -228,18 +228,20 @@ export const vectorStoreProviderFields: Record<string, VectorStoreFieldConfig[]>
     {
       name: "api_base",
       label: "Sidecar URL",
-      tooltip: "Use HTTPS for a remote sidecar, or HTTP with a loopback IP for a sidecar on the same host or Pod",
+      tooltip:
+        "Overrides the deployment's MONGODB_SIDECAR_API_BASE for this store only. Use HTTPS for a remote " +
+        "sidecar, or HTTP with a loopback IP for a sidecar on the same host or Pod",
       placeholder: "http://127.0.0.1:8080",
-      required: true,
+      required: false,
       type: "text",
       group: "connection",
     },
     {
       name: "api_key",
       label: "Sidecar API Key",
-      tooltip: "The MONGODB_SIDECAR_API_KEY configured in your MongoDB sidecar",
+      tooltip: "Overrides the deployment's MONGODB_SIDECAR_API_KEY for this store only",
       placeholder: "Enter sidecar API key",
-      required: true,
+      required: false,
       type: "password",
       group: "connection",
     },

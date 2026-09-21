@@ -6,6 +6,7 @@ import {
   credentialListCall,
   vectorStoreDiscoverCall,
   vectorStoreInfoCall,
+  vectorStoreProviderDefaultsCall,
   vectorStoreTestConnectionCall,
   vectorStoreUpdateCall,
 } from "@/components/networking";
@@ -19,6 +20,7 @@ vi.mock("@/components/networking", () => ({
   credentialListCall: vi.fn(),
   vectorStoreTestConnectionCall: vi.fn(),
   vectorStoreDiscoverCall: vi.fn(),
+  vectorStoreProviderDefaultsCall: vi.fn(),
   getProxyBaseUrl: () => "http://localhost:4000",
 }));
 
@@ -34,6 +36,7 @@ const mockCredentials = vi.mocked(credentialListCall);
 const mockToast = vi.mocked(toast);
 const mockTestConnection = vi.mocked(vectorStoreTestConnectionCall);
 const mockDiscover = vi.mocked(vectorStoreDiscoverCall);
+const mockProviderDefaults = vi.mocked(vectorStoreProviderDefaultsCall);
 
 const MONGODB_RECORD = {
   vector_store_id: "policy_vector_index",
@@ -108,6 +111,11 @@ describe("VectorStoreInfoView save payload", () => {
     mockInfo.mockResolvedValue({ vector_store: serverRecord });
     mockCredentials.mockResolvedValue({ credentials: [{ credential_name: "bedrock-prod" }] });
     mockUpdate.mockResolvedValue({});
+    mockProviderDefaults.mockResolvedValue({
+      custom_llm_provider: "mongodb",
+      api_base: null,
+      api_key_configured: false,
+    });
   });
 
   it("still saves when the server left the nullable name and description null", async () => {
@@ -225,6 +233,11 @@ describe("VectorStoreInfoView connection card", () => {
     mockTestConnection.mockResolvedValue(PASSING_CHECKLIST);
     mockDiscover.mockResolvedValue({});
     mockUpdate.mockResolvedValue({ status: "success" });
+    mockProviderDefaults.mockResolvedValue({
+      custom_llm_provider: "mongodb",
+      api_base: null,
+      api_key_configured: false,
+    });
   });
 
   it("shows the saved connection so database and collection are visible after save", async () => {

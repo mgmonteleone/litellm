@@ -389,6 +389,7 @@ const VectorStoreForm: React.FC<VectorStoreFormProps> = ({
               {isMongoDB ? (
                 <MongoDBStoreFields
                   control={form.control}
+                  setValue={form.setValue}
                   accessToken={accessToken}
                   embeddingModelOptions={embeddingModelOptions}
                   connectionTest={connectionTest}
