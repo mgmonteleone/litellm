@@ -1,0 +1,52 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreForm.tsx
+  s_d71e62cb6f304c::t_a81dae2b4f3a66 392
+ui/litellm-dashboard/src/components/vector_store_providers.test.tsx
+  s_d71e62cb6f304c::t_9aaf8d65cc1bc0 59,62-68
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.integration.test.tsx
+  s_d71e62cb6f304c::t_9190a7490266cc 39
+  s_d71e62cb6f304c::t_3588eec6d4fa28 114
+  s_d71e62cb6f304c::t_ad95f7f6a4b9a1 9,23,115-118,236-240
+ui/litellm-dashboard/src/components/networking.tsx
+  s_d71e62cb6f304c::t_5033a53fd120de 5723,5731-5738
+  s_d71e62cb6f304c::t_2599109f3e2d6b 5739
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBStoreFields.tsx
+  s_d71e62cb6f304c::t_3ab0c4b880bf03 66-67
+  s_d71e62cb6f304c::t_970770444fc4d4 154-177
+  s_d71e62cb6f304c::t_cb7c724ca312e3 43,52,64-65,68-78,84-86,88-91,93-94,97-98
+  s_d71e62cb6f304c::t_0e4316709c7bdd 5,23
+  s_d71e62cb6f304c::t_5e9984f43857ee 101-106
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/useMongoDBProviderDefaults.ts
+  s_d71e62cb6f304c::t_fe54473497f8b3 1-25,28-29,31-34,42-44,46-51,54
+  s_d71e62cb6f304c::t_c2ab6e5ccbbb72 26-27,30,35-41,45,52-53
+ui/litellm-dashboard/src/components/vector_store_providers.tsx
+  s_d71e62cb6f304c::t_17d480a79bf11e 231-233,235,242,244
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionEditForm.tsx
+  s_d71e62cb6f304c::t_8444bbbf77be81 111
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBStoreFields.integration.test.tsx
+  s_d71e62cb6f304c::t_3b9949c82be24b 5-10,20,31-38
+  s_d71e62cb6f304c::t_d0ee5609e5194a 105,323-355,357-376,378,388-390,396-397,401-415,422
+  s_d71e62cb6f304c::t_ede57bb0685d12 356,377,379-387,391-395,398-400
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/useMongoDBProviderDefaults.test.ts
+  s_d71e62cb6f304c::t_fbe2a99606c411 1-72
+  s_d71e62cb6f304c::t_53434890b34352 73-76
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionEditForm.test.tsx
+  s_d71e62cb6f304c::t_3af0952a168211 55,133-161
+  s_d71e62cb6f304c::t_baba6221f19cc0 5
+  s_d71e62cb6f304c::t_fed2f0fdbe56c5 6-9,18,28,51-54,162-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "6005aa504e6b5d818b6d4d4662cce92679cc9b8b",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
