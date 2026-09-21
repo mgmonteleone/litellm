@@ -9,6 +9,7 @@ All /vector_store management endpoints
 """
 
 import json
+import re
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
@@ -70,6 +71,11 @@ def _row_to_vector_store(row: "_VectorStoreRow") -> LiteLLM_ManagedVectorStore:
 
 _LITELLM_PARAMS_MASKER: Final = SensitiveDataMasker(extra_sensitive_patterns=frozenset(("connection",)))
 _EMPTY_PARAMS: Final = MappingProxyType({})
+
+# The redaction placeholder every read path echoes back for a saved secret, and the only string an update
+# request can send to mean "keep the saved value" (see ``update_vector_store``). It is REDACTED_BY_LITELM,
+# with a single L, not REDACTED_BY_LITELLM.
+_REDACTION_SENTINEL_TYPO_PATTERN: Final = re.compile(r"^REDACTED_BY_LITEL+M+$", re.IGNORECASE)
 
 
 _REDACT_LITELLM_PARAMS_MAX_DEPTH: Final = 10
@@ -567,6 +573,10 @@ async def update_vector_store(
     """
     Update vector store details in both database and in-memory registry.
     The updated data is immediately synchronized to the in-memory registry.
+
+    A ``litellm_params`` value equal to the redaction sentinel ``REDACTED_BY_LITELM`` (single L) keeps the
+    saved secret instead of overwriting it; a near-miss like the double-L ``REDACTED_BY_LITELLM`` is rejected
+    with a 400 rather than persisted as the literal credential.
     """
     await check_feature_access_for_user(user_api_key_dict, "vector_stores")
 
@@ -593,18 +603,20 @@ async def update_vector_store(
         if update_data.get("vector_store_metadata") is not None:
             update_data["vector_store_metadata"] = safe_dumps(update_data["vector_store_metadata"])
 
-        # Merge request litellm_params over the saved ones, the same way _resolve_connection_target does for
-        # test_connection: request keys win, a value equal to the redaction sentinel keeps the saved secret
-        # instead of overwriting it, and an unresolved os.environ/ reference in the request is rejected rather
-        # than persisted. As with the create path, this stores the raw params (no credential resolution), since
-        # each search embeds the query through the router at request time.
+        # Merge request litellm_params over the saved ones, the same way /vector_store/new persists them: request
+        # keys win, a value equal to the redaction sentinel keeps the saved secret instead of overwriting it, and
+        # an os.environ/ reference is stored as-is and resolved later by resolve_litellm_params_references (see
+        # build_request_data_from_managed_vector_store), matching how /vector_store/new already behaves. Only the
+        # ad hoc test_connection/discover path (_resolve_connection_target) still rejects unresolved references,
+        # since those run against the value immediately rather than persisting it. This stores the raw params (no
+        # credential resolution), since each search embeds the query through the router at request time.
         if "litellm_params" in update_data:
+            _reject_misspelled_redaction_sentinel(update_data.get("litellm_params") or _EMPTY_PARAMS)
             request_litellm_params: Final = {
                 key: value
                 for key, value in (update_data.get("litellm_params") or _EMPTY_PARAMS).items()
                 if value != REDACTED_BY_LITELM_STRING
             }
-            _reject_environment_references(request_litellm_params)
             merged_litellm_params: Final = {**_saved_raw_litellm_params(saved_store), **request_litellm_params}
             litellm_params_dict: Final = GenericLiteLLMParams.model_validate(merged_litellm_params).model_dump(
                 exclude_none=True
@@ -677,6 +689,20 @@ def _reject_environment_references(params: Mapping[str, object]) -> None:
     )
 
     _reject_os_environ_references(dict(params))  # mutable-ok: the shared guard takes a dict
+
+
+def _reject_misspelled_redaction_sentinel(params: Mapping[str, object]) -> None:
+    """update_vector_store persists an os.environ/ api_key as-is (unlike _resolve_connection_target above), so a
+    fat-fingered sentinel like ``REDACTED_BY_LITELLM`` no longer gets caught by the "reject env references" guard;
+    it would instead be saved verbatim as the literal api_key value, silently clobbering the real secret."""
+    api_key: Final = params.get("api_key")
+    looks_like_sentinel: Final = isinstance(api_key, str) and bool(_REDACTION_SENTINEL_TYPO_PATTERN.match(api_key))
+    if looks_like_sentinel and api_key != REDACTED_BY_LITELM_STRING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'api_key' looks like a misspelled redaction sentinel. Use the exact string "
+            f"'{REDACTED_BY_LITELM_STRING}' to keep the saved secret.",
+        )
 
 
 def _saved_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str, object]:  # mutable-ok: merged copy
