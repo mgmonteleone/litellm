@@ -144,7 +144,8 @@ export const coerceFieldValue = (field: VectorStoreFieldConfig, raw: unknown): u
   }
 };
 
-const paramName = (provider: string, field: VectorStoreFieldConfig): string =>
+/** The key a field is stored under in litellm_params, which differs from its form name for a rename provider. */
+export const paramName = (provider: string, field: VectorStoreFieldConfig): string =>
   EMBEDDING_MODEL_RENAME_PROVIDERS.has(provider) && field.name === "embedding_model"
     ? "litellm_embedding_model"
     : field.name;

@@ -396,10 +396,14 @@ const VectorStoreInfoView: React.FC<VectorStoreInfoViewProps> = ({
               </div>
 
               <VectorStoreConnectionCard
+                vectorStoreId={vectorStoreDetails.vector_store_id}
                 provider={vectorStoreDetails.custom_llm_provider || "bedrock"}
                 litellmParams={vectorStoreDetails.litellm_params}
                 connectionTest={connectionTest}
                 onRunConnectionTest={runConnectionTest}
+                accessToken={accessToken}
+                canEdit={is_admin}
+                onConnectionUpdated={fetchVectorStoreDetails}
               />
 
               <IngestedFilesCard files={vectorStoreDetails.vector_store_metadata?.ingested_files} />
