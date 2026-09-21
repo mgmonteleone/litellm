@@ -46240,7 +46240,7 @@
       },
       "/vector_store/update": {
         "post": {
-          "description": "Update vector store details in both database and in-memory registry.\nThe updated data is immediately synchronized to the in-memory registry.",
+          "description": "Update vector store details in both database and in-memory registry.\nThe updated data is immediately synchronized to the in-memory registry.\n\nA ``litellm_params`` value equal to the redaction sentinel ``REDACTED_BY_LITELM`` (single L) keeps the\nsaved secret instead of overwriting it; a near-miss like the double-L ``REDACTED_BY_LITELLM`` is rejected\nwith a 400 rather than persisted as the literal credential.",
           "operationId": "update_vector_store_vector_store_update_post",
           "requestBody": {
             "content": {
