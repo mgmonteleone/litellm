@@ -11,6 +11,12 @@ tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_diagnostics.py
   s_d71e62cb6f304c::t_5cc8efc42a53aa 181-189
   s_d71e62cb6f304c::t_55dfe7f1bc55bc 157-170
   s_d71e62cb6f304c::t_be1431072237ae 156,180
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_provider_defaults.py
+  s_d71e62cb6f304c::t_569b81e3e87af3 1-65
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_569b81e3e87af3 52,903-948
+litellm/types/vector_stores.py
+  s_d71e62cb6f304c::t_569b81e3e87af3 180-188
 ---
 {
   "schema_version": "authorship/3.0.0",
