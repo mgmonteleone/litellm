@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { ChevronDown, PlugZap } from "lucide-react";
-import type { Control } from "react-hook-form";
+import type { Control, UseFormSetValue } from "react-hook-form";
 import { useWatch } from "react-hook-form";
 
 import { labelWithHint } from "@/components/shared/form/LabelWithHint";
@@ -20,6 +20,7 @@ import type { ConnectionTestState } from "../connection/useVectorStoreConnection
 import VectorStoreField, { type SelectOption } from "../fields/VectorStoreField";
 import type { VectorStoreFormValues } from "../vectorStoreFormSchema";
 import { dimensionVerdict, dimensionVerdictMessage, supportsFeature } from "./mongodbConnection";
+import { hasDeploymentDefaults, useMongoDBProviderDefaults } from "./useMongoDBProviderDefaults";
 import { useMongoDiscovery, type DiscoveryState } from "./useMongoDiscovery";
 
 const MONGODB_FIELDS = getProviderSpecificFields("mongodb");
@@ -39,6 +40,7 @@ const Section: React.FC<{ title: string; hint?: string; children: React.ReactNod
 
 export interface MongoDBStoreFieldsProps {
   control: Control<VectorStoreFormValues>;
+  setValue: UseFormSetValue<VectorStoreFormValues>;
   accessToken: string | null;
   embeddingModelOptions: readonly SelectOption[];
   connectionTest: ConnectionTestState;
@@ -47,6 +49,7 @@ export interface MongoDBStoreFieldsProps {
 
 export const MongoDBStoreFields: React.FC<MongoDBStoreFieldsProps> = ({
   control,
+  setValue,
   accessToken,
   embeddingModelOptions,
   connectionTest,
@@ -58,24 +61,49 @@ export const MongoDBStoreFields: React.FC<MongoDBStoreFieldsProps> = ({
     name: ["api_base", "api_key", "mongodb_database", "mongodb_collection"],
   });
 
-  const connectionReady = Boolean(apiBase && apiKey);
+  const providerDefaults = useMongoDBProviderDefaults(accessToken);
+  const usingDeploymentDefaults = hasDeploymentDefaults(providerDefaults);
+  // Only consulted while usingDeploymentDefaults is true (the fields render unconditionally
+  // otherwise), so it only ever needs to start open when a saved override already has a value.
+  const [overrideOpen, setOverrideOpen] = useState(() => Boolean(apiBase) || Boolean(apiKey));
+
+  const handleOverrideOpenChange = (open: boolean) => {
+    setOverrideOpen(open);
+    if (!open) {
+      setValue("api_base", "");
+      setValue("api_key", "");
+    }
+  };
+
+  const connectionReady = usingDeploymentDefaults || Boolean(apiBase && apiKey);
   /**
    * Each discovery kind is scoped to only the fields it actually depends on, so typing in one
    * field doesn't invalidate a sibling's cache and refire its request too: the database list
    * only needs the sidecar credentials, the collection list also needs the database, and the
    * field lists need the collection on top of that.
+   *
+   * A blank override is left out entirely rather than sent as an empty string, so the backend
+   * resolves it from the deployment's own configuration exactly as a real search would.
    */
-  const connectionParams = useMemo(() => ({ api_base: apiBase, api_key: apiKey }), [apiBase, apiKey]);
+  const connectionOverrides = useMemo(
+    () => ({ ...(apiBase ? { api_base: apiBase } : {}), ...(apiKey ? { api_key: apiKey } : {}) }),
+    [apiBase, apiKey],
+  );
   const collectionParams = useMemo(
-    () => ({ api_base: apiBase, api_key: apiKey, mongodb_database: database }),
-    [apiBase, apiKey, database],
+    () => ({ ...connectionOverrides, mongodb_database: database }),
+    [connectionOverrides, database],
   );
   const fieldParams = useMemo(
-    () => ({ api_base: apiBase, api_key: apiKey, mongodb_database: database, mongodb_collection: collection }),
-    [apiBase, apiKey, database, collection],
+    () => ({ ...connectionOverrides, mongodb_database: database, mongodb_collection: collection }),
+    [connectionOverrides, database, collection],
   );
 
-  const databases = useMongoDiscovery(accessToken, "databases", { litellmParams: connectionParams }, connectionReady);
+  const databases = useMongoDiscovery(
+    accessToken,
+    "databases",
+    { litellmParams: connectionOverrides },
+    connectionReady,
+  );
   const collections = useMongoDiscovery(
     accessToken,
     "collections",
@@ -123,7 +151,30 @@ export const MongoDBStoreFields: React.FC<MongoDBStoreFieldsProps> = ({
   return (
     <div className="flex flex-col gap-4">
       <Section title="Connection" hint="Where LiteLLM reaches the MongoDB sidecar.">
-        {fieldsInGroup("connection").map((field) => renderField(field))}
+        {usingDeploymentDefaults ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Using this deployment&apos;s MongoDB sidecar at <code>{providerDefaults.apiBase}</code>.
+            </p>
+            <Collapsible open={overrideOpen} onOpenChange={handleOverrideOpenChange}>
+              <CollapsibleTrigger
+                render={
+                  <Button type="button" variant="ghost" size="sm" className="group/override gap-1.5 px-0">
+                    <ChevronDown
+                      className={cn("size-4 transition-transform", "group-data-[panel-open]/override:rotate-180")}
+                    />
+                    Override sidecar connection
+                  </Button>
+                }
+              />
+              <CollapsibleContent className="flex flex-col gap-3 pt-2">
+                {fieldsInGroup("connection").map((field) => renderField(field))}
+              </CollapsibleContent>
+            </Collapsible>
+          </>
+        ) : (
+          fieldsInGroup("connection").map((field) => renderField(field))
+        )}
         <div className="flex items-center gap-3">
           <Button
             type="button"

@@ -2,7 +2,12 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { vectorStoreCreateCall, vectorStoreDiscoverCall, vectorStoreTestConnectionCall } from "@/components/networking";
+import {
+  vectorStoreCreateCall,
+  vectorStoreDiscoverCall,
+  vectorStoreProviderDefaultsCall,
+  vectorStoreTestConnectionCall,
+} from "@/components/networking";
 import { ApiError } from "@/lib/http/client";
 
 import { REDACTION_SENTINEL } from "../connection/connectionCurl";
@@ -12,6 +17,7 @@ vi.mock("@/components/networking", () => ({
   vectorStoreCreateCall: vi.fn(),
   vectorStoreTestConnectionCall: vi.fn(),
   vectorStoreDiscoverCall: vi.fn(),
+  vectorStoreProviderDefaultsCall: vi.fn(),
   getProxyBaseUrl: () => "http://localhost:4000",
 }));
 
@@ -22,6 +28,14 @@ vi.mock("@/components/llm_calls/fetch_models", () => ({
 const mockCreate = vi.mocked(vectorStoreCreateCall);
 const mockTest = vi.mocked(vectorStoreTestConnectionCall);
 const mockDiscover = vi.mocked(vectorStoreDiscoverCall);
+const mockProviderDefaults = vi.mocked(vectorStoreProviderDefaultsCall);
+
+const NO_DEPLOYMENT_DEFAULTS = { custom_llm_provider: "mongodb", api_base: null, api_key_configured: false };
+const WITH_DEPLOYMENT_DEFAULTS = {
+  custom_llm_provider: "mongodb",
+  api_base: "https://deployment-sidecar.example",
+  api_key_configured: true,
+};
 
 const SIDECAR_URL = "http://127.0.0.1:8080";
 
@@ -88,6 +102,7 @@ describe("MongoDB vector store dialog", () => {
     mockCreate.mockResolvedValue(undefined);
     mockTest.mockResolvedValue(PASSING_RESULT);
     mockDiscover.mockImplementation(async (_token, body) => discoveryPayloads[body.kind] ?? {});
+    mockProviderDefaults.mockResolvedValue(NO_DEPLOYMENT_DEFAULTS);
   });
 
   it("shows the sidecar setup guidance with a copyable docker run", async () => {
@@ -305,12 +320,106 @@ describe("MongoDB vector store dialog", () => {
   });
 });
 
+describe("MongoDB deployment-configured sidecar defaults", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreate.mockResolvedValue(undefined);
+    mockTest.mockResolvedValue(PASSING_RESULT);
+    mockDiscover.mockImplementation(async (_token, body) => discoveryPayloads[body.kind] ?? {});
+  });
+
+  it("hides the sidecar fields and omits them from the saved params when the deployment has defaults", async () => {
+    mockProviderDefaults.mockResolvedValue(WITH_DEPLOYMENT_DEFAULTS);
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+
+    expect(await screen.findByText(/Using this deployment's MongoDB sidecar at/)).toBeInTheDocument();
+    expect(screen.getByText("https://deployment-sidecar.example")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(SIDECAR_URL)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Enter sidecar API key")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Test connection/ })).toBeEnabled();
+
+    fireEvent.change(screen.getByPlaceholderText("policy_vector_index"), { target: { value: "policy_index" } });
+    fireEvent.change(screen.getByPlaceholderText("sample_mflix"), { target: { value: "knowledge" } });
+    fireEvent.change(screen.getByPlaceholderText("embedded_movies"), { target: { value: "policies" } });
+    await chooseEmbeddingModel(user);
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    await vi.waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    const payload = mockCreate.mock.calls[0][1];
+    expect(payload.litellm_params).not.toHaveProperty("api_base");
+    expect(payload.litellm_params).not.toHaveProperty("api_key");
+  });
+
+  it("sends the typed override once the admin opens it", async () => {
+    mockProviderDefaults.mockResolvedValue(WITH_DEPLOYMENT_DEFAULTS);
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+    await screen.findByText(/Using this deployment's MongoDB sidecar at/);
+    await user.click(screen.getByRole("button", { name: "Override sidecar connection" }));
+    fillConnection();
+
+    fireEvent.change(screen.getByPlaceholderText("policy_vector_index"), { target: { value: "policy_index" } });
+    fireEvent.change(screen.getByPlaceholderText("sample_mflix"), { target: { value: "knowledge" } });
+    fireEvent.change(screen.getByPlaceholderText("embedded_movies"), { target: { value: "policies" } });
+    await chooseEmbeddingModel(user);
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    await vi.waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0][1].litellm_params).toMatchObject({
+      api_base: SIDECAR_URL,
+      api_key: "sidecar-key",
+    });
+  });
+
+  it("hides the override fields again, and clears any value typed into them, once collapsed back", async () => {
+    mockProviderDefaults.mockResolvedValue(WITH_DEPLOYMENT_DEFAULTS);
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+    await screen.findByText(/Using this deployment's MongoDB sidecar at/);
+    await user.click(screen.getByRole("button", { name: "Override sidecar connection" }));
+    fillConnection();
+    await user.click(screen.getByRole("button", { name: "Override sidecar connection" }));
+
+    expect(screen.queryByPlaceholderText(SIDECAR_URL)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("policy_vector_index"), { target: { value: "policy_index" } });
+    fireEvent.change(screen.getByPlaceholderText("sample_mflix"), { target: { value: "knowledge" } });
+    fireEvent.change(screen.getByPlaceholderText("embedded_movies"), { target: { value: "policies" } });
+    await chooseEmbeddingModel(user);
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    await vi.waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0][1].litellm_params).not.toHaveProperty("api_base");
+    expect(mockCreate.mock.calls[0][1].litellm_params).not.toHaveProperty("api_key");
+  });
+
+  it("renders the sidecar fields plainly when the deployment has no defaults configured", async () => {
+    mockProviderDefaults.mockResolvedValue(NO_DEPLOYMENT_DEFAULTS);
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+
+    expect(screen.queryByText(/Using this deployment's MongoDB sidecar at/)).not.toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(SIDECAR_URL)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Enter sidecar API key")).toBeInTheDocument();
+  });
+});
+
 describe("MongoDB discovery debouncing and scoping", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCreate.mockResolvedValue(undefined);
     mockTest.mockResolvedValue(PASSING_RESULT);
     mockDiscover.mockImplementation(async (_token, body) => discoveryPayloads[body.kind] ?? {});
+    mockProviderDefaults.mockResolvedValue(NO_DEPLOYMENT_DEFAULTS);
   });
 
   it("debounces five fast keystrokes in Database into a single discover call, and never re-fires Databases", async () => {

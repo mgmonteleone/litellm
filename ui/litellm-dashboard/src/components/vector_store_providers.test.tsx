@@ -56,10 +56,16 @@ describe("getVectorStoreProviderLogoAndName", () => {
     ]);
   });
 
-  it("hides the mongodb sidecar API key", () => {
+  it("hides the mongodb sidecar API key and makes it an optional override of the deployment default", () => {
     const apiKey = getProviderSpecificFields("mongodb").find((field) => field.name === "api_key");
 
-    expect(apiKey).toMatchObject({ type: "password", required: true });
+    expect(apiKey).toMatchObject({ type: "password", required: false });
+  });
+
+  it("makes the mongodb sidecar URL an optional override of the deployment default", () => {
+    const apiBase = getProviderSpecificFields("mongodb").find((field) => field.name === "api_base");
+
+    expect(apiBase).toMatchObject({ type: "text", required: false });
   });
 
   it("picks the mongodb embedding model from the proxy's models rather than a fixed list", () => {

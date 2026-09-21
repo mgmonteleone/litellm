@@ -5720,12 +5720,22 @@ export const vectorStoreInfoCall = async (accessToken: string, vectorStoreId: st
 export type VectorStoreTestConnectionResponse = components["schemas"]["VectorStoreTestConnectionResponse"];
 export type VectorStoreConnectionCheck = components["schemas"]["VectorStoreConnectionCheck"];
 export type VectorStoreDiscoverRequest = components["schemas"]["VectorStoreDiscoverRequest"];
+export type VectorStoreProviderDefaultsResponse = components["schemas"]["VectorStoreProviderDefaultsResponse"];
 
 export const vectorStoreTestConnectionCall = async (
   accessToken: string,
   body: components["schemas"]["VectorStoreTestConnectionRequest"],
 ): Promise<VectorStoreTestConnectionResponse> =>
   await apiClient.post<VectorStoreTestConnectionResponse>(`/vector_store/test_connection`, { accessToken, body });
+
+export const vectorStoreProviderDefaultsCall = async (
+  accessToken: string,
+  customLlmProvider: string,
+): Promise<VectorStoreProviderDefaultsResponse> =>
+  await apiClient.get<VectorStoreProviderDefaultsResponse>(`/vector_store/provider_defaults`, {
+    accessToken,
+    query: { custom_llm_provider: customLlmProvider },
+  });
 
 /** Provider-shaped JSON; callers narrow it with their own parser. */
 export const vectorStoreDiscoverCall = async (

@@ -2,7 +2,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { vectorStoreDiscoverCall, vectorStoreUpdateCall } from "@/components/networking";
+import {
+  vectorStoreDiscoverCall,
+  vectorStoreProviderDefaultsCall,
+  vectorStoreUpdateCall,
+} from "@/components/networking";
 
 import ConnectionEditForm from "./ConnectionEditForm";
 import { REDACTION_SENTINEL } from "./connectionCurl";
@@ -11,6 +15,7 @@ vi.mock("@/components/networking", () => ({
   vectorStoreUpdateCall: vi.fn(),
   vectorStoreTestConnectionCall: vi.fn(),
   vectorStoreDiscoverCall: vi.fn(),
+  vectorStoreProviderDefaultsCall: vi.fn(),
   getProxyBaseUrl: () => "http://localhost:4000",
 }));
 
@@ -20,6 +25,7 @@ vi.mock("@/components/llm_calls/fetch_models", () => ({
 
 const mockUpdate = vi.mocked(vectorStoreUpdateCall);
 const mockDiscover = vi.mocked(vectorStoreDiscoverCall);
+const mockProviderDefaults = vi.mocked(vectorStoreProviderDefaultsCall);
 
 const renderForm = (overrides: Partial<React.ComponentProps<typeof ConnectionEditForm>> = {}) =>
   render(
@@ -42,6 +48,11 @@ describe("ConnectionEditForm", () => {
     vi.clearAllMocks();
     mockUpdate.mockResolvedValue({ status: "success" });
     mockDiscover.mockResolvedValue({});
+    mockProviderDefaults.mockResolvedValue({
+      custom_llm_provider: "mongodb",
+      api_base: null,
+      api_key_configured: false,
+    });
   });
 
   it("prefills a non-secret field with its saved value and a secret field with the redaction sentinel", () => {
@@ -118,5 +129,42 @@ describe("ConnectionEditForm", () => {
 
     expect(screen.getByLabelText(/Database/)).toHaveValue("knowledge");
     expect(screen.getByLabelText(/Collection/)).toHaveValue("policies");
+  });
+
+  it("hides the sidecar fields for a mongodb store with no saved override when the deployment has defaults", async () => {
+    mockProviderDefaults.mockResolvedValue({
+      custom_llm_provider: "mongodb",
+      api_base: "https://deployment-sidecar.example",
+      api_key_configured: true,
+    });
+    renderForm({
+      provider: "mongodb",
+      litellmParams: { mongodb_database: "knowledge", mongodb_collection: "policies" },
+    });
+
+    expect(await screen.findByText(/Using this deployment's MongoDB sidecar at/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Sidecar URL/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Sidecar API Key/)).not.toBeInTheDocument();
+  });
+
+  it("keeps a mongodb store's saved override visible even when the deployment has defaults", async () => {
+    mockProviderDefaults.mockResolvedValue({
+      custom_llm_provider: "mongodb",
+      api_base: "https://deployment-sidecar.example",
+      api_key_configured: true,
+    });
+    renderForm({
+      provider: "mongodb",
+      litellmParams: {
+        api_base: "http://127.0.0.1:8080",
+        api_key: REDACTION_SENTINEL,
+        mongodb_database: "knowledge",
+        mongodb_collection: "policies",
+      },
+    });
+
+    await screen.findByText(/Using this deployment's MongoDB sidecar at/);
+    expect(screen.getByLabelText(/Sidecar URL/)).toHaveValue("http://127.0.0.1:8080");
+    expect(screen.getByLabelText(/Sidecar API Key/)).toHaveValue(REDACTION_SENTINEL);
   });
 });
