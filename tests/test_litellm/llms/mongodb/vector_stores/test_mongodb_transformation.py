@@ -322,3 +322,53 @@ async def test_search_rejects_an_unknown_param_before_embedding_or_any_request()
         )
 
     executor.call.assert_not_called()
+
+
+def test_get_complete_url_falls_back_to_the_deployment_sidecar_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example/")
+
+    assert MongoDBVectorStoreConfig().get_complete_url(api_base=None, litellm_params={}) == (
+        "https://deployment-sidecar.example"
+    )
+
+
+def test_get_complete_url_prefers_a_store_specific_override_over_the_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+
+    assert (
+        MongoDBVectorStoreConfig().get_complete_url(api_base="https://per-store-override.example", litellm_params={})
+        == "https://per-store-override.example"
+    )
+
+
+def test_get_complete_url_without_either_source_names_both_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MONGODB_SIDECAR_API_BASE", raising=False)
+
+    with pytest.raises(litellm.BadRequestError, match="api_base or MONGODB_SIDECAR_API_BASE"):
+        MongoDBVectorStoreConfig().get_complete_url(api_base=None, litellm_params={})
+
+
+@pytest.mark.asyncio
+async def test_search_resolves_api_base_from_the_deployment_sidecar_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An admin should not need to know the sidecar's address: the deployment configures it once."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    executor: Final = RecordingEmbeddingExecutor()
+    params_without_api_base: Final = {key: value for key, value in BASE_PARAMS.items() if key != "api_base"}
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://deployment-sidecar.example/v1/vector_stores/policy_index/search"
+        return httpx.Response(200, json=RESULT)
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        client: Final = HTTPHandler(client=transport)
+        response: Final = litellm.vector_stores.search(
+            vector_store_id="policy_index",
+            query="travel policy",
+            custom_llm_provider="mongodb",
+            _direct_vector_store_embedding_executor=executor,
+            client=client,
+            **params_without_api_base,
+        )
+    assert response == RESULT
