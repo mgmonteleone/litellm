@@ -49,6 +49,7 @@ from litellm.types.vector_stores import (
     VectorStoreDeleteRequest,
     VectorStoreDiscoverRequest,
     VectorStoreInfoRequest,
+    VectorStoreProviderDefaultsResponse,
     VectorStoreTestConnectionRequest,
     VectorStoreTestConnectionResponse,
     VectorStoreUpdateRequest,
@@ -899,3 +900,49 @@ async def discover_vector_store_resources(
     except Exception as error:  # noqa: BLE001  # surface provider failures as a clean 502
         verbose_proxy_logger.exception("Vector store discovery failed: %s", error)
         raise HTTPException(status_code=502, detail=str(error)[:500])
+
+
+def _provider_defaults(custom_llm_provider: str) -> VectorStoreProviderDefaultsResponse:
+    """The deployment-configured connection defaults for a provider. Never includes the secret itself."""
+    from litellm.secret_managers.main import get_secret_str
+
+    match custom_llm_provider:
+        case "mongodb":
+            return VectorStoreProviderDefaultsResponse(
+                custom_llm_provider=custom_llm_provider,
+                api_base=get_secret_str("MONGODB_SIDECAR_API_BASE"),
+                api_key_configured=bool(get_secret_str("MONGODB_SIDECAR_API_KEY")),
+            )
+        case _:
+            return VectorStoreProviderDefaultsResponse(
+                custom_llm_provider=custom_llm_provider, api_base=None, api_key_configured=False
+            )
+
+
+@router.get(
+    "/vector_store/provider_defaults",
+    tags=["vector store management"],  # mutable-ok: FastAPI route metadata
+    dependencies=[Depends(user_api_key_auth)],  # mutable-ok: FastAPI route metadata
+    response_model=VectorStoreProviderDefaultsResponse,
+)
+@router.get(
+    "/v1/vector_store/provider_defaults",
+    tags=["vector store management"],  # mutable-ok: FastAPI route metadata
+    dependencies=[Depends(user_api_key_auth)],  # mutable-ok: FastAPI route metadata
+    response_model=VectorStoreProviderDefaultsResponse,
+)
+async def vector_store_provider_defaults(
+    custom_llm_provider: str,
+    user_api_key_dict: UserAPIKeyAuth = Depends(user_api_key_auth),  # noqa: B008  # FastAPI dependency injection
+) -> VectorStoreProviderDefaultsResponse:
+    """
+    Report the deployment's configured defaults for a vector store provider (for example, the MongoDB
+    sidecar's api_base and whether an api_key is configured) so the dashboard can offer them instead of
+    asking the admin to re-enter values the deployment already sets. Never returns the key itself.
+    Proxy admins only.
+
+    Example: `GET /vector_store/provider_defaults?custom_llm_provider=mongodb`
+    """
+    await check_feature_access_for_user(user_api_key_dict, "vector_stores")
+    _assert_proxy_admin(user_api_key_dict, "read provider defaults for")
+    return _provider_defaults(custom_llm_provider)

@@ -177,6 +177,15 @@ class VectorStoreDiscoverRequest(VectorStoreTestConnectionRequest):
     options: dict[str, Any] = Field(default_factory=dict)  # mutable-ok: request body
 
 
+class VectorStoreProviderDefaultsResponse(TypedDict, total=False):
+    """Result of GET /vector_store/provider_defaults. The sidecar's own API key is never returned, only
+    whether the deployment has one configured, so the dashboard can offer to use it without displaying it."""
+
+    custom_llm_provider: ReadOnly[str]
+    api_base: ReadOnly[str | None]
+    api_key_configured: ReadOnly[bool]
+
+
 class VectorStoreSearchOptionalRequestParams(TypedDict, total=False):
     """TypedDict for Optional parameters supported by the vector store search API."""
 
