@@ -1,0 +1,30 @@
+tests/unit/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_8c23bfcf20da44 193-216
+  s_d71e62cb6f304c::t_e94c31305a37b9 279-306
+  s_d71e62cb6f304c::t_bc8530a4228a9b 307-308
+tests/unit/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_d71e62cb6f304c::t_256623cd181eeb 325-373
+  s_d71e62cb6f304c::t_a51110173dd905 374
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_b1a85cb174730c 392-397,399,418
+tests/unit/llms/mongodb/vector_stores/test_mongodb_diagnostics.py
+  s_d71e62cb6f304c::t_5cc8efc42a53aa 181-189
+  s_d71e62cb6f304c::t_55dfe7f1bc55bc 157-170
+  s_d71e62cb6f304c::t_be1431072237ae 156,180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "b711a31d42c63be8f32ef2e708d934cb50edc115",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
