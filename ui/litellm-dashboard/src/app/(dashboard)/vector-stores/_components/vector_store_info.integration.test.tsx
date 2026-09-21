@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   credentialListCall,
+  vectorStoreDiscoverCall,
   vectorStoreInfoCall,
   vectorStoreTestConnectionCall,
   vectorStoreUpdateCall,
@@ -17,7 +18,12 @@ vi.mock("@/components/networking", () => ({
   vectorStoreUpdateCall: vi.fn(),
   credentialListCall: vi.fn(),
   vectorStoreTestConnectionCall: vi.fn(),
+  vectorStoreDiscoverCall: vi.fn(),
   getProxyBaseUrl: () => "http://localhost:4000",
+}));
+
+vi.mock("@/components/llm_calls/fetch_models", () => ({
+  fetchAvailableModels: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("./VectorStoreTester", () => ({ __esModule: true, default: () => null }));
@@ -27,6 +33,7 @@ const mockUpdate = vi.mocked(vectorStoreUpdateCall);
 const mockCredentials = vi.mocked(credentialListCall);
 const mockToast = vi.mocked(toast);
 const mockTestConnection = vi.mocked(vectorStoreTestConnectionCall);
+const mockDiscover = vi.mocked(vectorStoreDiscoverCall);
 
 const MONGODB_RECORD = {
   vector_store_id: "policy_vector_index",
@@ -216,6 +223,8 @@ describe("VectorStoreInfoView connection card", () => {
     mockInfo.mockResolvedValue({ vector_store: MONGODB_RECORD });
     mockCredentials.mockResolvedValue({ credentials: [] });
     mockTestConnection.mockResolvedValue(PASSING_CHECKLIST);
+    mockDiscover.mockResolvedValue({});
+    mockUpdate.mockResolvedValue({ status: "success" });
   });
 
   it("shows the saved connection so database and collection are visible after save", async () => {
@@ -287,5 +296,50 @@ describe("VectorStoreInfoView connection card", () => {
     expect(await screen.findByText("Valkey")).toBeInTheDocument();
     expect(screen.getByText("Milvus")).toBeInTheDocument();
     expect(screen.getAllByText("MongoDB").length).toBeGreaterThan(0);
+  });
+
+  it("edits the connection: prefills the saved fields, sends only the changed key plus the untouched secret sentinel, and refreshes on save", async () => {
+    const user = userEvent.setup();
+    renderView(false);
+
+    await user.click(await screen.findByRole("button", { name: "Edit connection" }));
+
+    expect(screen.getByLabelText(/Sidecar URL/)).toHaveValue("http://127.0.0.1:8080");
+    expect(screen.getByLabelText(/Sidecar API Key/)).toHaveValue("REDACTED_BY_LITELM");
+
+    fireEvent.change(screen.getByLabelText(/Collection/), { target: { value: "policies_v2" } });
+    mockInfo.mockResolvedValueOnce({
+      vector_store: {
+        ...MONGODB_RECORD,
+        litellm_params: { ...MONGODB_RECORD.litellm_params, mongodb_collection: "policies_v2" },
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await vi.waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0]).toEqual([
+      "sk-test",
+      {
+        vector_store_id: "policy_vector_index",
+        litellm_params: { mongodb_collection: "policies_v2", api_key: "REDACTED_BY_LITELM" },
+      },
+    ]);
+
+    // Back to the read-only card, refreshed with the saved change, and Test connection is offered again.
+    await vi.waitFor(() => expect(mockInfo).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("policies_v2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Test connection/ })).toBeInTheDocument();
+  });
+
+  it("cancels the connection edit without saving", async () => {
+    const user = userEvent.setup();
+    renderView(false);
+
+    await user.click(await screen.findByRole("button", { name: "Edit connection" }));
+    fireEvent.change(screen.getByLabelText(/Collection/), { target: { value: "abandoned" } });
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(await screen.findByText("policies")).toBeInTheDocument();
   });
 });
