@@ -1,0 +1,29 @@
+litellm/proxy/_lazy_openapi_snapshot.json
+  s_d71e62cb6f304c::t_be1fbb7841ff65 46243
+ui/litellm-dashboard/src/lib/http/schema.d.ts
+  s_2209f22f830d7f::t_0859096bd740f2 22373-22376
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "2fe86d6af2cd9218f54c23d7a25f0599b84ec139",
+  "prompts": {},
+  "sessions": {
+    "s_2209f22f830d7f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "35a2d2ad-0d97-475b-b379-d300c218cb16",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    },
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
