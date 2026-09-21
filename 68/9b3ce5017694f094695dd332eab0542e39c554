@@ -1,0 +1,19 @@
+litellm/proxy/_lazy_openapi_snapshot.json
+  s_d71e62cb6f304c::t_59c36fa148c072 414,9013,9061,9105,9151,13724,13816,14117,14631,14675,14719,14773,14829,14950,19773,27690,30999,31044,31099,31144,31204,31266,31336,31392,31456,35691,35798,38529-38565,38579-38648,38662-38781,38856-38904,38964-39058,39104-39152,39300-39394
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "689b3ce5017694f094695dd332eab0542e39c554",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
