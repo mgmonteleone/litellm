@@ -20942,6 +20942,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/vector_store/provider_defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vector Store Provider Defaults
+         * @description Report the deployment's configured defaults for a vector store provider (for example, the MongoDB
+         *     sidecar's api_base and whether an api_key is configured) so the dashboard can offer them instead of
+         *     asking the admin to re-enter values the deployment already sets. Never returns the key itself.
+         *     Proxy admins only.
+         *
+         *     Example: `GET /vector_store/provider_defaults?custom_llm_provider=mongodb`
+         */
+        get: operations["vector_store_provider_defaults_v1_vector_store_provider_defaults_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/vector_store/test_connection": {
         parameters: {
             query?: never;
@@ -22321,6 +22346,31 @@ export interface paths {
          *     - vector_store_metadata: Optional[Dict] - Additional metadata for the vector store
          */
         post: operations["new_vector_store_vector_store_new_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vector_store/provider_defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vector Store Provider Defaults
+         * @description Report the deployment's configured defaults for a vector store provider (for example, the MongoDB
+         *     sidecar's api_base and whether an api_key is configured) so the dashboard can offer them instead of
+         *     asking the admin to re-enter values the deployment already sets. Never returns the key itself.
+         *     Proxy admins only.
+         *
+         *     Example: `GET /vector_store/provider_defaults?custom_llm_provider=mongodb`
+         */
+        get: operations["vector_store_provider_defaults_vector_store_provider_defaults_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -41461,6 +41511,19 @@ export interface components {
         VectorStoreInfoRequest: {
             /** Vector Store Id */
             vector_store_id: string;
+        };
+        /**
+         * VectorStoreProviderDefaultsResponse
+         * @description Result of GET /vector_store/provider_defaults. The sidecar's own API key is never returned, only
+         *     whether the deployment has one configured, so the dashboard can offer to use it without displaying it.
+         */
+        VectorStoreProviderDefaultsResponse: {
+            /** Api Base */
+            api_base?: string | null;
+            /** Api Key Configured */
+            api_key_configured?: boolean;
+            /** Custom Llm Provider */
+            custom_llm_provider?: string;
         };
         /**
          * VectorStoreTestConnectionRequest
@@ -68750,6 +68813,37 @@ export interface operations {
             };
         };
     };
+    vector_store_provider_defaults_v1_vector_store_provider_defaults_get: {
+        parameters: {
+            query: {
+                custom_llm_provider: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreProviderDefaultsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     vector_store_test_connection_v1_vector_store_test_connection_post: {
         parameters: {
             query?: never;
@@ -70640,6 +70734,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vector_store_provider_defaults_vector_store_provider_defaults_get: {
+        parameters: {
+            query: {
+                custom_llm_provider: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreProviderDefaultsResponse"];
                 };
             };
             /** @description Validation Error */

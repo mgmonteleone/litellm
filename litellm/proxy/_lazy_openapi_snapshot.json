@@ -45623,6 +45623,32 @@
           "title": "VectorStoreInfoRequest",
           "type": "object"
         },
+        "VectorStoreProviderDefaultsResponse": {
+          "description": "Result of GET /vector_store/provider_defaults. The sidecar's own API key is never returned, only\nwhether the deployment has one configured, so the dashboard can offer to use it without displaying it.",
+          "properties": {
+            "api_base": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Api Base"
+            },
+            "api_key_configured": {
+              "title": "Api Key Configured",
+              "type": "boolean"
+            },
+            "custom_llm_provider": {
+              "title": "Custom Llm Provider",
+              "type": "string"
+            }
+          },
+          "title": "VectorStoreProviderDefaultsResponse",
+          "type": "object"
+        },
         "VectorStoreTestConnectionRequest": {
           "description": "Test a saved store (vector_store_id) or an unsaved configuration (custom_llm_provider + litellm_params).\n\nRequest litellm_params override the saved ones; a value equal to the redaction sentinel keeps the saved secret.",
           "properties": {
@@ -45894,6 +45920,54 @@
             }
           ],
           "summary": "List Vector Stores",
+          "tags": [
+            "vector_store_management"
+          ]
+        }
+      },
+      "/v1/vector_store/provider_defaults": {
+        "get": {
+          "description": "Report the deployment's configured defaults for a vector store provider (for example, the MongoDB\nsidecar's api_base and whether an api_key is configured) so the dashboard can offer them instead of\nasking the admin to re-enter values the deployment already sets. Never returns the key itself.\nProxy admins only.\n\nExample: `GET /vector_store/provider_defaults?custom_llm_provider=mongodb`",
+          "operationId": "vector_store_provider_defaults_v1_vector_store_provider_defaults_get",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "custom_llm_provider",
+              "required": true,
+              "schema": {
+                "title": "Custom Llm Provider",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/VectorStoreProviderDefaultsResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Vector Store Provider Defaults",
           "tags": [
             "vector_store_management"
           ]
@@ -46186,6 +46260,54 @@
             }
           ],
           "summary": "New Vector Store",
+          "tags": [
+            "vector_store_management"
+          ]
+        }
+      },
+      "/vector_store/provider_defaults": {
+        "get": {
+          "description": "Report the deployment's configured defaults for a vector store provider (for example, the MongoDB\nsidecar's api_base and whether an api_key is configured) so the dashboard can offer them instead of\nasking the admin to re-enter values the deployment already sets. Never returns the key itself.\nProxy admins only.\n\nExample: `GET /vector_store/provider_defaults?custom_llm_provider=mongodb`",
+          "operationId": "vector_store_provider_defaults_vector_store_provider_defaults_get",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "custom_llm_provider",
+              "required": true,
+              "schema": {
+                "title": "Custom Llm Provider",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/VectorStoreProviderDefaultsResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Vector Store Provider Defaults",
           "tags": [
             "vector_store_management"
           ]
