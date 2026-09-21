@@ -1,0 +1,28 @@
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_provider_defaults.py
+  s_d71e62cb6f304c::t_122b10eeb90221 1-65
+litellm/types/vector_stores.py
+  s_d71e62cb6f304c::t_9b00f0c416f904 180-188
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_6855ad79308de6 52
+  s_d71e62cb6f304c::t_b7b7212241c17a 903-948
+litellm/proxy/_lazy_openapi_snapshot.json
+  s_d71e62cb6f304c::t_639e7f00a6a050 45626-45651,45928-45975,46268-46315
+ui/litellm-dashboard/src/lib/http/schema.d.ts
+  s_d71e62cb6f304c::t_599b4863a26fd6 20945-20969,22355-22379,41515-41527,68816-68846,70746-70776
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "4a18afc14099e404fa4e0340b78bd4005005a8a8",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
