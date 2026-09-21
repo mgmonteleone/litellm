@@ -389,10 +389,14 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         }  # mutable-ok: writable HTTP headers
 
     def get_complete_url(self, api_base: str | None, litellm_params: Mapping[str, object]) -> str:
-        if not api_base:
-            raise config_error("MongoDB sidecar api_base is required, for example http://127.0.0.1:8080.")
+        resolved: Final = api_base or get_secret_str("MONGODB_SIDECAR_API_BASE")
+        if not resolved:
+            raise config_error(
+                "MongoDB sidecar api_base is required. Set api_base or MONGODB_SIDECAR_API_BASE, "
+                "for example http://127.0.0.1:8080."
+            )
         try:
-            parsed: Final = urlsplit(api_base)
+            parsed: Final = urlsplit(resolved)
             valid: Final = parsed.scheme in ("http", "https") and bool(parsed.hostname) and parsed.port != 0
         except ValueError:
             raise config_error("MongoDB sidecar api_base must be a valid HTTP or HTTPS URL.") from None
@@ -411,7 +415,7 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
                 raise config_error(
                     "MongoDB sidecar requires HTTPS. HTTP is supported only for a loopback IP such as 127.0.0.1."
                 )
-        return api_base.rstrip("/")
+        return resolved.rstrip("/")
 
     @staticmethod
     def _timeout_ms(value: object) -> int:

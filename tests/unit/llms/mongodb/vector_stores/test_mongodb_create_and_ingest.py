@@ -190,6 +190,30 @@ async def test_public_sdk_create_posts_to_sidecar_and_returns_openai_shape() -> 
     ]
 
 
+@pytest.mark.asyncio
+async def test_create_resolves_api_base_from_the_deployment_sidecar_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An admin should not need to know the sidecar's address: the deployment configures it once."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    executor: Final = RecordingEmbeddingExecutor(dimensions=4)
+    params_without_api_base: Final = {key: value for key, value in BASE_PARAMS.items() if key != "api_base"}
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://deployment-sidecar.example/v1/vector_stores"
+        return httpx.Response(201, json=INDEX_STATUS)
+
+    client: Final = AsyncHTTPHandler()
+    await client.client.aclose()
+    client.client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    with patch(
+        "litellm.utils.ProviderConfigManager.get_provider_vector_stores_config",
+        return_value=MongoDBVectorStoreConfig(executor),
+    ):
+        response: Final = await litellm.vector_stores.acreate(
+            name="policy_index", custom_llm_provider="mongodb", client=client, **params_without_api_base
+        )
+    assert response["id"] == "policy_index"
+
+
 def test_mongodb_is_registered_for_rag_ingestion() -> None:
     assert get_ingestion_class("mongodb") is MongoDBRAGIngestion
     assert MongoDBRAGIngestion.supports_existing_file_id is False
@@ -250,6 +274,36 @@ async def test_ingestion_embeds_locally_then_creates_index_and_posts_batches() -
     assert second["documents"][0]["chunk_index"] == 200
     assert first["file_id"] == file_id and first["filename"] == "travel.md"
     assert second["filename"] == "travel.md"
+
+
+@pytest.mark.asyncio
+async def test_ingestion_resolves_api_base_from_the_deployment_sidecar_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    params_without_api_base: Final = {key: value for key, value in BASE_PARAMS.items() if key != "api_base"}
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert str(request.url).startswith("https://deployment-sidecar.example/")
+        if request.url.path == "/v1/vector_stores":
+            return httpx.Response(201, json=INDEX_STATUS)
+        return httpx.Response(
+            200, json={"file_id": "ignored", "inserted": 1, "deleted": 0, "ingested_at": "2026-09-20T00:00:00Z"}
+        )
+
+    handler: Final = AsyncHTTPHandler()
+    await handler.client.aclose()
+    handler.client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    ingestion: Final = MongoDBRAGIngestion(
+        {"vector_store": {**params_without_api_base, "vector_store_id": "policy_index"}}
+    )
+    with patch("litellm.rag.ingestion.mongodb_ingestion.get_async_httpx_client", return_value=handler):
+        index_name, file_id = await ingestion.store(
+            file_content=b"raw",
+            filename="handbook.pdf",
+            content_type="application/pdf",
+            chunks=["a"],
+            embeddings=[[1.0]],
+        )
+    assert index_name == "policy_index" and file_id is not None
 
 
 @pytest.mark.asyncio

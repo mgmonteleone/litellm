@@ -154,12 +154,37 @@ async def test_hybrid_prerequisites_are_checked() -> None:
 
 
 @pytest.mark.asyncio
+async def test_connection_resolves_api_base_from_the_deployment_sidecar_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An admin should not need to know the sidecar's address: the deployment configures it once."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    handler, _ = sidecar()
+    config: Final = MongoDBVectorStoreConfig(Executor())
+    params_without_api_base: Final = {key: value for key, value in BASE_PARAMS.items() if key != "api_base"}
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        response: Final = await config.atest_connection(params_without_api_base, "policy_index")
+    assert response["ok"] is True
+    assert statuses(response)["sidecar_reachable"] == "pass"
+
+
+@pytest.mark.asyncio
 async def test_invalid_configuration_is_reported_not_raised() -> None:
     config: Final = MongoDBVectorStoreConfig(Executor())
     response: Final = await config.atest_connection({**BASE_PARAMS, "api_base": "http://not-loopback:8080"}, None)
     assert response["ok"] is False
     assert statuses(response) == {"configuration": "fail"}
     assert "HTTPS" in response["summary"]
+
+
+@pytest.mark.asyncio
+async def test_connection_without_an_api_base_names_both_ways_to_provide_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MONGODB_SIDECAR_API_BASE", raising=False)
+    config: Final = MongoDBVectorStoreConfig(Executor())
+    params_without_api_base: Final = {key: value for key, value in BASE_PARAMS.items() if key != "api_base"}
+    response: Final = await config.atest_connection(params_without_api_base, None)
+    assert response["ok"] is False
+    assert "api_base or MONGODB_SIDECAR_API_BASE" in response["summary"]
 
 
 @pytest.mark.asyncio
