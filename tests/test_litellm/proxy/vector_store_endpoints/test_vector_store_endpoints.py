@@ -2943,9 +2943,63 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
         assert persisted["mongodb_collection"] == "new_collection"
 
     @pytest.mark.asyncio
-    async def test_update_litellm_params_rejects_os_environ_reference(self):
-        """Request-supplied values must already be resolved, matching test_connection's rule; otherwise an
-        unresolvable reference would be persisted and every later search against this store would fail."""
+    async def test_update_litellm_params_persists_os_environ_reference_verbatim(self, monkeypatch):
+        """``/vector_store/new`` has always accepted and persisted an ``os.environ/`` reference, resolved only
+        when a search actually runs. Update used to reject the same value with a 400 instead of matching that
+        behavior, which meant a store's credential could be pointed at an env var on create but never on
+        update. The saved reference must round-trip unresolved and then resolve through the same helper the
+        search path uses, ``build_request_data_from_managed_vector_store``."""
+        from litellm.constants import REDACTED_BY_LITELM_STRING
+        from litellm.proxy.vector_store_endpoints.endpoints import (
+            build_request_data_from_managed_vector_store,
+        )
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        monkeypatch.setenv("SOME_SECRET", "sk-resolved-from-env")
+
+        saved = {"mongodb_database": "knowledge", "api_key": "sk-real-secret"}
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            response = await update_vector_store(
+                data=VectorStoreUpdateRequest(
+                    vector_store_id="vs_owned",
+                    litellm_params={"api_key": "os.environ/SOME_SECRET"},
+                ),
+                user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+            )
+
+        persisted = json.loads(
+            mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"]["litellm_params"]
+        )
+        assert persisted["api_key"] == "os.environ/SOME_SECRET"
+        # The response is redacted like every other secret, not resolved and not echoed back in the clear.
+        assert response["vector_store"]["litellm_params"]["api_key"] == REDACTED_BY_LITELM_STRING
+
+        resolved = build_request_data_from_managed_vector_store(
+            LiteLLM_ManagedVectorStore(vector_store_id="vs_owned", litellm_params=persisted)
+        )
+        assert resolved["api_key"] == "sk-resolved-from-env"
+
+    @pytest.mark.asyncio
+    async def test_update_litellm_params_rejects_misspelled_redaction_sentinel(self):
+        """A fat-fingered sentinel (double L, wrong case, ...) is not the redaction placeholder and is not a
+        real credential either; persisting it verbatim would silently clobber the saved api_key with garbage.
+        Reject it instead of storing it."""
+        from litellm.constants import REDACTED_BY_LITELM_STRING
         from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
         from litellm.types.vector_stores import VectorStoreUpdateRequest
 
@@ -2969,13 +3023,52 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
                 await update_vector_store(
                     data=VectorStoreUpdateRequest(
                         vector_store_id="vs_owned",
-                        litellm_params={"api_key": "os.environ/SOME_SECRET"},
+                        litellm_params={"api_key": "REDACTED_BY_LITELLM"},
                     ),
                     user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
                 )
 
         assert exc_info.value.status_code == 400
+        assert REDACTED_BY_LITELM_STRING in str(exc_info.value.detail)
         mock_prisma_client.db.litellm_managedvectorstorestable.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_litellm_params_accepts_exact_redaction_sentinel(self):
+        """The exact sentinel constant must still take the "keep the saved secret" branch rather than tripping
+        the new misspelling guard, which only rejects strings that are *not* an exact match."""
+        from litellm.constants import REDACTED_BY_LITELM_STRING
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        saved = {"mongodb_database": "knowledge", "api_key": "sk-real-secret"}
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            await update_vector_store(
+                data=VectorStoreUpdateRequest(
+                    vector_store_id="vs_owned",
+                    litellm_params={"api_key": REDACTED_BY_LITELM_STRING, "mongodb_collection": "new_collection"},
+                ),
+                user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+            )
+
+        persisted = json.loads(
+            mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"]["litellm_params"]
+        )
+        assert persisted["api_key"] == "sk-real-secret"
+        assert persisted["mongodb_collection"] == "new_collection"
 
     @pytest.mark.asyncio
     async def test_update_response_redacts_merged_litellm_params(self):
