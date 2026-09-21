@@ -12,6 +12,22 @@ litellm/proxy/vector_store_endpoints/management_endpoints.py
   s_d71e62cb6f304c::t_d117bf78a5be42 12
   s_d71e62cb6f304c::t_7bc5ef4f5e97d4 576-579
   s_d71e62cb6f304c::t_b2964e66374238 606-612
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.integration.test.tsx
+  s_d71e62cb6f304c::t_70acf042f83abb 7,21,25-28,36,226-227,300-344
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/VectorStoreConnectionCard.tsx
+  s_d71e62cb6f304c::t_70acf042f83abb 3,12,14,18,20,23-26,34,39-41,43,46-66,77-92
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vectorStoreFormSchema.ts
+  s_d71e62cb6f304c::t_70acf042f83abb 147-148
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.tsx
+  s_d71e62cb6f304c::t_70acf042f83abb 399,404-406
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionEditPayload.test.ts
+  s_d71e62cb6f304c::t_70acf042f83abb 1-101
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionEditForm.tsx
+  s_d71e62cb6f304c::t_70acf042f83abb 1-159
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionEditPayload.ts
+  s_d71e62cb6f304c::t_70acf042f83abb 1-68
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionEditForm.test.tsx
+  s_d71e62cb6f304c::t_70acf042f83abb 1-122
 ---
 {
   "schema_version": "authorship/3.0.0",
