@@ -578,7 +578,12 @@ class JevClassifierConfig(BaseModel):
         default=None,
         description="TypeSafe API base, falling back to TYPESAFE_API_BASE and then https://api.typesafe.ai",
     )
-    timeout_ms: int = Field(default=3000, ge=1)
+    timeout_ms: int = Field(
+        default=3000,
+        ge=1,
+        le=30_000,
+        description="Jev call timeout; capped so a slow api_base cannot hold shared pass-through connections",
+    )
     instructions: str | None = Field(
         default=None,
         description="Replaces the built-in Jev question instructions",

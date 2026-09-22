@@ -196,3 +196,13 @@ async def test_http_jev_classifier_client_posts_to_system_one() -> None:
     assert captured["content_type"] == "application/json"
     assert captured["body"] == request.model_dump(mode="json")
     assert response.model == "jev-1.13.0"
+
+
+@pytest.mark.parametrize("timeout_ms,accepted", [(30_000, True), (30_001, False), (3_600_000, False)])
+def test_jev_timeout_is_capped(monkeypatch: pytest.MonkeyPatch, timeout_ms: int, accepted: bool) -> None:
+    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-typesafe-test")
+    if accepted:
+        assert JevClassifierConfig(timeout_ms=timeout_ms).timeout_ms == timeout_ms
+        return
+    with pytest.raises(ValueError, match="less than or equal to 30000"):
+        JevClassifierConfig(timeout_ms=timeout_ms)

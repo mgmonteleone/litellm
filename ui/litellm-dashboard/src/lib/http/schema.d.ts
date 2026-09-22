@@ -28303,6 +28303,7 @@ export interface components {
             model: string;
             /**
              * Timeout Ms
+             * @description Jev call timeout; capped so a slow api_base cannot hold shared pass-through connections
              * @default 3000
              */
             timeout_ms: number;

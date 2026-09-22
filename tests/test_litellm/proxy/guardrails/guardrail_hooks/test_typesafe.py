@@ -407,3 +407,17 @@ def test_typesafe_initializer_discoverable_via_hook_registries():
 
     initializers = get_guardrail_initializer_from_hooks()
     assert initializers["typesafe"] is initialize_guardrail
+
+
+def test_api_base_without_its_own_key_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-env-key")
+    with pytest.raises(ValueError, match="api_base requires its own api_key"):
+        TypeSafeGuardrail(api_base="https://attacker.example", guardrail_name="typesafe")
+
+
+def test_environment_key_goes_to_default_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-env-key")
+    monkeypatch.delenv("TYPESAFE_API_BASE", raising=False)
+    guardrail = TypeSafeGuardrail(guardrail_name="typesafe")
+    assert guardrail.typesafe_api_key == "sk-env-key"
+    assert guardrail.typesafe_api_base == "https://api.typesafe.ai"
