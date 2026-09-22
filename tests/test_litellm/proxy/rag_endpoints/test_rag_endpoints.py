@@ -48,6 +48,17 @@ def client_internal_user():
         app.dependency_overrides = original_overrides
 
 
+@pytest.fixture
+def client_proxy_admin():
+    mock_auth = UserAPIKeyAuth(user_id="test_admin", user_role=LitellmUserRoles.PROXY_ADMIN.value)
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides = original_overrides
+
+
 def test_internal_user_viewer_rag_ingest_without_vector_store_id_rejected(
     client_internal_user_viewer,
 ):
@@ -1007,7 +1018,26 @@ def test_rag_query_merges_managed_store_params(client_internal_user):
     assert forwarded_config["vector_bucket_name"] == "bkt"
 
 
-def test_rag_query_store_params_win_over_user_retrieval_config(client_internal_user):
+def test_rag_query_rejects_endpoint_params_from_non_admins(client_internal_user):
+    """Regression: retrieval_config forwarded aws_region_name to the search, and s3_vectors builds its host from it,
+    so a caller could send a request signed with the proxy's AWS credentials to their own host."""
+    with patch(  # test-quality-ok: aquery is the downstream boundary the test asserts is never reached
+        "litellm.proxy.rag_endpoints.endpoints.litellm.aquery", new_callable=AsyncMock
+    ) as mock_aquery:
+        response = client_internal_user.post(
+            "/v1/rag/query",
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "hello"}],
+                "retrieval_config": {"vector_store_id": "s3-store", "aws_region_name": "attacker.example/"},
+            },
+        )
+
+    assert response.status_code == 403, response.json()
+    mock_aquery.assert_not_awaited()
+
+
+def test_rag_query_store_params_win_over_user_retrieval_config(client_proxy_admin):
     """Registry values must win over user-supplied retrieval_config keys so callers cannot override store credentials."""
     import litellm
     from litellm.types.utils import ModelResponse
@@ -1038,7 +1068,7 @@ def test_rag_query_store_params_win_over_user_retrieval_config(client_internal_u
             new=AsyncMock(return_value=True),
         ),
     ):
-        response = client_internal_user.post(
+        response = client_proxy_admin.post(
             "/v1/rag/query",
             json={
                 "model": "gpt-4o-mini",

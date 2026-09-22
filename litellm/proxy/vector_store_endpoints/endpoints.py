@@ -17,6 +17,7 @@ from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_request_processing import ProxyBaseLLMRequestProcessing
 from litellm.proxy.utils import jsonify_object
 from litellm.proxy.vector_store_endpoints.utils import (
+    assert_proxy_admin_for_request_endpoints,
     assert_proxy_admin_for_vector_store_index_management,
     assert_user_can_access_vector_store,
     get_litellm_managed_vector_store,
@@ -147,6 +148,7 @@ async def vector_store_search(
 
     data = await _read_request_body(request=request)
     reject_caller_embedding_selection_params(payload=data, source="the search request body")
+    assert_proxy_admin_for_request_endpoints(data, user_api_key_dict)
     data["vector_store_id"] = vector_store_id
 
     # Check for legacy vector store registry (non-managed vector stores)

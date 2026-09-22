@@ -3995,6 +3995,42 @@ def test_vector_store_search_rejects_caller_embedding_selection_params(blocked_k
     assert blocked_key in str(response.json())
 
 
+@pytest.mark.parametrize("endpoint_key", ["aws_region_name", "vertex_location", "valkey_host", "endpoint"])
+def test_vector_store_search_rejects_endpoint_params_from_non_admins(endpoint_key):
+    """Regression: a search body could pick the region or host of a store the proxy's own env credentials sign for
+    (s3_vectors builds its host from aws_region_name), sending the proxy's credentials to the caller's host."""
+    from fastapi.testclient import TestClient
+
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.proxy_server import app
+
+    mock_auth = UserAPIKeyAuth(user_id="test_internal_user", user_role=LitellmUserRoles.INTERNAL_USER.value)
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
+    try:
+        response = TestClient(app).post(
+            "/v1/vector_stores/s3-store/search",
+            json={"query": "hello", endpoint_key: "attacker.example/"},
+        )
+    finally:
+        app.dependency_overrides = original_overrides
+
+    assert response.status_code == 403, response.json()
+    assert endpoint_key in str(response.json())
+
+
+def test_request_endpoint_check_ignores_filters_and_admins():
+    from litellm.proxy.vector_store_endpoints.utils import assert_proxy_admin_for_request_endpoints
+
+    assert_proxy_admin_for_request_endpoints(
+        {"query": "q", "filters": {"endpoint": "/v1/chat"}},
+        UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER),
+    )
+    assert_proxy_admin_for_request_endpoints(
+        {"query": "q", "aws_region_name": "eu-west-1"}, UserAPIKeyAuth(user_role=LitellmUserRoles.PROXY_ADMIN)
+    )
+
+
 def test_build_request_data_from_managed_vector_store_never_resolves_a_saved_proxy_secret(monkeypatch):
     """Regression: any key with vector store access could save api_key os.environ/LITELLM_MASTER_KEY next to its
     own api_base, and the next search sent the resolved master key to that host."""

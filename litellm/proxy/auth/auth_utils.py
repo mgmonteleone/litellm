@@ -333,6 +333,10 @@ _BANNED_REQUEST_BODY_PARAMS: Final[tuple[str, ...]] = (
     # tokens) to the attacker's host, or coerces the proxy into
     # authenticating against the attacker's host with admin secrets.
     "aws_bedrock_runtime_endpoint",
+    # Azure endpoint and Azure AI Search service name: both pick the host an
+    # Azure call (including a vector store search) authenticates against.
+    "azure_endpoint",
+    "azure_search_service_name",
     # Bedrock project/workspace association. Deployments pin this to
     # enforce a data-retention policy, so a caller-supplied value would
     # re-route the request's retention and accounting to any project

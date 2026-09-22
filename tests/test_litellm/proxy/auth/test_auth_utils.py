@@ -2642,6 +2642,8 @@ class TestIsRequestBodySafeBlocksEndpointTargetingFields:
             "s3_endpoint_url",
             "sagemaker_base_url",
             "deployment_url",
+            "azure_endpoint",
+            "azure_search_service_name",
         ],
     )
     def test_endpoint_targeting_field_in_request_body_is_rejected(self, field):

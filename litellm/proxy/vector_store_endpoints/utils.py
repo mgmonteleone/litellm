@@ -111,6 +111,14 @@ def assert_proxy_admin_for_endpoint_params(
     )
 
 
+def assert_proxy_admin_for_request_endpoints(payload: Mapping[str, object], user_api_key_dict: UserAPIKeyAuth) -> None:
+    """A search or query body picks endpoints only at its top level; nested values such as filters are data."""
+    assert_proxy_admin_for_endpoint_params(
+        MappingProxyType({key: value for key, value in payload.items() if key in VECTOR_STORE_ENDPOINT_KEYS}),
+        user_api_key_dict,
+    )
+
+
 def _suffix_after_index_name(request_path: str, index_name: str) -> str | None:
     """Return the path suffix after ``/indexes/{index_name}``, or None if absent."""
     match: Final = re.search(rf"/indexes/{re.escape(index_name)}(?=$|[/?])", request_path)
