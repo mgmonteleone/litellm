@@ -1,0 +1,25 @@
+litellm/router_strategy/complexity_router/config.py
+  s_904317b46153f8::t_39aa8bd6ca436f 581-586
+litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py
+  s_904317b46153f8::t_41ec56fd84b0fa 165-170
+tests/test_litellm/proxy/guardrails/guardrail_hooks/test_typesafe.py
+  s_904317b46153f8::t_f79c2f372bde4c 410-423
+tests/test_litellm/router_strategy/complexity_router/test_jev_classifier.py
+  s_904317b46153f8::t_c0dff23e2af836 199-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "6f2e4f65a3aba9bb5898189390d157727835a2f8",
+  "prompts": {},
+  "sessions": {
+    "s_904317b46153f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abe9ca31-133a-4bed-8856-640185ecb6d8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
