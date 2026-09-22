@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, PlugZap } from "lucide-react";
 import type { Control, UseFormSetValue } from "react-hook-form";
 import { useWatch } from "react-hook-form";
@@ -65,7 +65,18 @@ export const MongoDBStoreFields: React.FC<MongoDBStoreFieldsProps> = ({
   const usingDeploymentDefaults = hasDeploymentDefaults(providerDefaults);
   // Only consulted while usingDeploymentDefaults is true (the fields render unconditionally
   // otherwise), so it only ever needs to start open when a saved override already has a value.
-  const [overrideOpen, setOverrideOpen] = useState(() => Boolean(apiBase) || Boolean(apiKey));
+  // Deriving that on mount would race the provider-defaults fetch: text typed into api_base/api_key
+  // before the fetch resolves would then get hidden inside a collapsed override while still holding
+  // a value that submit still sends. Deriving it instead on the transition into
+  // usingDeploymentDefaults picks up whatever the fields hold by the time it actually matters.
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const hasInitializedOverrideOpen = useRef(false);
+
+  useEffect(() => {
+    if (!usingDeploymentDefaults || hasInitializedOverrideOpen.current) return;
+    hasInitializedOverrideOpen.current = true;
+    setOverrideOpen(Boolean(apiBase) || Boolean(apiKey));
+  }, [usingDeploymentDefaults, apiBase, apiKey]);
 
   const handleOverrideOpenChange = (open: boolean) => {
     setOverrideOpen(open);

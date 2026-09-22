@@ -411,6 +411,30 @@ describe("MongoDB deployment-configured sidecar defaults", () => {
     expect(await screen.findByPlaceholderText(SIDECAR_URL)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Enter sidecar API key")).toBeInTheDocument();
   });
+
+  it("keeps a value typed before deployment defaults resolve visible in an open override, not hidden in a collapsed one", async () => {
+    let resolveDefaults: (value: typeof WITH_DEPLOYMENT_DEFAULTS) => void = () => {};
+    mockProviderDefaults.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveDefaults = resolve;
+        }),
+    );
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+    // The deployment-defaults fetch is still pending, so the fields render unconditionally.
+    fillConnection();
+
+    act(() => {
+      resolveDefaults(WITH_DEPLOYMENT_DEFAULTS);
+    });
+    await screen.findByText(/Using this deployment's MongoDB sidecar at/);
+
+    expect(screen.getByPlaceholderText(SIDECAR_URL)).toHaveValue(SIDECAR_URL);
+    expect(screen.getByPlaceholderText("Enter sidecar API key")).toHaveValue("sidecar-key");
+  });
 });
 
 describe("MongoDB discovery debouncing and scoping", () => {
