@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { ChevronDown, PlugZap } from "lucide-react";
 import type { Control, UseFormSetValue } from "react-hook-form";
 import { useWatch } from "react-hook-form";
@@ -20,6 +20,7 @@ import type { ConnectionTestState } from "../connection/useVectorStoreConnection
 import VectorStoreField, { type SelectOption } from "../fields/VectorStoreField";
 import type { VectorStoreFormValues } from "../vectorStoreFormSchema";
 import { dimensionVerdict, dimensionVerdictMessage, supportsFeature } from "./mongodbConnection";
+import MongoDBSidecarConnectionFields from "./MongoDBSidecarConnectionFields";
 import { hasDeploymentDefaults, type MongoDBProviderDefaultsState } from "./useMongoDBProviderDefaults";
 import { useMongoDiscovery, type DiscoveryState } from "./useMongoDiscovery";
 
@@ -69,29 +70,6 @@ export const MongoDBStoreFields: React.FC<MongoDBStoreFieldsProps> = ({
   });
 
   const usingDeploymentDefaults = hasDeploymentDefaults(providerDefaults);
-  // Only consulted while usingDeploymentDefaults is true (the fields render unconditionally
-  // otherwise), so it only ever needs to start open when a saved override already has a value.
-  // Deriving that on mount would race the provider-defaults fetch: text typed into api_base/api_key
-  // before the fetch resolves would then get hidden inside a collapsed override while still holding
-  // a value that submit still sends. Deriving it instead on the transition into
-  // usingDeploymentDefaults picks up whatever the fields hold by the time it actually matters.
-  const [overrideOpen, setOverrideOpen] = useState(false);
-  const hasInitializedOverrideOpen = useRef(false);
-
-  useEffect(() => {
-    if (!usingDeploymentDefaults || hasInitializedOverrideOpen.current) return;
-    hasInitializedOverrideOpen.current = true;
-    setOverrideOpen(Boolean(apiBase) || Boolean(apiKey));
-  }, [usingDeploymentDefaults, apiBase, apiKey]);
-
-  const handleOverrideOpenChange = (open: boolean) => {
-    setOverrideOpen(open);
-    if (!open) {
-      setValue("api_base", "");
-      setValue("api_key", "");
-    }
-  };
-
   const connectionReady = usingDeploymentDefaults || Boolean(apiBase && apiKey);
   /**
    * Each discovery kind is scoped to only the fields it actually depends on, so typing in one
@@ -168,30 +146,7 @@ export const MongoDBStoreFields: React.FC<MongoDBStoreFieldsProps> = ({
   return (
     <div className="flex flex-col gap-4">
       <Section title="Connection" hint="Where LiteLLM reaches the MongoDB sidecar.">
-        {usingDeploymentDefaults ? (
-          <>
-            <p className="text-sm text-muted-foreground">
-              Using this deployment&apos;s MongoDB sidecar at <code>{providerDefaults.apiBase}</code>.
-            </p>
-            <Collapsible open={overrideOpen} onOpenChange={handleOverrideOpenChange}>
-              <CollapsibleTrigger
-                render={
-                  <Button type="button" variant="ghost" size="sm" className="group/override gap-1.5 px-0">
-                    <ChevronDown
-                      className={cn("size-4 transition-transform", "group-data-[panel-open]/override:rotate-180")}
-                    />
-                    Override sidecar connection
-                  </Button>
-                }
-              />
-              <CollapsibleContent className="flex flex-col gap-3 pt-2">
-                {fieldsInGroup("connection").map((field) => renderField(field))}
-              </CollapsibleContent>
-            </Collapsible>
-          </>
-        ) : (
-          fieldsInGroup("connection").map((field) => renderField(field))
-        )}
+        <MongoDBSidecarConnectionFields control={control} setValue={setValue} providerDefaults={providerDefaults} />
         <div className="flex items-center gap-3">
           <Button
             type="button"

@@ -8,6 +8,9 @@ import { getProviderSpecificFields } from "@/components/vector_store_providers";
 // Mock the networking module
 vi.mock("@/components/networking", () => ({
   ragIngestCall: vi.fn(),
+  vectorStoreProviderDefaultsCall: vi
+    .fn()
+    .mockResolvedValue({ custom_llm_provider: "mongodb", api_base: null, api_key_configured: false }),
 }));
 
 vi.mock("@/components/llm_calls/fetch_models", () => ({
