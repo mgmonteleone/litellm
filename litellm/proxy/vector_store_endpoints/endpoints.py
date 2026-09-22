@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from litellm.integrations.vector_store_integrations.vector_store_pre_call_hook import (
     LiteLLM_ManagedVectorStore,
 )
-from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
 from litellm.proxy._types import CommonProxyErrors, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_request_processing import ProxyBaseLLMRequestProcessing
@@ -26,7 +25,9 @@ from litellm.repositories.table_repositories import ManagedVectorStoreIndexRepos
 from litellm.types.vector_stores import IndexCreateRequest, IndexListResponse
 from litellm.vector_stores.vector_store_registry import (
     VectorStoreIndexRegistry,
+    managed_store_endpoint_params,
     resolve_litellm_params_references,
+    store_credential_values,
 )
 
 router: Final = APIRouter()
@@ -71,14 +72,11 @@ def build_request_data_from_managed_vector_store(
     litellm_params: Final = resolve_litellm_params_references(
         vector_store.get("litellm_params"), vector_store.get("custom_llm_provider")
     )
-    credential_name: Final = vector_store.get("litellm_credential_name") or litellm_params.get(
-        "litellm_credential_name"
-    )
-    endpoints_left_unset: Final = CredentialAccessor.endpoints_left_unset_by_name(credential_name)
     return MappingProxyType(
         {
             **top_level,
-            **{key: value for key, value in litellm_params.items() if key not in endpoints_left_unset},
+            **litellm_params,
+            **managed_store_endpoint_params(litellm_params, store_credential_values(vector_store)),
         }
     )
 

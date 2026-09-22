@@ -98,3 +98,29 @@ async def _run_unsupported_existing_file_id_test():
 
     assert response["status"] == "failed"
     assert "does not support ingesting an existing file_id" in response["error"]
+
+
+def test_ingest_keeps_the_stores_endpoint_next_to_its_credential():
+    """Regression: ingesting into a store that names a credential dropped the api_base a proxy admin saved on it,
+    so the credential's api_key went to the provider default instead of the store's host."""
+    import litellm
+    from litellm.types.utils import CredentialItem
+
+    credential = CredentialItem(
+        credential_name="team-openai",
+        credential_values={"api_key": "sk-team", "api_base": "https://credential.example"},
+        credential_info={},
+    )
+    with patch.object(litellm, "credential_list", [credential]):
+        ingestion = OpenAIRAGIngestion(
+            {
+                "vector_store": {
+                    "custom_llm_provider": "openai",
+                    "litellm_credential_name": "team-openai",
+                    "api_base": "https://store.example",
+                },
+            }
+        )
+
+    assert ingestion.vector_store_config["api_key"] == "sk-team"
+    assert ingestion.vector_store_config["api_base"] == "https://store.example"

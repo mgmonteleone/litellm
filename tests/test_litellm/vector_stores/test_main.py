@@ -117,16 +117,22 @@ def test_search_forwards_top_level_user_context_to_bedrock_retrieve():
 
 
 @pytest.mark.parametrize(
-    "credential_values,expected_api_base",
+    "store_params,credential_values,expected_api_base",
     [
-        ({"api_key": "sk-credential"}, None),
-        ({"api_key": "sk-credential", "api_base": "https://credential.example"}, "https://credential.example"),
+        ({}, {"api_key": "sk-credential"}, None),
+        ({}, {"api_key": "sk-credential", "api_base": "https://credential.example"}, "https://credential.example"),
+        ({"api_base": "https://store.example"}, {"api_key": "sk-credential"}, "https://store.example"),
+        (
+            {"api_base": "https://store.example"},
+            {"api_key": "sk-credential", "api_base": "https://credential.example"},
+            "https://store.example",
+        ),
     ],
-    ids=["credential-without-endpoint", "credential-with-its-own-endpoint"],
+    ids=["neither-sets-it", "credential-endpoint", "store-endpoint", "store-over-credential"],
 )
-def test_search_sends_a_registry_credential_only_to_the_endpoint_it_defines(credential_values, expected_api_base):
-    """Regression: a store's saved api_base stayed next to the registry credential's api_key, so a store that named
-    a proxy credential sent its secret to whatever host the store pointed at."""
+def test_search_pins_a_registry_stores_endpoint_over_the_callers(store_params, credential_values, expected_api_base):
+    """Regression: the caller's api_base stayed next to the registry credential's api_key, and a store's own saved
+    api_base was dropped whenever it named a credential."""
     import litellm
     from litellm.types.utils import CredentialItem
     from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
@@ -135,7 +141,10 @@ def test_search_sends_a_registry_credential_only_to_the_endpoint_it_defines(cred
     registry = VectorStoreRegistry(
         vector_stores=[
             LiteLLM_ManagedVectorStore(
-                vector_store_id="vs-cred", custom_llm_provider="openai", litellm_credential_name="openai-prod"
+                vector_store_id="vs-cred",
+                custom_llm_provider="openai",
+                litellm_credential_name="openai-prod",
+                litellm_params=store_params,
             )
         ]
     )

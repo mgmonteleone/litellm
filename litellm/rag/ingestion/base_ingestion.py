@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import base64
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, cast
 
 import litellm
@@ -28,9 +30,16 @@ from litellm.llms.custom_httpx.http_handler import (
 from litellm.rag.ingestion.file_parsers import extract_text_from_pdf
 from litellm.rag.text_splitters import RecursiveCharacterTextSplitter
 from litellm.types.rag import RAGIngestOptions, RAGIngestResponse
+from litellm.types.vector_stores import VECTOR_STORE_ENDPOINT_KEYS
 
 if TYPE_CHECKING:
     from litellm import Router
+
+
+def _set_endpoint_params(config: Mapping[str, object]) -> Mapping[str, object]:
+    return MappingProxyType(
+        {key: value for key, value in config.items() if key in VECTOR_STORE_ENDPOINT_KEYS and value is not None}
+    )
 
 
 class BaseRAGIngestion(ABC):
@@ -71,10 +80,9 @@ class BaseRAGIngestion(ABC):
         Load credentials from litellm_credential_name if provided in vector_store config.
 
         This allows users to specify a credential name in the vector_store config
-        which will be resolved from litellm.credential_list. When a stored
-        credential is used, its values take precedence over caller-supplied
-        equivalents so endpoint and identity fields stay consistent with the
-        credential definition.
+        which will be resolved from litellm.credential_list. Its values override
+        the config's, except endpoint keys the config already sets: only proxy
+        admins can set those, and a managed store's saved endpoint wins.
         """
         from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
 
@@ -83,10 +91,9 @@ class BaseRAGIngestion(ABC):
             credential_values: Final = CredentialAccessor.get_credential_values(credential_name)
             if not credential_values:
                 return
-            for key, value in credential_values.items():
-                self.vector_store_config[key] = value
-            for key in CredentialAccessor.endpoints_left_unset(credential_values):
-                self.vector_store_config.pop(key, None)
+            self.vector_store_config.update(
+                MappingProxyType({**credential_values, **_set_endpoint_params(self.vector_store_config)})
+            )
 
     @property
     def custom_llm_provider(self) -> str:

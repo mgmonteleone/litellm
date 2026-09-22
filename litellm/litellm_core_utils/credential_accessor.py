@@ -1,13 +1,9 @@
 """Utils for accessing credentials."""
 
-from collections.abc import Mapping
-from types import MappingProxyType
 from typing import Final
 
 import litellm
 from litellm.types.utils import CredentialItem
-
-CREDENTIAL_BOUND_ENDPOINT_KEYS: Final = frozenset({"api_base", "aws_sts_endpoint", "aws_web_identity_token"})
 
 
 class CredentialAccessor:
@@ -24,24 +20,6 @@ class CredentialAccessor:
 
         credential: Final = CredentialAccessor.find_credential(credential_name)
         return {} if credential is None else credential.credential_values.copy()
-
-    @staticmethod
-    def endpoints_left_unset(credential_values: Mapping[str, object]) -> frozenset[str]:
-        """A credential's secrets go only where the credential itself says: an endpoint it leaves unset falls back to
-        the provider default rather than to whatever endpoint a caller or a saved row supplied next to its name."""
-        return CREDENTIAL_BOUND_ENDPOINT_KEYS - credential_values.keys() if credential_values else frozenset()
-
-    @staticmethod
-    def endpoints_left_unset_by_name(credential_name: object) -> frozenset[str]:
-        credential: Final = (
-            CredentialAccessor.find_credential(credential_name) if isinstance(credential_name, str) else None
-        )
-        if credential is None:
-            return frozenset()
-        credential_values: Final[Mapping[object, object]] = credential.credential_values
-        return CredentialAccessor.endpoints_left_unset(
-            MappingProxyType({key: value for key, value in credential_values.items() if isinstance(key, str)})
-        )
 
     @staticmethod
     def upsert_credentials(credentials: list[CredentialItem]):

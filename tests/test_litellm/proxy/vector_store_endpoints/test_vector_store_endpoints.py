@@ -2838,35 +2838,167 @@ class TestRedactSensitiveLitellmParams:
         assert out == REDACTED_BY_LITELM_STRING
 
 
+_PROD_CREDENTIAL_KEY = "sk-prod-credential"
+
+
+def _search_managed_store(
+    store: LiteLLM_ManagedVectorStore, body: dict, *, in_registry: bool = True
+) -> dict[str, object]:
+    """Runs a proxy search the way vector_store_search builds it (the request body with the managed store's data
+    on top) through the SDK search, and returns the URL and key the provider would send the request with."""
+    from litellm.types.utils import CredentialItem
+    from litellm.vector_stores import main as vector_stores_main
+    from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+    sent: dict[str, object] = {}
+
+    def capture_request(**kwargs):
+        litellm_params = kwargs["litellm_params"]
+        sent["url"] = kwargs["vector_store_provider_config"].get_complete_url(
+            litellm_params.api_base, litellm_params.model_dump()
+        )
+        sent["api_key"] = litellm_params.api_key
+        return {"object": "vector_store.search_results.page", "search_query": "q", "data": []}
+
+    credential = CredentialItem(
+        credential_name="prod", credential_values={"api_key": _PROD_CREDENTIAL_KEY}, credential_info={}
+    )
+    with (
+        patch.object(litellm, "vector_store_registry", VectorStoreRegistry(vector_stores=[store] if in_registry else [])),
+        patch.object(litellm, "credential_list", [credential]),
+        patch.object(  # test-quality-ok: the outbound HTTP boundary, where the URL and key surface
+            vector_stores_main.base_llm_http_handler, "vector_store_search_handler", side_effect=capture_request
+        ),
+    ):
+        vector_stores_main.search(
+            query="q",
+            **{**body, "vector_store_id": store["vector_store_id"], **build_request_data_from_managed_vector_store(store)},
+        )
+    return sent
+
+
 @pytest.mark.parametrize(
-    "row_credential_name,litellm_params,credential_values,expected_api_base",
+    "store,body,in_registry,expected_url",
     [
-        ("openai-prod", {}, {"api_key": "sk-credential"}, None),
-        (None, {"litellm_credential_name": "openai-prod"}, {"api_key": "sk-credential"}, None),
-        ("openai-prod", {}, {"api_base": "https://credential.example"}, "https://store.example"),
-        (None, {}, {"api_key": "sk-credential"}, "https://store.example"),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs1", custom_llm_provider="openai", litellm_credential_name="prod", litellm_params={}
+            ),
+            {"api_base": "https://attacker.example"},
+            True,
+            "https://api.openai.com/v1/vector_stores",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs1", custom_llm_provider="openai", litellm_credential_name="prod", litellm_params={}
+            ),
+            {"api_base": "https://attacker.example"},
+            False,
+            "https://api.openai.com/v1/vector_stores",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs2", custom_llm_provider="openai", litellm_params={"litellm_credential_name": "prod"}
+            ),
+            {"api_base": "https://attacker.example"},
+            True,
+            "https://api.openai.com/v1/vector_stores",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs3",
+                custom_llm_provider="azure_ai",
+                litellm_credential_name="prod",
+                litellm_params={"api_base": "https://good.search.windows.net"},
+            ),
+            {"azure_search_service_name": "attacker.example/x?"},
+            True,
+            "https://good.search.windows.net",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs4",
+                custom_llm_provider="azure_ai",
+                litellm_credential_name="prod",
+                litellm_params={"azure_search_service_name": "good"},
+            ),
+            {"azure_search_service_name": "attacker.example/x?", "api_base": "https://attacker.example"},
+            False,
+            "https://good.search.windows.net",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs5",
+                custom_llm_provider="openai",
+                litellm_credential_name="prod",
+                litellm_params={"api_base": "https://admin-proxy.example/v1"},
+            ),
+            {"api_base": "https://attacker.example"},
+            True,
+            "https://admin-proxy.example/v1/vector_stores",
+        ),
     ],
-    ids=["row-credential", "params-credential", "credential-with-endpoint", "no-credential"],
+    ids=[
+        "row-credential",
+        "row-credential-not-in-registry",
+        "params-credential",
+        "azure-service-name",
+        "azure-service-name-not-in-registry",
+        "admin-saved-endpoint-with-credential",
+    ],
 )
-def test_build_request_data_keeps_a_credential_away_from_the_stores_own_endpoint(
-    row_credential_name, litellm_params, credential_values, expected_api_base
-):
-    """Regression: search merged a store's named credential in while keeping the store's own api_base, so a store
-    pointing at an attacker's host received the credential's api_key. Ingest already dropped the endpoint."""
+def test_search_pins_a_managed_stores_endpoints_over_the_request(store, body, in_registry, expected_url, monkeypatch):
+    """Regression: a store's endpoint key that the store and its credential left unset was filled from the request
+    body (api_base, azure_search_service_name), so the credential's api_key went to the caller's host, and a store
+    naming a credential lost the endpoint a proxy admin saved on it."""
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+    monkeypatch.setattr(litellm, "api_base", None)
+
+    sent = _search_managed_store(store, body, in_registry=in_registry)
+
+    assert sent == {"url": expected_url, "api_key": _PROD_CREDENTIAL_KEY}
+
+
+def test_build_request_data_keeps_the_deployments_mongodb_sidecar_store(monkeypatch):
+    sidecar = "https://css-mongodb-sidecar-test-ucpy26yrfa-uc.a.run.app"
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "sidecar-secret")
+    store = LiteLLM_ManagedVectorStore(
+        vector_store_id="company_handbook",
+        custom_llm_provider="mongodb",
+        litellm_params={
+            "api_base": sidecar,
+            "api_key": "os.environ/MONGODB_SIDECAR_API_KEY",
+            "mongodb_database": "handbook",
+            "mongodb_collection": "chunks",
+        },
+    )
+
+    request_data = {"api_base": "https://attacker.example", **build_request_data_from_managed_vector_store(store)}
+
+    assert request_data["api_base"] == sidecar
+    assert request_data["api_key"] == "sidecar-secret"
+    assert request_data["mongodb_collection"] == "chunks"
+
+
+def test_build_request_data_keeps_a_per_store_sidecar_next_to_its_credential():
+    """Regression: a store naming a credential lost the sidecar api_base a proxy admin saved on it."""
     from litellm.types.utils import CredentialItem
 
     store = LiteLLM_ManagedVectorStore(
-        vector_store_id="vs-cred",
-        custom_llm_provider="openai",
-        litellm_credential_name=row_credential_name,
-        litellm_params={"api_base": "https://store.example", **litellm_params},
+        vector_store_id="team_kb",
+        custom_llm_provider="mongodb",
+        litellm_credential_name="team-sidecar",
+        litellm_params={"api_base": "https://team-sidecar.example", "mongodb_collection": "chunks"},
     )
-    credential = CredentialItem(credential_name="openai-prod", credential_values=credential_values, credential_info={})
+    credential = CredentialItem(
+        credential_name="team-sidecar", credential_values={"api_key": "team-sidecar-key"}, credential_info={}
+    )
 
     with patch.object(litellm, "credential_list", [credential]):
-        request_data = build_request_data_from_managed_vector_store(store)
+        request_data = {"api_base": "https://attacker.example", **build_request_data_from_managed_vector_store(store)}
 
-    assert request_data.get("api_base") == expected_api_base
+    assert request_data["api_base"] == "https://team-sidecar.example"
 
 
 class TestUpdateVectorStoreAccessControlAndRedaction:
