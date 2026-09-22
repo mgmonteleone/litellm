@@ -449,7 +449,10 @@ describe("MongoDB deployment-configured sidecar defaults", () => {
     });
     await screen.findByText(/Using this deployment's MongoDB sidecar at/);
 
-    expect(screen.getByPlaceholderText(SIDECAR_URL)).toHaveValue(SIDECAR_URL);
+    // The override section opening is a second render past the one that resolves
+    // usingDeploymentDefaults (see the effect in MongoDBStoreFields), so this polls rather than
+    // asserting immediately: findBy, not getBy.
+    expect(await screen.findByPlaceholderText(SIDECAR_URL)).toHaveValue(SIDECAR_URL);
     expect(screen.getByPlaceholderText("Enter sidecar API key")).toHaveValue("sidecar-key");
   });
 });
