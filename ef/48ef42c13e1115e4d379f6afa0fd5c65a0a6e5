@@ -1,0 +1,24 @@
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_77a4bb426dd9a5 2359-2378
+  s_d71e62cb6f304c::t_96b3ecb5030228 2358
+litellm/proxy/vector_store_endpoints/utils.py
+  s_d71e62cb6f304c::t_2cfdb50a5dce15 160-169
+  s_d71e62cb6f304c::t_2e1706ef7f4f43 197-200
+  s_d71e62cb6f304c::t_f96b9bc8e8faa6 170,196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "ef48ef42c13e1115e4d379f6afa0fd5c65a0a6e5",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
