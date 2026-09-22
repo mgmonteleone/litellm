@@ -20,7 +20,7 @@ import type { ConnectionTestState } from "../connection/useVectorStoreConnection
 import VectorStoreField, { type SelectOption } from "../fields/VectorStoreField";
 import type { VectorStoreFormValues } from "../vectorStoreFormSchema";
 import { dimensionVerdict, dimensionVerdictMessage, supportsFeature } from "./mongodbConnection";
-import { hasDeploymentDefaults, useMongoDBProviderDefaults } from "./useMongoDBProviderDefaults";
+import { hasDeploymentDefaults, type MongoDBProviderDefaultsState } from "./useMongoDBProviderDefaults";
 import { useMongoDiscovery, type DiscoveryState } from "./useMongoDiscovery";
 
 const MONGODB_FIELDS = getProviderSpecificFields("mongodb");
@@ -42,6 +42,12 @@ export interface MongoDBStoreFieldsProps {
   control: Control<VectorStoreFormValues>;
   setValue: UseFormSetValue<VectorStoreFormValues>;
   accessToken: string | null;
+  /**
+   * Lifted to the parent form instead of fetched here, so the same result also drives that form's
+   * validation (a store needs api_base/api_key unless this reports deployment defaults) rather than
+   * the two racing to independent, possibly inconsistent conclusions.
+   */
+  providerDefaults: MongoDBProviderDefaultsState;
   embeddingModelOptions: readonly SelectOption[];
   connectionTest: ConnectionTestState;
   onRunConnectionTest: () => void;
@@ -51,6 +57,7 @@ export const MongoDBStoreFields: React.FC<MongoDBStoreFieldsProps> = ({
   control,
   setValue,
   accessToken,
+  providerDefaults,
   embeddingModelOptions,
   connectionTest,
   onRunConnectionTest,
@@ -61,7 +68,6 @@ export const MongoDBStoreFields: React.FC<MongoDBStoreFieldsProps> = ({
     name: ["api_base", "api_key", "mongodb_database", "mongodb_collection"],
   });
 
-  const providerDefaults = useMongoDBProviderDefaults(accessToken);
   const usingDeploymentDefaults = hasDeploymentDefaults(providerDefaults);
   // Only consulted while usingDeploymentDefaults is true (the fields render unconditionally
   // otherwise), so it only ever needs to start open when a saved override already has a value.

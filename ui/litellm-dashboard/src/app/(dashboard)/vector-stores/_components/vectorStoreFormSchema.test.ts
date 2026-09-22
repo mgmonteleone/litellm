@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { getProviderSpecificFields } from "@/components/vector_store_providers";
 
-import { buildVectorStoreLitellmParams, PROVIDER_FIELD_NAMES, vectorStoreShape } from "./vectorStoreFormSchema";
+import {
+  buildVectorStoreLitellmParams,
+  makeVectorStoreSchema,
+  PROVIDER_FIELD_NAMES,
+  vectorStoreShape,
+} from "./vectorStoreFormSchema";
 
 const MONGODB_BASE = {
   api_base: "http://127.0.0.1:8080",
@@ -89,5 +94,36 @@ describe("buildVectorStoreLitellmParams coercion", () => {
     const params = buildVectorStoreLitellmParams("mongodb", { ...MONGODB_BASE, mongodb_text_index: "policy_text" });
 
     expect(params.mongodb_text_index).toBe("policy_text");
+  });
+});
+
+describe("makeVectorStoreSchema mongodb connection requirement", () => {
+  const MONGODB_WITHOUT_CONNECTION = {
+    custom_llm_provider: "mongodb",
+    vector_store_id: "policy_index",
+    mongodb_database: "knowledge",
+    mongodb_collection: "policies",
+    embedding_model: "text-embedding-3-small",
+  };
+
+  it("requires api_base and api_key when the deployment has no defaults, so a store can never save with no connection", () => {
+    const result = makeVectorStoreSchema(false).safeParse(MONGODB_WITHOUT_CONNECTION);
+
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
+    expect(paths).toEqual(expect.arrayContaining(["api_base", "api_key"]));
+  });
+
+  it("does not require api_base and api_key when the deployment already has defaults", () => {
+    const result = makeVectorStoreSchema(true).safeParse(MONGODB_WITHOUT_CONNECTION);
+
+    expect(result.success).toBe(true);
+  });
+
+  it("leaves non-mongodb providers alone regardless of hasDeploymentDefaults", () => {
+    const bedrockValues = { custom_llm_provider: "bedrock", vector_store_id: "vs-1" };
+
+    expect(makeVectorStoreSchema(false).safeParse(bedrockValues).success).toBe(true);
+    expect(makeVectorStoreSchema(true).safeParse(bedrockValues).success).toBe(true);
   });
 });

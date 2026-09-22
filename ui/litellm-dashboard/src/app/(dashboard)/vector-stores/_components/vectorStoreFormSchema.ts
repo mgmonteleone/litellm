@@ -90,20 +90,51 @@ export const vectorStoreShape = {
   valkey_embedding_field: optionalText,
 };
 
-export const vectorStoreSchema = z.object(vectorStoreShape).superRefine((values, ctx) => {
-  getProviderSpecificFields(values.custom_llm_provider)
-    .filter((field) => field.required && isProviderFieldName(field.name) && !values[field.name])
-    .forEach((field) =>
-      ctx.addIssue({
-        code: "custom",
-        path: [field.name],
-        message:
-          field.type === "select"
-            ? `Please select the ${field.label.toLowerCase()}`
-            : `Please input the ${field.label.toLowerCase()}`,
-      }),
-    );
-});
+/**
+ * mongodb's api_base/api_key are marked optional in its field config (`vector_store_providers.tsx`)
+ * because a deployment can configure MONGODB_SIDECAR_API_BASE/_API_KEY once for every store. Without
+ * that deployment default, though, they are the only way to reach the sidecar at all, so the schema
+ * must require them itself rather than through the static field config.
+ */
+const MONGODB_CONNECTION_FIELD_NAMES: ReadonlySet<string> = new Set([
+  "api_base",
+  "api_key",
+] satisfies ProviderFieldName[]);
+
+const isFieldRequired = (field: VectorStoreFieldConfig, provider: string, hasDeploymentDefaults: boolean): boolean => {
+  const requiresMongoDBConnectionField =
+    provider === "mongodb" && !hasDeploymentDefaults && MONGODB_CONNECTION_FIELD_NAMES.has(field.name);
+  return field.required || requiresMongoDBConnectionField;
+};
+
+/**
+ * `hasDeploymentDefaults` reflects whether the deployment already has a usable MongoDB sidecar
+ * configured (see `useMongoDBProviderDefaults`). Callers outside a MongoDB-aware form that never
+ * look this up pass `false`, the safe default: it can only make api_base/api_key required, never
+ * looser.
+ */
+export const makeVectorStoreSchema = (hasDeploymentDefaults: boolean) =>
+  z.object(vectorStoreShape).superRefine((values, ctx) => {
+    getProviderSpecificFields(values.custom_llm_provider)
+      .filter(
+        (field): field is VectorStoreFieldConfig & { name: ProviderFieldName } =>
+          isProviderFieldName(field.name) &&
+          isFieldRequired(field, values.custom_llm_provider, hasDeploymentDefaults) &&
+          !values[field.name],
+      )
+      .forEach((field) =>
+        ctx.addIssue({
+          code: "custom",
+          path: [field.name],
+          message:
+            field.type === "select"
+              ? `Please select the ${field.label.toLowerCase()}`
+              : `Please input the ${field.label.toLowerCase()}`,
+        }),
+      );
+  });
+
+export const vectorStoreSchema = makeVectorStoreSchema(false);
 
 export type VectorStoreFormValues = z.output<typeof vectorStoreSchema>;
 
