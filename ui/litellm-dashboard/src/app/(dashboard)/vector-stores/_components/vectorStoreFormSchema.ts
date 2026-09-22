@@ -107,6 +107,21 @@ const isFieldRequired = (field: VectorStoreFieldConfig, provider: string, hasDep
   return field.required || requiresMongoDBConnectionField;
 };
 
+const MONGODB_OVERRIDE_INCOMPLETE_MESSAGE = "A custom MongoDB sidecar connection needs both a URL and an API key.";
+
+/**
+ * With a deployment default, api_base/api_key are individually optional (the deployment's own
+ * sidecar covers a blank pair), but the backend only ever sends the deployment's sidecar key to the
+ * deployment's own sidecar (see MongoDBVectorStoreConfig.resolve_sidecar_api_key). Setting only one
+ * of the pair would silently save a store the backend then rejects at request time, so the schema
+ * itself requires both once either is touched.
+ */
+const requiresBothMongoDBOverrideFields = (values: Record<string, unknown>): boolean => {
+  const apiBase = values.api_base;
+  const apiKey = values.api_key;
+  return values.custom_llm_provider === "mongodb" && Boolean(apiBase) !== Boolean(apiKey);
+};
+
 /**
  * `hasDeploymentDefaults` reflects whether the deployment already has a usable MongoDB sidecar
  * configured (see `useMongoDBProviderDefaults`). Callers outside a MongoDB-aware form that never
@@ -132,6 +147,11 @@ export const makeVectorStoreSchema = (hasDeploymentDefaults: boolean) =>
               : `Please input the ${field.label.toLowerCase()}`,
         }),
       );
+
+    if (hasDeploymentDefaults && requiresBothMongoDBOverrideFields(values)) {
+      ctx.addIssue({ code: "custom", path: ["api_base"], message: MONGODB_OVERRIDE_INCOMPLETE_MESSAGE });
+      ctx.addIssue({ code: "custom", path: ["api_key"], message: MONGODB_OVERRIDE_INCOMPLETE_MESSAGE });
+    }
   });
 
 export const vectorStoreSchema = makeVectorStoreSchema(false);

@@ -126,4 +126,36 @@ describe("makeVectorStoreSchema mongodb connection requirement", () => {
     expect(makeVectorStoreSchema(false).safeParse(bedrockValues).success).toBe(true);
     expect(makeVectorStoreSchema(true).safeParse(bedrockValues).success).toBe(true);
   });
+
+  it("rejects a custom api_base with no api_key when the deployment has defaults: the sidecar key is only sent to the deployment's own sidecar", () => {
+    const result = makeVectorStoreSchema(true).safeParse({
+      ...MONGODB_WITHOUT_CONNECTION,
+      api_base: "https://tenant-sidecar.example",
+    });
+
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
+    expect(paths).toEqual(expect.arrayContaining(["api_base", "api_key"]));
+  });
+
+  it("rejects a custom api_key with no api_base when the deployment has defaults", () => {
+    const result = makeVectorStoreSchema(true).safeParse({
+      ...MONGODB_WITHOUT_CONNECTION,
+      api_key: "tenant-key",
+    });
+
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
+    expect(paths).toEqual(expect.arrayContaining(["api_base", "api_key"]));
+  });
+
+  it("accepts a full override (both api_base and api_key) even when the deployment has defaults", () => {
+    const result = makeVectorStoreSchema(true).safeParse({
+      ...MONGODB_WITHOUT_CONNECTION,
+      api_base: "https://tenant-sidecar.example",
+      api_key: "tenant-key",
+    });
+
+    expect(result.success).toBe(true);
+  });
 });

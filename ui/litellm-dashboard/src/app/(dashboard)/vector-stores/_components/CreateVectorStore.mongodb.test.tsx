@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import * as networking from "@/components/networking";
 import * as fetchModels from "@/components/llm_calls/fetch_models";
+import { toast } from "@/lib/toast";
 
 import CreateVectorStore from "./CreateVectorStore";
 
@@ -129,6 +130,25 @@ describe("CreateVectorStore MongoDB sidecar connection", () => {
     await chooseEmbeddingModel();
     await clickCreate();
 
+    expect(networking.ragIngestCall).not.toHaveBeenCalled();
+  });
+
+  it("rejects a partial override: the sidecar key is only sent to the deployment's own sidecar", async () => {
+    vi.mocked(networking.vectorStoreProviderDefaultsCall).mockResolvedValue(WITH_DEPLOYMENT_DEFAULTS);
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(<CreateVectorStore accessToken="test-token" />);
+    await uploadFile();
+    await pickMongoDB();
+
+    await screen.findByText(/Using this deployment's MongoDB sidecar at/);
+    await user.click(screen.getByRole("button", { name: "Override sidecar connection" }));
+    fireEvent.change(screen.getByPlaceholderText(SIDECAR_URL), { target: { value: SIDECAR_URL } });
+
+    fillRequiredDataFields();
+    await chooseEmbeddingModel();
+    await clickCreate();
+
+    expect(toast.warning).toHaveBeenCalledWith("A custom MongoDB sidecar connection needs both a URL and an API key");
     expect(networking.ragIngestCall).not.toHaveBeenCalled();
   });
 });
