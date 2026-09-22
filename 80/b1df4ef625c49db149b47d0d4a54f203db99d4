@@ -1,0 +1,49 @@
+tests/router_unit_tests/test_router_embedding_integration.py
+  s_d71e62cb6f304c::t_230ea868cb4188 169-174,176-177,179,181,183,185-188,190-191
+tests/unit/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_d71e62cb6f304c::t_0dd557d9f7f414 553
+  s_d71e62cb6f304c::t_b99c52207a32e0 10,509-552,554-555,562,564-565
+tests/unit/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_1b28a094a5f259 411-444
+tests/test_litellm/llms/s3_vectors/vector_stores/test_s3_vectors_transformation.py
+  s_d71e62cb6f304c::t_f86749d8ea0435 177-179,190,194-196,202
+  s_d71e62cb6f304c::t_d3e5a1f6f8b76f 191-193
+litellm/llms/base_llm/vector_store/transformation.py
+  s_d71e62cb6f304c::t_462af1cdb31efd 7,12,80-97,114,116-117,120,124,128,132
+tests/test_litellm/proxy/rag_endpoints/test_rag_endpoints.py
+  s_d71e62cb6f304c::t_7b97eac2ae6880 310-325,430,700,1460-1548,1550,1552-1565,1569-1571,1574
+  s_d71e62cb6f304c::t_9eb83ae95590a8 1549,1551,1572-1573
+  s_d71e62cb6f304c::t_d3e5a1f6f8b76f 1566-1568
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_6d67a21bf3874b 42,48,338-342,616,663-664
+  s_d71e62cb6f304c::t_783f81055be5a5 665
+litellm/proxy/vector_store_endpoints/utils.py
+  s_d71e62cb6f304c::t_d3e5a1f6f8b76f 157
+  s_d71e62cb6f304c::t_fb858f4f247502 5,23,36-38,155-156,158-175,177-189
+  s_d71e62cb6f304c::t_6a5f2a231eadc1 11-15,176
+  s_d71e62cb6f304c::t_7a6ad2c0659a2f 190-191
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_5f49b3b1bd141e 41-52,2206-2212,2226,2233,2514,2542,2591,3620-3625,3642,3647-3648
+  s_d71e62cb6f304c::t_f4521679689373 2337-2381,3840-3872
+  s_d71e62cb6f304c::t_eb2955dbbbec00 2382-2383,3873-3874
+litellm/proxy/rag_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_3da08c2dd60b1e 52,57,187-193,195-199,619-622
+  s_d71e62cb6f304c::t_c9c610353b8810 194
+  s_d71e62cb6f304c::t_2db434f79cc97e 26,623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "80b1df4ef625c49db149b47d0d4a54f203db99d4",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
