@@ -8,7 +8,7 @@ import pytest
 
 import litellm
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
-from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig
+from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig, resolve_sidecar_api_key
 from litellm.types.utils import EmbeddingResponse
 from litellm.types.vector_stores import VectorStoreSearchOptionalRequestParams, VectorStoreSearchResponse
 
@@ -390,3 +390,67 @@ async def test_search_resolves_api_base_from_the_deployment_sidecar_env_var(monk
             **params_without_api_base,
         )
     assert response == RESULT
+
+
+def test_resolve_sidecar_api_key_rejects_a_custom_api_base_without_its_own_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The deployment's sidecar key must never be sent to a host the deployment did not configure."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    with pytest.raises(litellm.BadRequestError, match="needs its own api_key"):
+        resolve_sidecar_api_key("https://tenant-sidecar.example", None)
+
+
+def test_resolve_sidecar_api_key_uses_the_stores_own_key_for_a_custom_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    assert resolve_sidecar_api_key("https://tenant-sidecar.example", "tenant-key") == "tenant-key"
+
+
+def test_resolve_sidecar_api_key_falls_back_to_the_env_key_with_no_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    assert resolve_sidecar_api_key(None, None) == "deployment-key"
+
+
+def test_resolve_sidecar_api_key_falls_back_to_the_env_key_when_api_base_matches_the_env_base(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A trailing slash on either side must not be mistaken for a different host."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    assert resolve_sidecar_api_key("https://deployment-sidecar.example/", None) == "deployment-key"
+
+
+def test_search_with_a_custom_api_base_and_no_own_key_never_reaches_the_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for sending MONGODB_SIDECAR_API_KEY to an arbitrary api_base: search, test_connection,
+    discovery, create, and ingest all resolve credentials through validate_environment, so this one path
+    covers every operation."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+    executor: Final = RecordingEmbeddingExecutor()
+    params: Final = {**BASE_PARAMS, "api_base": "https://attacker-controlled.example"}
+    del params["api_key"]
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("the sidecar must not be called without a matching api_key")
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        client: Final = HTTPHandler(client=transport)
+        with pytest.raises(litellm.BadRequestError, match="needs its own api_key"):
+            litellm.vector_stores.search(
+                vector_store_id="policy_index",
+                query="travel policy",
+                custom_llm_provider="mongodb",
+                _direct_vector_store_embedding_executor=executor,
+                client=client,
+                **params,
+            )
+    executor.call.assert_not_called()

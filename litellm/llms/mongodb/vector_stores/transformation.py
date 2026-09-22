@@ -69,6 +69,34 @@ _NO_CREDENTIALS_QUERY_OR_FRAGMENT: Final = (
     "MongoDB sidecar api_base must be an HTTP or HTTPS URL without credentials, query, or fragment."
 )
 _HTTPS_REQUIRED: Final = "MongoDB sidecar requires HTTPS. HTTP is supported only for a loopback IP such as 127.0.0.1."
+_CUSTOM_API_BASE_NEEDS_OWN_KEY: Final = (
+    "A custom MongoDB sidecar api_base needs its own api_key; the deployment's sidecar key is only sent "
+    "to the deployment's sidecar."
+)
+
+
+def _uses_env_api_base(api_base: str | None, env_api_base: str | None) -> bool:
+    if api_base is None:
+        return True
+    return env_api_base is not None and api_base.rstrip("/") == env_api_base.rstrip("/")
+
+
+def resolve_sidecar_api_key(api_base: str | None, api_key: str | None) -> str:
+    """The single place that decides which api_key goes with which sidecar host.
+
+    MONGODB_SIDECAR_API_KEY may only be sent to MONGODB_SIDECAR_API_BASE (or when the store sets no
+    api_base at all, which resolves to that same env base in ``get_complete_url``). A store that points
+    api_base at a different host must supply its own api_key, or the deployment's key would be handed
+    to an arbitrary host as a Bearer token.
+    """
+    if api_key:
+        return api_key
+    if not _uses_env_api_base(api_base, get_secret_str("MONGODB_SIDECAR_API_BASE")):
+        raise config_error(_CUSTOM_API_BASE_NEEDS_OWN_KEY)
+    env_key: Final = get_secret_str("MONGODB_SIDECAR_API_KEY")
+    if not env_key:
+        raise config_error("MongoDB sidecar api_key is required. Set api_key or MONGODB_SIDECAR_API_KEY.")
+    return env_key
 
 
 def sidecar_api_base_error(value: str) -> str | None:
@@ -425,9 +453,7 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         if litellm_params is None:
             raise config_error("Configure api_base and api_key for the MongoDB BETA sidecar.")
         self._reject_unknown_params(MappingProxyType(dict(litellm_params)))
-        api_key: Final = litellm_params.api_key or get_secret_str("MONGODB_SIDECAR_API_KEY")
-        if not api_key:
-            raise config_error("MongoDB sidecar api_key is required. Set api_key or MONGODB_SIDECAR_API_KEY.")
+        api_key: Final = resolve_sidecar_api_key(litellm_params.api_base, litellm_params.api_key)
         return {
             **headers,
             "Authorization": f"Bearer {api_key}",

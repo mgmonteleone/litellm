@@ -61,6 +61,21 @@ const providerItems = Object.entries(VectorStoreProviders)
 
 const asText = (value: unknown): string => (typeof value === "string" ? value : "");
 
+/**
+ * MongoDB's sidecar URL/API key are the only way to reach it when the deployment has no default
+ * sidecar configured; with a default, either field may still be overridden, but only together,
+ * since the backend only ever sends the deployment's sidecar key to the deployment's own sidecar
+ * (see vectorStoreFormSchema's same rule for the add dialog).
+ */
+const mongoDBConnectionWarning = (hasDefaults: boolean, apiBase: string, apiKey: string): string | null => {
+  if (!hasDefaults) {
+    return !apiBase || !apiKey ? "Please provide the MongoDB sidecar URL and API key" : null;
+  }
+  return Boolean(apiBase) !== Boolean(apiKey)
+    ? "A custom MongoDB sidecar connection needs both a URL and an API key"
+    : null;
+};
+
 const IngestSuccessAlert: React.FC<{ ingestResults: RAGIngestResponse[]; onTestIt?: () => void }> = ({
   ingestResults,
   onTestIt,
@@ -205,11 +220,14 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
       }
     }
 
-    // MongoDB's sidecar URL/API key are the only way to reach it, but only when the deployment
-    // has no default sidecar configured (see vectorStoreFormSchema's same rule for the add dialog).
-    if (selectedProvider === "mongodb" && !hasDeploymentDefaults(mongoDBProviderDefaults)) {
-      if (!asText(providerValues.api_base) || !asText(providerValues.api_key)) {
-        toast.warning("Please provide the MongoDB sidecar URL and API key");
+    if (selectedProvider === "mongodb") {
+      const connectionWarning = mongoDBConnectionWarning(
+        hasDeploymentDefaults(mongoDBProviderDefaults),
+        asText(providerValues.api_base),
+        asText(providerValues.api_key),
+      );
+      if (connectionWarning) {
+        toast.warning(connectionWarning);
         return;
       }
     }
