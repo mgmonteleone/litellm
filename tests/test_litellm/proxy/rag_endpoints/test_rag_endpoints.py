@@ -432,9 +432,18 @@ def test_rag_ingest_rejects_os_environ_references_from_non_admins(client_interna
     create_in_db.assert_not_awaited()
 
 
-def test_rag_ingest_rejects_credential_names_from_non_admins(client_internal_user):
-    """Regression: the ingest saved the named proxy credential as the new store's litellm_params, so a later
-    api_base change on that caller-owned store sent the credential's secret to the caller's host."""
+@pytest.mark.parametrize(
+    "vector_store_config",
+    [
+        {"custom_llm_provider": "openai", "litellm_credential_name": "openai-prod"},
+        {"custom_llm_provider": "s3_vectors", "aws_region_name": "attacker.example/"},
+        {"custom_llm_provider": "valkey", "valkey_host": "attacker.example"},
+    ],
+    ids=["credential-name", "region", "host"],
+)
+def test_rag_ingest_rejects_endpoint_params_from_non_admins(client_internal_user, vector_store_config):
+    """Regression: the ingest saved the caller's endpoint or named proxy credential as the new store's
+    litellm_params, so later searches sent the proxy's credential or provider key to the caller's host."""
     create_in_db = AsyncMock()
     aingest_patch, registry_patch = _patched_ingest_boundary(None, {"vector_store_id": "vs_new", "file_id": "f"})
     with (
@@ -448,7 +457,7 @@ def test_rag_ingest_rejects_credential_names_from_non_admins(client_internal_use
     ):
         response = client_internal_user.post(
             "/v1/rag/ingest",
-            **_ingest_form({"custom_llm_provider": "openai", "litellm_credential_name": "openai-prod"}),
+            **_ingest_form(vector_store_config),
         )
 
     assert response.status_code == 403, response.json()
@@ -623,15 +632,15 @@ def test_rag_ingest_fresh_store_creates_db_row_with_the_requesters_params(client
     ):
         response = client_internal_user.post(
             "/v1/rag/ingest",
-            **_ingest_form({"custom_llm_provider": "bedrock", "aws_region_name": "us-east-1"}),
+            **_ingest_form({"custom_llm_provider": "s3_vectors", "vector_bucket_name": "kb-bucket"}),
         )
 
     assert response.status_code == 200, response.json()
     create_in_db.assert_awaited_once()
     created = create_in_db.await_args.kwargs
     assert created["vector_store_id"] == "vs_new"
-    assert created["custom_llm_provider"] == "bedrock"
-    assert created["litellm_params"] == {"aws_region_name": "us-east-1"}
+    assert created["custom_llm_provider"] == "s3_vectors"
+    assert created["litellm_params"] == {"vector_bucket_name": "kb-bucket"}
 
 
 def test_rag_ingest_hands_persistence_the_requesters_options_not_registry_credentials(client_internal_user):

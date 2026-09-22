@@ -18,7 +18,7 @@ from litellm.proxy._types import (
     UserAPIKeyAuth,
 )
 from litellm.types.utils import LlmProviders
-from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+from litellm.types.vector_stores import VECTOR_STORE_ENDPOINT_KEYS, LiteLLM_ManagedVectorStore
 from litellm.utils import ProviderConfigManager
 from litellm.vector_stores.vector_store_registry import NestedParamPath, contains_env_reference, nested_param_entries
 
@@ -70,33 +70,44 @@ def assert_proxy_admin_for_env_references(params: object, user_api_key_dict: Use
 
 
 CREDENTIAL_NAME_KEY: Final = "litellm_credential_name"
+_ADMIN_ONLY_PARAM_KEYS: Final = VECTOR_STORE_ENDPOINT_KEYS | frozenset((CREDENTIAL_NAME_KEY,))
+
+ParamEntries = tuple[tuple[NestedParamPath, object], ...]
 
 
-def _credential_name_entries(params: object) -> tuple[tuple[NestedParamPath, object], ...] | None:
+def _admin_only_entries(params: object) -> ParamEntries | None:
     entries: Final = nested_param_entries(params)
     if entries is None:
         return None
     return tuple(
-        (path, value) for path, value in entries if path and path[-1] == CREDENTIAL_NAME_KEY and value is not None
+        (path, value) for path, value in entries if path and path[-1] in _ADMIN_ONLY_PARAM_KEYS and value is not None
     )
 
 
-def assert_proxy_admin_for_credential_names(
+def _changed_admin_only_keys(requested: ParamEntries | None, saved: ParamEntries | None) -> frozenset[str]:
+    if requested is None or saved is None:
+        return frozenset({"litellm_params"})
+    return frozenset(
+        str(path[-1])
+        for path, value in (*requested, *saved)
+        if ((path, value) in requested) != ((path, value) in saved)
+    )
+
+
+def assert_proxy_admin_for_endpoint_params(
     params: object, user_api_key_dict: UserAPIKeyAuth, *, saved_params: object = None
 ) -> None:
-    """A named credential's values are merged into the store's params at use time, so whoever picks the name next
-    to their own api_base receives the credential's secrets. Keeping a name ``saved_params`` already holds, at the
-    same place, is allowed."""
+    """Only proxy admins decide where a vector store sends traffic: an endpoint or identity key, or a named
+    credential, anywhere in ``params``. Keeping exactly what ``saved_params`` holds is allowed."""
     if is_proxy_admin(user_api_key_dict):
         return
-    requested: Final = _credential_name_entries(params)
-    saved: Final = _credential_name_entries(saved_params)
-    if requested is not None and saved is not None and all(entry in saved for entry in requested):
+    changed: Final = _changed_admin_only_keys(_admin_only_entries(params), _admin_only_entries(saved_params))
+    if not changed:
         return
     raise HTTPException(
         status_code=403,
-        detail=f"Only proxy admins can set or change a vector store's {CREDENTIAL_NAME_KEY}. "
-        "Enter the provider credentials themselves, or ask a proxy admin to make this change.",
+        detail="Only proxy admins can set, change or clear where a vector store sends traffic: "
+        f"{', '.join(sorted(changed))}. Leave these fields as they are, or ask a proxy admin to make this change.",
     )
 
 

@@ -2235,6 +2235,50 @@ async def test_new_vector_store_rejects_credential_names_from_non_admins(store_f
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "litellm_params",
+    [
+        {"api_base": "https://attacker.example"},
+        {"litellm_embedding_model": "embed", "litellm_embedding_config": {"api_base": "https://attacker.example"}},
+        {"api_key": "sk-mine", "aws_role_name": "arn:aws:iam::123:role/prod"},
+        {"tenant_id": "other-tenant", "client_id": "other-client"},
+        {"mongodb_database": "kb", "valkey_host": "attacker.example"},
+    ],
+    ids=["api-base-without-key", "nested-embedding-config", "aws-role", "azure-identity", "host"],
+)
+async def test_new_vector_store_rejects_endpoint_params_from_non_admins(litellm_params):
+    """Regression: a store saved by a non-admin with its own api_base and no api_key made the provider fall back to
+    the proxy's env key (OPENAI_API_KEY, ...) and send it there, and a nested litellm_embedding_config.api_base
+    sent a router deployment's key to the caller's host."""
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(LitellmUserRoles.INTERNAL_USER, litellm_params=litellm_params)
+
+    assert exc_info.value.status_code == 403
+    assert "Only proxy admins" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_lets_a_non_admin_use_provider_default_endpoints():
+    mock_prisma_client = await _create_store(
+        LitellmUserRoles.INTERNAL_USER,
+        litellm_params={"api_key": "sk-mine", "litellm_embedding_config": {"model": "text-embedding-3-small"}},
+    )
+
+    mock_prisma_client.db.litellm_managedvectorstorestable.create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_lets_a_proxy_admin_set_endpoints():
+    mock_prisma_client = await _create_store(
+        LitellmUserRoles.PROXY_ADMIN,
+        litellm_params={"api_base": "https://search.example", "litellm_embedding_config": {"api_base": "https://e"}},
+    )
+
+    created = mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]
+    assert json.loads(created["litellm_params"])["api_base"] == "https://search.example"
+
+
+@pytest.mark.asyncio
 async def test_new_vector_store_accepts_credential_names_from_proxy_admins():
     mock_prisma_client = await _create_store(LitellmUserRoles.PROXY_ADMIN, litellm_credential_name="openai-prod")
 
@@ -2258,7 +2302,7 @@ async def test_new_vector_store_rejects_a_non_admin_reusing_a_config_store_id():
         await _create_store(
             LitellmUserRoles.INTERNAL_USER,
             registry=_registry_with_config_store(),
-            litellm_params={"api_base": "https://attacker.example"},
+            litellm_params={"api_key": "sk-mine"},
         )
 
     assert exc_info.value.status_code == 403
@@ -3106,7 +3150,9 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
         ):
             response = await update_vector_store(
                 data=VectorStoreUpdateRequest(vector_store_id="vs_owned", litellm_params={"api_base": None}),
-                user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+                user_api_key_dict=UserAPIKeyAuth(
+                    user_id="owner", team_id="team-A", user_role=LitellmUserRoles.PROXY_ADMIN
+                ),
             )
 
         persisted = json.loads(
@@ -3325,6 +3371,20 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
                 {"litellm_params": {"litellm_credential_name": "REDACTED_BY_LITELM", "endpoint": "https://a.example"}},
                 {},
             ),
+            ({}, {"litellm_params": {"api_base": "https://attacker.example"}}, {"custom_llm_provider": "openai"}),
+            (
+                {"api_key": "sk-saved", "api_base": "https://search.example"},
+                {"litellm_params": {"api_key": "sk-mine", "api_base": "https://mine.example"}},
+                {},
+            ),
+            ({"api_base": "https://search.example"}, {"litellm_params": {"api_base": None}}, {}),
+            (
+                {"litellm_embedding_config": {"model": "embed"}},
+                {"litellm_params": {"litellm_embedding_config": {"model": "embed", "api_base": "https://a.example"}}},
+                {},
+            ),
+            ({}, {"custom_llm_provider": "azure_ai"}, {"custom_llm_provider": "openai"}),
+            ({"aws_role_name": "reader"}, {"litellm_params": {"aws_role_name": "admin"}}, {}),
         ],
         ids=[
             "omitted-key",
@@ -3333,32 +3393,25 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
             "provider-change",
             "row-credential-name",
             "params-credential-name",
+            "env-key-fallback",
+            "new-key",
+            "clear",
+            "nested-embedding-config",
+            "provider-change-without-secret",
+            "aws-role",
         ],
     )
-    async def test_non_admin_update_cannot_point_a_saved_secret_at_a_new_endpoint(
+    async def test_non_admin_update_cannot_change_where_a_store_sends_traffic(
         self, saved, request_fields, saved_row_fields
     ):
-        """Regression: a key with team access to a store could change its api_base (or provider) while the saved
-        api_key stayed in place, through the redaction sentinel or by leaving it out, and the next search sent the
-        saved secret to the new host."""
+        """Regression: a key with team access to a store could change its api_base (or provider), and the next
+        search sent the saved api_key, the credential's secret or the proxy's env key for that provider to the new
+        host."""
         with pytest.raises(HTTPException) as exc_info:
             await self._update_as(LitellmUserRoles.INTERNAL_USER, saved, request_fields, **saved_row_fields)
 
         assert exc_info.value.status_code == 403
-        assert "supply a new key in the same request" in exc_info.value.detail
-
-    @pytest.mark.asyncio
-    async def test_non_admin_update_can_point_a_store_at_a_new_endpoint_with_a_new_key(self):
-        mock_prisma_client = await self._update_as(
-            LitellmUserRoles.INTERNAL_USER,
-            {"api_key": "sk-saved", "api_base": "https://search.example"},
-            {"litellm_params": {"api_key": "sk-mine", "api_base": "https://mine.example"}},
-        )
-
-        assert self._persisted_litellm_params(mock_prisma_client, "api_key", "api_base") == {
-            "api_key": "sk-mine",
-            "api_base": "https://mine.example",
-        }
+        assert "Only proxy admins" in exc_info.value.detail
 
     @pytest.mark.asyncio
     async def test_non_admin_update_keeps_a_saved_secret_while_editing_other_fields(self):
@@ -3382,6 +3435,20 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
             "api_base": "https://search.example",
             "litellm_credential_name": "prod",
             "mongodb_collection": "docs",
+        }
+
+    @pytest.mark.asyncio
+    async def test_non_admin_update_can_resend_the_saved_provider(self):
+        mock_prisma_client = await self._update_as(
+            LitellmUserRoles.INTERNAL_USER,
+            {"api_base": "https://search.example"},
+            {"custom_llm_provider": "openai", "vector_store_description": "docs"},
+            custom_llm_provider="openai",
+        )
+
+        assert mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"] == {
+            "custom_llm_provider": "openai",
+            "vector_store_description": "docs",
         }
 
     @pytest.mark.asyncio

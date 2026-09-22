@@ -38,7 +38,8 @@ from litellm.proxy._types import (
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.rbac_utils import check_feature_access_for_user
 from litellm.proxy.vector_store_endpoints.utils import (
-    assert_proxy_admin_for_credential_names,
+    CREDENTIAL_NAME_KEY,
+    assert_proxy_admin_for_endpoint_params,
     assert_proxy_admin_for_env_references,
     can_user_access_vector_store,
     filter_listable_vector_stores,
@@ -58,9 +59,7 @@ from litellm.types.vector_stores import (
     VectorStoreUpdateRequest,
 )
 from litellm.vector_stores.vector_store_registry import (
-    NestedParamPath,
     VectorStoreRegistry,
-    nested_param_entries,
     resolve_litellm_params_references,
 )
 
@@ -330,7 +329,15 @@ async def new_vector_store(
     """
     await check_feature_access_for_user(user_api_key_dict, "vector_stores")
     assert_proxy_admin_for_env_references(vector_store.get("litellm_params"), user_api_key_dict)
-    assert_proxy_admin_for_credential_names(vector_store, user_api_key_dict)
+    assert_proxy_admin_for_endpoint_params(
+        MappingProxyType(
+            {
+                CREDENTIAL_NAME_KEY: vector_store.get(CREDENTIAL_NAME_KEY),
+                "litellm_params": vector_store.get("litellm_params"),
+            }
+        ),
+        user_api_key_dict,
+    )
     if (
         not is_proxy_admin(user_api_key_dict)
         and litellm.vector_store_registry is not None
@@ -630,36 +637,27 @@ async def update_vector_store(
         # Merge request litellm_params over the saved ones, the same way /vector_store/new persists them: request
         # keys win, a value equal to the redaction sentinel keeps the saved secret instead of overwriting it, and
         # an os.environ/ reference is stored as-is and resolved later, for allowlisted names only, by
-        # resolve_litellm_params_references. Only proxy admins may save a reference or a new credential name, or
-        # point a saved secret (a literal key, a reference, a credential name) at a new endpoint or provider, since
-        # that host would receive it. The ad hoc test_connection/discover path (_resolve_connection_target) rejects
-        # references outright. This stores the raw params (no credential resolution), since each search embeds the
-        # query through the router at request time.
-        saved_litellm_params: Final = _saved_raw_litellm_params(saved_store)
-        if "custom_llm_provider" in update_data:
-            assert_proxy_admin_for_env_references(saved_litellm_params, user_api_key_dict)
-        merged_litellm_params: Final = (
-            _merge_update_litellm_params(saved_litellm_params, data.litellm_params or _EMPTY_PARAMS)
-            if "litellm_params" in update_data
-            else saved_litellm_params
-        )
-        assert_proxy_admin_for_credential_names(
-            merged_litellm_params, user_api_key_dict, saved_params=saved_litellm_params
-        )
-        if not is_proxy_admin(user_api_key_dict) and _repoints_a_kept_secret(
-            saved_store,
-            saved_litellm_params,
-            merged_litellm_params,
-            data.custom_llm_provider
-            if "custom_llm_provider" in update_data
-            else saved_store.get("custom_llm_provider"),
+        # resolve_litellm_params_references. Only proxy admins may save a reference, or set, change or clear where
+        # the store sends traffic (its endpoint keys, credential name or provider). The ad hoc
+        # test_connection/discover path (_resolve_connection_target) rejects references outright. This stores the
+        # raw params (no credential resolution), since each search embeds the query through the router at request
+        # time.
+        if (
+            "custom_llm_provider" in update_data
+            and data.custom_llm_provider != saved_store.get("custom_llm_provider")
+            and not is_proxy_admin(user_api_key_dict)
         ):
             raise HTTPException(
-                status_code=403,
-                detail="Changing the endpoint or provider of a vector store with a saved secret requires a proxy "
-                "admin, or supply a new key in the same request.",
+                status_code=403, detail="Only proxy admins can change a vector store's custom_llm_provider."
             )
         if "litellm_params" in update_data:
+            saved_litellm_params: Final = _saved_raw_litellm_params(saved_store)
+            merged_litellm_params: Final = _merge_update_litellm_params(
+                saved_litellm_params, data.litellm_params or _EMPTY_PARAMS
+            )
+            assert_proxy_admin_for_endpoint_params(
+                merged_litellm_params, user_api_key_dict, saved_params=saved_litellm_params
+            )
             assert_proxy_admin_for_env_references(merged_litellm_params, user_api_key_dict)
             litellm_params_dict: Final = GenericLiteLLMParams.model_validate(merged_litellm_params).model_dump(
                 exclude_none=True
@@ -769,58 +767,6 @@ def _merge_update_litellm_params(
         **{key: value for key, value in request_litellm_params.items() if value != REDACTED_BY_LITELM_STRING},
     }
     return {key: value for key, value in kept_or_replaced.items() if value is not None}
-
-
-_ENDPOINT_PARAM_KEYS: Final = frozenset(
-    {
-        "api_base",
-        "base_url",
-        "endpoint",
-        "azure_endpoint",
-        "azure_search_service_name",
-        "aws_bedrock_runtime_endpoint",
-        "aws_sts_endpoint",
-    }
-)
-
-
-_ROOT_PARENT: Final[frozenset[NestedParamPath]] = frozenset({()})
-
-
-def _repoints_a_kept_secret(
-    saved_store: LiteLLM_ManagedVectorStore,
-    saved_litellm_params: Mapping[str, object],
-    merged_litellm_params: Mapping[str, object],
-    provider: object,
-) -> bool:
-    """True when a saved secret (a sensitive value, or a credential name) survives the update unchanged while the
-    endpoint next to it, or the store's provider, changes: the new host would receive the old secret. A secret the
-    request replaces with a new value is the caller's own, so repointing it is fine, and clearing an endpoint falls
-    back to the provider's default host rather than one the caller picks."""
-    saved_entries: Final = nested_param_entries(saved_litellm_params)
-    merged_entries: Final = nested_param_entries(merged_litellm_params)
-    if saved_entries is None or merged_entries is None:
-        return True
-    saved_values: Final = MappingProxyType(dict(saved_entries))
-    merged_values: Final = MappingProxyType(dict(merged_entries))
-    kept_secret_parents: Final[frozenset[NestedParamPath]] = frozenset(
-        path[:-1]
-        for path, value in saved_entries
-        if path
-        and isinstance(path[-1], str)
-        and _LITELLM_PARAMS_MASKER.is_sensitive_key(path[-1])
-        and value is not None
-        and merged_values.get(path) == value
-    ) | (_ROOT_PARENT if saved_store.get("litellm_credential_name") else frozenset[NestedParamPath]())
-    provider_changed: Final = provider != saved_store.get("custom_llm_provider")
-    return any(
-        (parent == () and provider_changed)
-        or any(
-            merged_values.get((*parent, key)) not in (None, saved_values.get((*parent, key)))
-            for key in _ENDPOINT_PARAM_KEYS
-        )
-        for parent in kept_secret_parents
-    )
 
 
 def _saved_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str, object]:  # mutable-ok: merged copy

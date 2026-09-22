@@ -405,6 +405,35 @@ MANAGED_STORE_CALLER_OPTIONS: Final = frozenset(
 """Per-request ingest options a caller may send for a managed store, as opposed to the
 store's own configuration. Providers treat them as recognised keys rather than typos."""
 
+VECTOR_STORE_ENDPOINT_KEYS: Final = frozenset(
+    {
+        "api_base",
+        "base_url",
+        "endpoint",
+        "azure_endpoint",
+        "azure_search_service_name",
+        "aws_bedrock_runtime_endpoint",
+        "aws_sts_endpoint",
+        "aws_region_name",
+        "aws_role_name",
+        "aws_profile_name",
+        "aws_session_name",
+        "aws_external_id",
+        "aws_web_identity_token",
+        "tenant_id",
+        "client_id",
+        "vertex_project",
+        "vertex_ai_project",
+        "vertex_location",
+        "vertex_ai_location",
+        "valkey_host",
+        "valkey_port",
+        "valkey_ssl",
+    }
+)
+"""Params that decide where a vector store sends its traffic, or which cloud identity signs it. Only proxy admins
+may set them, and a managed store's saved values win over anything a request carries."""
+
 
 VECTOR_STORE_OPENAI_PARAMS = Literal[
     "filters",
