@@ -3464,6 +3464,36 @@ class TestVectorStoreInfoReadsTheDatabase:
         assert "vector_store_metadata" in exc_info.value.detail
 
     @pytest.mark.asyncio
+    async def test_non_dict_stored_metadata_is_reported_as_none_and_warns_with_the_store_id(self, caplog):
+        """A stored vector_store_metadata that parses to something other than a dict (here, a JSON list)
+        is reported as None rather than failing the request, but that silent downgrade must leave a
+        trail naming the store so an operator can find and fix the bad row."""
+        import logging
+
+        from litellm._logging import verbose_proxy_logger
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
+            return_value=MagicMock(
+                model_dump=lambda: {
+                    "vector_store_id": "vs_bad_metadata",
+                    "custom_llm_provider": "mongodb",
+                    "vector_store_metadata": json.dumps(["not", "a", "dict"]),
+                    "litellm_params": {"mongodb_database": "knowledge"},
+                }
+            )
+        )
+
+        verbose_proxy_logger.setLevel(logging.DEBUG)
+        with caplog.at_level(logging.WARNING, logger=verbose_proxy_logger.name):
+            response = await self._info("vs_bad_metadata", mock_prisma, VectorStoreRegistry(vector_stores=[]))
+
+        assert response["vector_store"].vector_store_metadata is None
+        log_text = " ".join(record.getMessage() for record in caplog.records)
+        assert "vs_bad_metadata" in log_text
+
+    @pytest.mark.asyncio
     async def test_config_registered_litellm_params_stored_as_json_string_still_resolves(self):
         """The config registry can hand info a store whose litellm_params is still a raw JSON string;
         re-serializing it back to a string (instead of parsing it) fails LiteLLM_ManagedVectorStoresTable's

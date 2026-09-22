@@ -145,6 +145,12 @@ def _parse_stored_json_field(raw: object, field_name: str) -> object:
 def _vector_store_info(vector_store: LiteLLM_ManagedVectorStore) -> LiteLLM_ManagedVectorStoresTable:
     """Build the info response, parsing fields the database may hold as JSON strings."""
     metadata: Final = _parse_stored_json_field(vector_store.get("vector_store_metadata"), "vector_store_metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        verbose_proxy_logger.warning(
+            "Vector store %s has a non-dict vector_store_metadata (%s); reporting it as None.",
+            vector_store.get("vector_store_id"),
+            type(metadata).__name__,
+        )
     litellm_params: Final = _parse_stored_json_field(vector_store.get("litellm_params"), "litellm_params")
     return LiteLLM_ManagedVectorStoresTable(
         vector_store_id=vector_store.get("vector_store_id") or "",
