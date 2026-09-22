@@ -1,0 +1,44 @@
+litellm/proxy/rag_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_bf7abdccb30f27 51,631
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_ec52968505f72f 2237-2280,2305,3285-3287,3506-3519,3528-3533,3536,3539-3541,3546,3572-3585
+  s_d71e62cb6f304c::t_63c7f102c7f8f7 2841-2879,2881,2883-2947,2950-2985,2989-2995,2999,3001
+tests/test_litellm/proxy/rag_endpoints/test_rag_endpoints.py
+  s_d71e62cb6f304c::t_026ef96de436e0 435-446,460,635,642-643
+litellm/proxy/vector_store_endpoints/utils.py
+  s_d71e62cb6f304c::t_e6459d7434f536 21,75,77-78,83-93,97,100-101,104-105,109-110
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_0f7633b0dd0232 41-42,332,339-340,640-648,651,654-660
+litellm/types/vector_stores.py
+  s_d71e62cb6f304c::t_f35a170736f03a 408-436
+litellm/vector_stores/vector_store_registry.py
+  s_d71e62cb6f304c::t_2b8660dd45d4ab 23,186-211,638-640,642-650
+litellm/rag/ingestion/base_ingestion.py
+  s_d71e62cb6f304c::t_00b0dbcb81e575 17,33,39,43-44,83-85
+tests/test_litellm/test_rag_openai_ingestion.py
+  s_d71e62cb6f304c::t_335cede6c34ffe 101-126
+litellm/proxy/vector_store_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_7cb5e9a4cd04cd 28,30,78-79
+litellm/vector_stores/main.py
+  s_d71e62cb6f304c::t_baea6086483121 405
+litellm/vector_store_files/main.py
+  s_d71e62cb6f304c::t_fbd059e415f5a9 46
+tests/test_litellm/vector_stores/test_main.py
+  s_d71e62cb6f304c::t_24f8c52df64c20 120,122-129,131,133-135,144-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "0d0f0292f89ada191c54b0ca24a0eb5c0e6aa0db",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
