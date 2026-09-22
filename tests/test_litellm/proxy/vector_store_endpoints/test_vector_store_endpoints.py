@@ -4210,6 +4210,29 @@ def test_managed_store_search_data_never_takes_a_credential_or_endpoint_from_the
     assert search_data[request_key] is None
 
 
+@pytest.mark.parametrize("path", ["/v1/vector_stores", "/v1/vector_stores/vs-unmanaged"], ids=["create", "update"])
+def test_vector_store_create_and_update_reject_endpoint_params_from_non_admins(path):
+    """Regression: only search checked its body, so a create or update body could still pick the region or host
+    that the proxy's own provider credentials are sent to."""
+    from fastapi.testclient import TestClient
+
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.proxy_server import app
+
+    mock_auth = UserAPIKeyAuth(user_id="test_internal_user", user_role=LitellmUserRoles.INTERNAL_USER.value)
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
+    try:
+        response = TestClient(app).post(
+            path, json={"name": "kb", "custom_llm_provider": "vertex_ai", "vertex_location": "attacker"}
+        )
+    finally:
+        app.dependency_overrides = original_overrides
+
+    assert response.status_code == 403, response.json()
+    assert "vertex_location" in str(response.json())
+
+
 def test_request_endpoint_check_ignores_filters_and_admins():
     from litellm.proxy.vector_store_endpoints.utils import assert_proxy_admin_for_request_endpoints
 

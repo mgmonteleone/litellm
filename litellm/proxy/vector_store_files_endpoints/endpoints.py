@@ -20,6 +20,7 @@ from litellm.proxy.openai_files_endpoints.common_utils import (
 )
 from litellm.proxy.rag_endpoints.upload_security import safe_download_headers
 from litellm.proxy.vector_store_endpoints.utils import (
+    assert_proxy_admin_for_request_endpoints,
     assert_user_can_access_vector_store_id,
     is_allowed_to_call_vector_store_files_endpoint,
 )
@@ -486,6 +487,7 @@ async def vector_store_file_create(
     )
 
     data = await _read_request_body(request=request)
+    assert_proxy_admin_for_request_endpoints(data, user_api_key_dict)
     data["vector_store_id"] = vector_store_id
     managed_vector_store: Final = await assert_user_can_access_vector_store_id(
         vector_store_id=vector_store_id,
@@ -907,6 +909,7 @@ async def vector_store_file_update(
     )
 
     data = await _read_request_body(request=request)
+    assert_proxy_admin_for_request_endpoints(data, user_api_key_dict)
     data["vector_store_id"] = vector_store_id
     data["file_id"] = file_id
     managed_vector_store: Final = await assert_user_can_access_vector_store_id(

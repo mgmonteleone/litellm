@@ -228,6 +228,7 @@ async def vector_store_create(
     )
 
     data: Final = await _read_request_body(request=request)
+    assert_proxy_admin_for_request_endpoints(data, user_api_key_dict)
 
     # Check for target_model_names parameter
     target_model_names: Final = data.pop("target_model_names", None)
@@ -461,6 +462,7 @@ async def vector_store_update(
     )
 
     data = await _read_request_body(request=request)
+    assert_proxy_admin_for_request_endpoints(data, user_api_key_dict)
     if "vector_store_id" not in data:
         data["vector_store_id"] = vector_store_id
 
