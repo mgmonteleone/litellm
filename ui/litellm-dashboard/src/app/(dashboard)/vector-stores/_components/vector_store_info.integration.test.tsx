@@ -103,6 +103,17 @@ const renderView = (editVectorStore: boolean) =>
     />,
   );
 
+const renderViewAsNonAdmin = (editVectorStore: boolean) =>
+  render(
+    <VectorStoreInfoView
+      vectorStoreId="vs-1"
+      onClose={vi.fn()}
+      accessToken="sk-test"
+      is_admin={false}
+      editVectorStore={editVectorStore}
+    />,
+  );
+
 const savedPayload = () => mockUpdate.mock.calls[0][1];
 
 describe("VectorStoreInfoView save payload", () => {
@@ -272,6 +283,14 @@ describe("VectorStoreInfoView connection card", () => {
 
     await vi.waitFor(() => expect(mockTestConnection).toHaveBeenCalledTimes(1));
     expect(mockTestConnection.mock.calls[0]).toEqual(["sk-test", { vector_store_id: "vs-1" }]);
+  });
+
+  it("hides Test connection from a non-admin, since /vector_store/test_connection is admin-only", async () => {
+    renderViewAsNonAdmin(false);
+
+    expect(await screen.findByText("Connection")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Test connection/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit connection/ })).not.toBeInTheDocument();
   });
 
   it("renders the checklist and the index status chip once the test returns", async () => {
