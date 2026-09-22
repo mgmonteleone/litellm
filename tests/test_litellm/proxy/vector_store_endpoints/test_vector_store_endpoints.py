@@ -16,6 +16,7 @@ from litellm.llms.base_llm.vector_store.transformation import (
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.vector_store_endpoints.endpoints import (
     _update_request_data_with_litellm_managed_vector_store_registry,
+    build_request_data_from_managed_vector_store,
     index_create,
     index_list,
 )
@@ -2791,6 +2792,37 @@ class TestRedactSensitiveLitellmParams:
             "this is not json but might contain a secret"
         )
         assert out == REDACTED_BY_LITELM_STRING
+
+
+@pytest.mark.parametrize(
+    "row_credential_name,litellm_params,credential_values,expected_api_base",
+    [
+        ("openai-prod", {}, {"api_key": "sk-credential"}, None),
+        (None, {"litellm_credential_name": "openai-prod"}, {"api_key": "sk-credential"}, None),
+        ("openai-prod", {}, {"api_base": "https://credential.example"}, "https://store.example"),
+        (None, {}, {"api_key": "sk-credential"}, "https://store.example"),
+    ],
+    ids=["row-credential", "params-credential", "credential-with-endpoint", "no-credential"],
+)
+def test_build_request_data_keeps_a_credential_away_from_the_stores_own_endpoint(
+    row_credential_name, litellm_params, credential_values, expected_api_base
+):
+    """Regression: search merged a store's named credential in while keeping the store's own api_base, so a store
+    pointing at an attacker's host received the credential's api_key. Ingest already dropped the endpoint."""
+    from litellm.types.utils import CredentialItem
+
+    store = LiteLLM_ManagedVectorStore(
+        vector_store_id="vs-cred",
+        custom_llm_provider="openai",
+        litellm_credential_name=row_credential_name,
+        litellm_params={"api_base": "https://store.example", **litellm_params},
+    )
+    credential = CredentialItem(credential_name="openai-prod", credential_values=credential_values, credential_info={})
+
+    with patch.object(litellm, "credential_list", [credential]):
+        request_data = build_request_data_from_managed_vector_store(store)
+
+    assert request_data.get("api_base") == expected_api_base
 
 
 class TestUpdateVectorStoreAccessControlAndRedaction:

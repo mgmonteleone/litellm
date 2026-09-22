@@ -85,13 +85,8 @@ class BaseRAGIngestion(ABC):
                 return
             for key, value in credential_values.items():
                 self.vector_store_config[key] = value
-            for key in (
-                "api_base",
-                "aws_sts_endpoint",
-                "aws_web_identity_token",
-            ):
-                if key in self.vector_store_config and key not in credential_values:
-                    del self.vector_store_config[key]
+            for key in CredentialAccessor.endpoints_left_unset(credential_values):
+                self.vector_store_config.pop(key, None)
 
     @property
     def custom_llm_provider(self) -> str:

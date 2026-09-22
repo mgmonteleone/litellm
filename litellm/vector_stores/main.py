@@ -13,6 +13,7 @@ import httpx
 
 import litellm
 from litellm.constants import request_timeout
+from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from litellm.llms.base_llm.vector_store.transformation import (
@@ -404,6 +405,8 @@ def search(
         if litellm.vector_store_registry is not None and vector_store_id is not None:
             try:
                 registry_credentials = litellm.vector_store_registry.get_credentials_for_vector_store(vector_store_id)
+                for key in CredentialAccessor.endpoints_left_unset(registry_credentials):
+                    kwargs.pop(key, None)
                 kwargs.update(registry_credentials)
             except Exception:
                 pass
