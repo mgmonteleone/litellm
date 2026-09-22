@@ -288,6 +288,30 @@ def _raise_on_strategy_router_write_violation(
         param="litellm_params.model",
     )
 
+def _raise_if_typesafe_model(litellm_params: GenericLiteLLMParams | None) -> None:
+    """Refuse a typesafe/* deployment before it is written to the DB.
+
+    The typesafe/jev-* registry rows exist only to price the Jev classifier and the
+    /typesafe pass-through; typesafe is not a routable provider, so such a row would be
+    saved, fail to load into the router, and log an upsert error on every reload.
+    """
+    if litellm_params is None:
+        return
+    model: Final = litellm_params.model
+    if not (
+        (isinstance(model, str) and model.startswith("typesafe/")) or litellm_params.custom_llm_provider == "typesafe"
+    ):
+        return
+    raise ProxyException(
+        message=(
+            f"Model {model!r} uses provider 'typesafe'. TypeSafe models are pricing-only and cannot be added as a "
+            "routable deployment. Use classifier_type 'jev' on an auto-router instead."
+        ),
+        type=ProxyErrorTypes.validation_error.value,
+        code=status.HTTP_400_BAD_REQUEST,
+        param="litellm_params.model",
+    )
+
 
 AUTO_ROUTER_CAPABILITY_SLOT_LOCK_KEY: Final = 5_872_301
 _CAPABILITY_LOCK_SQL: Final = "SELECT 1 AS locked FROM pg_advisory_xact_lock($1)"
@@ -854,6 +878,7 @@ async def patch_model(
             incoming_params=patch_data.litellm_params,
             existing_params=db_model.litellm_params,
         )
+        _raise_if_typesafe_model(patch_data.litellm_params)
 
         effective_params: Final = _effective_complexity_router_params(
             patch_data.litellm_params, db_model.litellm_params
@@ -1994,6 +2019,7 @@ async def add_new_model(
             incoming_params=model_params.litellm_params,
             existing_params=None,
         )
+        _raise_if_typesafe_model(model_params.litellm_params)
 
         _raise_if_rate_limits_required_but_missing(
             litellm_params=model_params.litellm_params,
@@ -2178,6 +2204,7 @@ async def update_model(
             incoming_params=model_params.litellm_params,
             existing_params=deployment.litellm_params,
         )
+        _raise_if_typesafe_model(model_params.litellm_params)
         effective_params: Final = _effective_complexity_router_params(
             model_params.litellm_params, deployment.litellm_params
         )

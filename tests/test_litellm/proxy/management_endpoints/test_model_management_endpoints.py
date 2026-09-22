@@ -30,7 +30,7 @@ from litellm.proxy.management_endpoints.model_management_endpoints import (
 )
 from litellm.proxy.utils import PrismaClient
 from litellm.router import Router
-from litellm.types.router import Deployment, LiteLLM_Params, updateDeployment
+from litellm.types.router import Deployment, LiteLLM_Params, ModelInfo, updateDeployment
 
 
 async def _passthrough_row(update_data):
@@ -399,6 +399,128 @@ class TestModelManagementAuthChecks:
                 user_api_key_dict=self.normal_user,
             )
         assert exc_info.value.code == "403"
+
+    @pytest.mark.asyncio
+    async def test_add_new_model_rejects_typesafe_pricing_only_model(self):
+        from litellm.proxy._types import ProxyException
+        from litellm.proxy.management_endpoints.model_management_endpoints import (
+            add_new_model,
+        )
+
+        mock_prisma = MagicMock()
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch("litellm.proxy.proxy_server.store_model_in_db", True),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch("litellm.proxy.proxy_server.premium_user", True),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch(  # test-quality-ok: prior auth check needs a live DB; only the unroutable check is under test
+                "litellm.proxy.management_endpoints.model_management_endpoints.ModelManagementAuthChecks.can_user_make_model_call",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
+            with pytest.raises(ProxyException) as exc_info:
+                await add_new_model(
+                    model_params=Deployment(
+                        model_name="jev-via-router",
+                        litellm_params=LiteLLM_Params(
+                            model="typesafe/jev-latest", api_key="os.environ/TYPESAFE_API_KEY"
+                        ),
+                        model_info={"id": "typesafe-test-model"},
+                    ),
+                    user_api_key_dict=self.admin_user,
+                )
+            assert exc_info.value.code == "400"
+            assert "typesafe" in exc_info.value.message.lower()
+            assert "pricing-only" in exc_info.value.message.lower()
+            mock_prisma.db.litellm_proxymodeltable.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_patch_model_rejects_typesafe_pricing_only_model(self):
+        from litellm.proxy._types import ProxyException
+        from litellm.proxy.management_endpoints.model_management_endpoints import (
+            patch_model,
+        )
+        from litellm.types.router import updateLiteLLMParams
+
+        model_id = "typesafe-patch-test"
+        db_model = Deployment(
+            model_name="existing-model",
+            litellm_params=LiteLLM_Params(model="openai/gpt-4o"),
+            model_info={"id": model_id},
+        )
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch("litellm.proxy.proxy_server.llm_router", MagicMock()),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch("litellm.proxy.proxy_server.store_model_in_db", True),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch("litellm.proxy.proxy_server.premium_user", True),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch(  # test-quality-ok: stubs the DB row fetch
+                "litellm.proxy.management_endpoints.model_management_endpoints.get_db_model",
+                new=AsyncMock(return_value=db_model),
+            ),
+            patch(  # test-quality-ok: prior auth check needs a live DB
+                "litellm.proxy.management_endpoints.model_management_endpoints.ModelManagementAuthChecks.can_user_make_model_call",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(  # test-quality-ok: asserts the DB write is never reached on rejection
+                "litellm.proxy.management_endpoints.model_management_endpoints._update_team_model_in_db",
+                new=AsyncMock(),
+            ) as mock_update,
+        ):
+            with pytest.raises(ProxyException) as exc_info:
+                await patch_model(
+                    model_id=model_id,
+                    patch_data=updateDeployment(
+                        litellm_params=updateLiteLLMParams(model="typesafe/jev-preview")
+                    ),
+                    user_api_key_dict=self.admin_user,
+                )
+            assert exc_info.value.code == "400"
+            assert "typesafe" in exc_info.value.message.lower()
+            mock_update.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_update_model_rejects_typesafe_pricing_only_model(self):
+        from litellm.proxy._types import ProxyException
+        from litellm.proxy.management_endpoints.model_management_endpoints import (
+            update_model,
+        )
+        from litellm.types.router import updateLiteLLMParams
+
+        model_id = "typesafe-update-test"
+        db_model = Deployment(
+            model_name="existing-model",
+            litellm_params=LiteLLM_Params(model="openai/gpt-4o"),
+            model_info={"id": model_id},
+        )
+        mock_repo = MagicMock()
+        mock_repo.table.find_unique = AsyncMock(return_value=db_model)
+        mock_repo.table.update = AsyncMock()
+
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch("litellm.proxy.proxy_server.llm_router", MagicMock()),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch("litellm.proxy.proxy_server.store_model_in_db", True),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch("litellm.proxy.proxy_server.premium_user", True),  # test-quality-ok: endpoint reads proxy server globals with no injection seam
+            patch(  # test-quality-ok: stubs the ModelRepository find_unique call
+                "litellm.proxy.management_endpoints.model_management_endpoints.ModelRepository",
+                return_value=mock_repo,
+            ),
+            patch(  # test-quality-ok: prior auth check needs a live DB
+                "litellm.proxy.management_endpoints.model_management_endpoints.ModelManagementAuthChecks.can_user_make_model_call",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
+            with pytest.raises(ProxyException) as exc_info:
+                await update_model(
+                    model_params=updateDeployment(
+                        litellm_params=updateLiteLLMParams(model="typesafe/jev-1.13.0"),
+                        model_info=ModelInfo(id=model_id),
+                    ),
+                    user_api_key_dict=self.admin_user,
+                )
+            assert exc_info.value.code == "400"
+            assert "typesafe" in exc_info.value.message.lower()
+            mock_repo.table.update.assert_not_awaited()
+
 
 
 class MockModelTable:
