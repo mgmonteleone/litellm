@@ -248,6 +248,45 @@ async def test_missing_embedding_model_is_skipped_not_failed_before_the_admin_pi
 
 
 @pytest.mark.asyncio
+async def test_saved_store_missing_a_collection_fails_instead_of_skipping() -> None:
+    """Regression: a saved store that lost its database/collection reported ok=True with a skip
+    instead of surfacing the real problem, because the add-dialog relaxation (see the two tests above)
+    applied to every request regardless of whether the store was already saved and meant to be complete."""
+    params: Final = {
+        key: value for key, value in BASE_PARAMS.items() if key not in ("mongodb_database", "mongodb_collection")
+    }
+    config: Final = MongoDBVectorStoreConfig(Executor())
+    response: Final = await config.atest_connection(params, "policy_index", is_saved_store=True)
+    assert response["ok"] is False
+    assert statuses(response) == {"configuration": "fail"}
+    assert "mongodb_database" in response["summary"]
+
+
+@pytest.mark.asyncio
+async def test_saved_store_missing_an_embedding_model_fails_instead_of_skipping() -> None:
+    params: Final = {key: value for key, value in BASE_PARAMS.items() if key != "litellm_embedding_model"}
+    handler, _ = sidecar()
+    config: Final = MongoDBVectorStoreConfig(Executor())
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        response: Final = await config.atest_connection(params, "policy_index", is_saved_store=True)
+    assert response["ok"] is False
+    assert statuses(response)["embedding_model"] == "fail"
+    message: Final = next(r["message"] for r in response["checks"] if r["check"] == "embedding_model")
+    assert "litellm_embedding_model" in message
+
+
+@pytest.mark.asyncio
+async def test_saved_store_with_complete_configuration_still_passes() -> None:
+    """The strict path must not regress a saved store that is actually complete."""
+    handler, _ = sidecar()
+    config: Final = MongoDBVectorStoreConfig(Executor(dimensions=3))
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        response: Final = await config.atest_connection(BASE_PARAMS, "policy_index", is_saved_store=True)
+    assert response["ok"] is True
+    assert statuses(response)["embedding_model"] == "pass"
+
+
+@pytest.mark.asyncio
 async def test_unrecognised_param_still_fails_without_a_database_or_collection() -> None:
     params: Final = {
         key: value for key, value in BASE_PARAMS.items() if key not in ("mongodb_database", "mongodb_collection")

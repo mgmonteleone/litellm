@@ -658,10 +658,14 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         litellm_params: Mapping[str, object],
         vector_store_id: str | None,
         embedding_executor: VectorStoreEmbeddingExecutor | None = None,
+        *,
+        is_saved_store: bool = False,
     ) -> VectorStoreTestConnectionResponse:
         from litellm.llms.mongodb.vector_stores.diagnostics import run_test_connection
 
-        return await run_test_connection(self, litellm_params, vector_store_id, embedding_executor)
+        return await run_test_connection(
+            self, litellm_params, vector_store_id, embedding_executor, is_saved_store=is_saved_store
+        )
 
     async def adiscover(
         self, kind: str, litellm_params: Mapping[str, object], options: Mapping[str, object]
