@@ -39,8 +39,8 @@ from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.rbac_utils import check_feature_access_for_user
 from litellm.proxy.vector_store_endpoints.utils import (
     CREDENTIAL_NAME_KEY,
-    assert_proxy_admin_for_endpoint_params,
     assert_proxy_admin_for_env_references,
+    assert_proxy_admin_for_vector_store_params,
     can_user_access_vector_store,
     filter_listable_vector_stores,
     is_proxy_admin,
@@ -329,14 +329,9 @@ async def new_vector_store(
     """
     await check_feature_access_for_user(user_api_key_dict, "vector_stores")
     assert_proxy_admin_for_env_references(vector_store.get("litellm_params"), user_api_key_dict)
-    assert_proxy_admin_for_endpoint_params(
-        MappingProxyType(
-            {
-                CREDENTIAL_NAME_KEY: vector_store.get(CREDENTIAL_NAME_KEY),
-                "litellm_params": vector_store.get("litellm_params"),
-            }
-        ),
-        user_api_key_dict,
+    assert_proxy_admin_for_vector_store_params(vector_store.get("litellm_params"), user_api_key_dict)
+    assert_proxy_admin_for_vector_store_params(
+        MappingProxyType({CREDENTIAL_NAME_KEY: vector_store.get(CREDENTIAL_NAME_KEY)}), user_api_key_dict
     )
     if (
         not is_proxy_admin(user_api_key_dict)
@@ -637,8 +632,8 @@ async def update_vector_store(
         # Merge request litellm_params over the saved ones, the same way /vector_store/new persists them: request
         # keys win, a value equal to the redaction sentinel keeps the saved secret instead of overwriting it, and
         # an os.environ/ reference is stored as-is and resolved later, for allowlisted names only, by
-        # resolve_litellm_params_references. Only proxy admins may save a reference, or set, change or clear where
-        # the store sends traffic (its endpoint keys, credential name or provider). The ad hoc
+        # resolve_litellm_params_references. Only proxy admins may send a reference, or set, change or clear anything
+        # outside NON_ADMIN_VECTOR_STORE_PARAMS (or the provider). The ad hoc
         # test_connection/discover path (_resolve_connection_target) rejects references outright. This stores the
         # raw params (no credential resolution), since each search embeds the query through the router at request
         # time.
@@ -655,10 +650,10 @@ async def update_vector_store(
             merged_litellm_params: Final = _merge_update_litellm_params(
                 saved_litellm_params, data.litellm_params or _EMPTY_PARAMS
             )
-            assert_proxy_admin_for_endpoint_params(
+            assert_proxy_admin_for_vector_store_params(
                 merged_litellm_params, user_api_key_dict, saved_params=saved_litellm_params
             )
-            assert_proxy_admin_for_env_references(merged_litellm_params, user_api_key_dict)
+            assert_proxy_admin_for_env_references(data.litellm_params, user_api_key_dict)
             litellm_params_dict: Final = GenericLiteLLMParams.model_validate(merged_litellm_params).model_dump(
                 exclude_none=True
             )

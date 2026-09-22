@@ -128,18 +128,18 @@ def test_internal_user_rag_ingest_without_vector_store_id_allowed(client_interna
 
 
 @pytest.mark.parametrize(
-    "blocked_field",
+    "blocked_field,expected_status",
     [
-        "vertex_credentials",
-        "vertex_ai_credentials",
-        "aws_access_key_id",
-        "aws_secret_access_key",
-        "aws_session_token",
-        "api_key",
-        "api_base",
+        ("vertex_credentials", 400),
+        ("vertex_ai_credentials", 400),
+        ("aws_access_key_id", 403),
+        ("aws_secret_access_key", 403),
+        ("aws_session_token", 403),
+        ("api_key", 403),
+        ("api_base", 400),
     ],
 )
-def test_rag_ingest_blocks_clientside_credentials(client_internal_user, blocked_field):
+def test_rag_ingest_blocks_clientside_credentials(client_internal_user, blocked_field, expected_status):
     """
     Credential fields in ingest_options.vector_store must be rejected.
 
@@ -171,8 +171,9 @@ def test_rag_ingest_blocks_clientside_credentials(client_internal_user, blocked_
             },
         },
     )
-    assert response.status_code == 400, (
-        f"Expected 400 when '{blocked_field}' is set clientside, got {response.status_code}: {response.json()}"
+    assert response.status_code == expected_status, (
+        f"Expected {expected_status} when '{blocked_field}' is set clientside, got {response.status_code}: "
+        f"{response.json()}"
     )
     body = response.json()
     assert blocked_field in str(body), f"Response should mention '{blocked_field}': {body}"
@@ -400,7 +401,7 @@ def test_rag_ingest_unmanaged_store_keeps_the_callers_full_config(client_interna
     caller_config = {
         "vector_store_id": "KB-unmanaged",
         "custom_llm_provider": "bedrock",
-        "s3_bucket": "callers-bucket",
+        "embedding_model": "amazon.titan-embed-text-v2:0",
         "s3_prefix": "docs/",
     }
     aingest_patch, registry_patch = _patched_ingest_boundary(
@@ -449,8 +450,16 @@ def test_rag_ingest_rejects_os_environ_references_from_non_admins(client_interna
         {"custom_llm_provider": "openai", "litellm_credential_name": "openai-prod"},
         {"custom_llm_provider": "s3_vectors", "aws_region_name": "attacker.example/"},
         {"custom_llm_provider": "valkey", "valkey_host": "attacker.example"},
+        {"custom_llm_provider": "bedrock", "s3_bucket": "attacker-bucket"},
+        {"custom_llm_provider": "s3_vectors", "vector_bucket_name": "kb", "ssl_verify": False},
+        {"custom_llm_provider": "azure_ai", "azure_scope": "https://attacker.example/.default"},
+        {
+            "custom_llm_provider": "mongodb",
+            "litellm_embedding_model": "embed",
+            "litellm_embedding_config": {"model": "embed"},
+        },
     ],
-    ids=["credential-name", "region", "host"],
+    ids=["credential-name", "region", "host", "bucket-host", "tls", "token-scope", "embedding-config"],
 )
 def test_rag_ingest_rejects_endpoint_params_from_non_admins(client_internal_user, vector_store_config):
     """Regression: the ingest saved the caller's endpoint or named proxy credential as the new store's
@@ -652,6 +661,40 @@ def test_rag_ingest_fresh_store_creates_db_row_with_the_requesters_params(client
     assert created["vector_store_id"] == "vs_new"
     assert created["custom_llm_provider"] == "s3_vectors"
     assert created["litellm_params"] == {"vector_bucket_name": "kb-bucket"}
+
+
+def test_rag_ingest_lets_a_non_admin_create_a_mongodb_store_from_data_shape_params(client_internal_user):
+    vector_store_config = {
+        "custom_llm_provider": "mongodb",
+        "litellm_embedding_model": "text-embedding-3-small",
+        "mongodb_database": "knowledge",
+        "mongodb_collection": "handbook",
+        "mongodb_filter_fields": ["team"],
+        "custom_metadata": {"team": "docs"},
+    }
+    prisma_client = MagicMock()
+    prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+    create_in_db = AsyncMock()
+    aingest_patch, registry_patch = _patched_ingest_boundary(None, {"vector_store_id": "vs_mdb", "file_id": "f"})
+    with (
+        aingest_patch as mock_aingest,
+        registry_patch,
+        _patched_prisma_client(prisma_client),
+        patch(  # test-quality-ok: the DB write boundary whose inputs the test asserts
+            "litellm.proxy.vector_store_endpoints.management_endpoints.create_vector_store_in_db",
+            new=create_in_db,
+        ),
+    ):
+        response = client_internal_user.post("/v1/rag/ingest", **_ingest_form(vector_store_config))
+
+    assert response.status_code == 200, response.json()
+    assert mock_aingest.await_args.kwargs["ingest_options"]["vector_store"] == vector_store_config
+    assert create_in_db.await_args.kwargs["litellm_params"] == {
+        "litellm_embedding_model": "text-embedding-3-small",
+        "mongodb_database": "knowledge",
+        "mongodb_collection": "handbook",
+        "mongodb_filter_fields": ["team"],
+    }
 
 
 def test_rag_ingest_hands_persistence_the_requesters_options_not_registry_credentials(client_internal_user):

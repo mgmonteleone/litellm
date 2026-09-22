@@ -48,9 +48,9 @@ from litellm.proxy.vector_store_endpoints.endpoints import (
     reject_caller_embedding_selection_params,
 )
 from litellm.proxy.vector_store_endpoints.utils import (
-    assert_proxy_admin_for_endpoint_params,
     assert_proxy_admin_for_env_references,
     assert_proxy_admin_for_request_endpoints,
+    assert_proxy_admin_for_vector_store_params,
     assert_user_can_access_vector_store_id,
 )
 from litellm.rag.main import get_ingestion_class
@@ -496,41 +496,6 @@ async def parse_rag_ingest_request(
             detail={"error": "ingest_options must contain 'vector_store' configuration"},
         )
 
-    # Credential fields must come from server configuration, not user requests.
-    # Accepting user-supplied credentials (e.g. vertex_credentials with
-    # type=external_account + credential_source.file=/proc/1/environ) allows
-    # any authenticated user to exfiltrate host secrets via SSRF through
-    # google-auth's identity_pool credential refresh.
-    # api_base is also blocked: a user-controlled base URL causes the server
-    # to send its configured provider credentials to an attacker endpoint.
-    _BLOCKED_VECTOR_STORE_CREDENTIAL_PARAMS: Final = {
-        "vertex_credentials",
-        "vertex_ai_credentials",
-        "aws_access_key_id",
-        "aws_secret_access_key",
-        "aws_session_token",
-        "aws_web_identity_token",
-        "aws_role_name",
-        "aws_session_name",
-        "aws_profile_name",
-        "aws_sts_endpoint",
-        "aws_external_id",
-        "azure_ad_token",
-        "api_key",
-        "api_base",
-    }
-    vector_store_opts: Final[object] = ingest_options.get("vector_store", {})
-    if isinstance(vector_store_opts, dict):
-        for field in _BLOCKED_VECTOR_STORE_CREDENTIAL_PARAMS:
-            if field in vector_store_opts:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": f"'{field}' cannot be set in ingest_options.vector_store. "
-                        "Credentials must be configured server-side."
-                    },
-                )
-
     return ingest_options, secured_file_data, file_url, file_id, display_filename
 
 
@@ -629,8 +594,11 @@ async def rag_ingest(
 
         managed_store: Final = resolved_stores.get(request_vector_store_config.get("vector_store_id"))
         caller_vector_store_options: Final = _caller_vector_store_options(request_vector_store_config, managed_store)
-        assert_proxy_admin_for_endpoint_params(
-            MappingProxyType({**ingest_options, "vector_store": caller_vector_store_options}), user_api_key_dict
+        assert_proxy_admin_for_vector_store_params(
+            MappingProxyType(
+                {key: value for key, value in caller_vector_store_options.items() if key != "custom_llm_provider"}
+            ),
+            user_api_key_dict,
         )
         merged_vector_store_config: Final = {  # mutable-ok: ingestion classes mutate it when loading credentials
             **caller_vector_store_options,

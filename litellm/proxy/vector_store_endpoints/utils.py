@@ -2,7 +2,7 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from types import MappingProxyType
-from typing import Final, Literal
+from typing import Final, Literal, NoReturn
 
 from fastapi import HTTPException, Request
 
@@ -18,9 +18,14 @@ from litellm.proxy._types import (
     UserAPIKeyAuth,
 )
 from litellm.types.utils import LlmProviders
-from litellm.types.vector_stores import VECTOR_STORE_ENDPOINT_KEYS, LiteLLM_ManagedVectorStore
+from litellm.types.vector_stores import (
+    NON_ADMIN_VECTOR_STORE_MAPPING_PARAMS,
+    NON_ADMIN_VECTOR_STORE_PARAMS,
+    VECTOR_STORE_ENDPOINT_KEYS,
+    LiteLLM_ManagedVectorStore,
+)
 from litellm.utils import ProviderConfigManager
-from litellm.vector_stores.vector_store_registry import NestedParamPath, contains_env_reference, nested_param_entries
+from litellm.vector_stores.vector_store_registry import contains_env_reference, nested_param_entries
 
 
 def _normalize_litellm_params(
@@ -70,53 +75,72 @@ def assert_proxy_admin_for_env_references(params: object, user_api_key_dict: Use
 
 
 CREDENTIAL_NAME_KEY: Final = "litellm_credential_name"
-_ADMIN_ONLY_PARAM_KEYS: Final = VECTOR_STORE_ENDPOINT_KEYS | frozenset((CREDENTIAL_NAME_KEY,))
-
-ParamEntries = tuple[tuple[NestedParamPath, object], ...]
+_EMPTY_PARAMS: Final[Mapping[str, object]] = MappingProxyType({})
 
 
-def _admin_only_entries(params: object) -> ParamEntries | None:
-    entries: Final = nested_param_entries(params)
-    if entries is None:
-        return None
-    return tuple(
-        (path, value) for path, value in entries if path and path[-1] in _ADMIN_ONLY_PARAM_KEYS and value is not None
-    )
-
-
-def _changed_admin_only_keys(requested: ParamEntries | None, saved: ParamEntries | None) -> frozenset[str]:
-    if requested is None or saved is None:
-        return frozenset({"litellm_params"})
-    return frozenset(
-        str(path[-1])
-        for path, value in (*requested, *saved)
-        if ((path, value) in requested) != ((path, value) in saved)
-    )
-
-
-def assert_proxy_admin_for_endpoint_params(
-    params: object, user_api_key_dict: UserAPIKeyAuth, *, saved_params: object = None
-) -> None:
-    """Only proxy admins decide where a vector store sends traffic: an endpoint or identity key, or a named
-    credential, anywhere in ``params``. Keeping exactly what ``saved_params`` holds is allowed."""
-    if is_proxy_admin(user_api_key_dict):
-        return
-    changed: Final = _changed_admin_only_keys(_admin_only_entries(params), _admin_only_entries(saved_params))
-    if not changed:
-        return
+def _raise_admin_only(keys: Iterable[str]) -> NoReturn:
     raise HTTPException(
         status_code=403,
-        detail="Only proxy admins can set, change or clear where a vector store sends traffic: "
-        f"{', '.join(sorted(changed))}. Leave these fields as they are, or ask a proxy admin to make this change.",
+        detail="Only proxy admins can set, change or clear these vector store settings: "
+        f"{', '.join(sorted(keys))}. Leave these fields as they are, or ask a proxy admin to make this change.",
     )
+
+
+def _non_admin_may_set(key: str, value: object) -> bool:
+    if key not in NON_ADMIN_VECTOR_STORE_PARAMS:
+        return False
+    if key in NON_ADMIN_VECTOR_STORE_MAPPING_PARAMS:
+        return True
+    entries: Final = nested_param_entries(value)
+    return (
+        entries is not None
+        and not isinstance(value, Mapping)
+        and all(len(path) <= 1 and not isinstance(item, Mapping) for path, item in entries)
+    )
+
+
+def _admin_only_params(params: Mapping[str, object]) -> Mapping[str, object]:
+    return MappingProxyType(
+        {key: value for key, value in params.items() if value is not None and not _non_admin_may_set(key, value)}
+    )
+
+
+def _changed_admin_only_keys(requested: Mapping[str, object], saved: Mapping[str, object]) -> frozenset[str]:
+    if nested_param_entries(requested) is None or nested_param_entries(saved) is None:
+        return frozenset({"litellm_params"})
+    requested_admin_only: Final = _admin_only_params(requested)
+    saved_admin_only: Final = _admin_only_params(saved)
+    return frozenset(
+        key
+        for key in requested_admin_only.keys() | saved_admin_only.keys()
+        if requested_admin_only.get(key) != saved_admin_only.get(key)
+    )
+
+
+def assert_proxy_admin_for_vector_store_params(
+    params: Mapping[str, object] | None,
+    user_api_key_dict: UserAPIKeyAuth,
+    *,
+    saved_params: Mapping[str, object] | None = None,
+) -> None:
+    """A non-admin may only set, change or clear NON_ADMIN_VECTOR_STORE_PARAMS. Keeping exactly what
+    ``saved_params`` holds is allowed, so an owner can edit their store without touching what an admin set."""
+    if is_proxy_admin(user_api_key_dict):
+        return
+    changed: Final = _changed_admin_only_keys(params or _EMPTY_PARAMS, saved_params or _EMPTY_PARAMS)
+    if changed:
+        _raise_admin_only(changed)
 
 
 def assert_proxy_admin_for_request_endpoints(payload: Mapping[str, object], user_api_key_dict: UserAPIKeyAuth) -> None:
     """A search or query body picks endpoints only at its top level; nested values such as filters are data."""
-    assert_proxy_admin_for_endpoint_params(
-        MappingProxyType({key: value for key, value in payload.items() if key in VECTOR_STORE_ENDPOINT_KEYS}),
-        user_api_key_dict,
+    if is_proxy_admin(user_api_key_dict):
+        return
+    requested: Final = frozenset(
+        key for key, value in payload.items() if key in VECTOR_STORE_ENDPOINT_KEYS and value is not None
     )
+    if requested:
+        _raise_admin_only(requested)
 
 
 def _suffix_after_index_name(request_path: str, index_name: str) -> str | None:
