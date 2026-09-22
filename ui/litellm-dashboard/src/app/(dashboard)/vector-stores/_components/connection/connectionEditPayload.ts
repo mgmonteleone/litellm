@@ -45,7 +45,9 @@ export const connectionFormValuesFromLitellmParams = (
  * exception: it is still sent, but only ever as the redaction sentinel, matching what
  * /vector_store/update requires to mean "keep the saved secret" (see
  * litellm/proxy/vector_store_endpoints/management_endpoints.py). A field that was never saved and is
- * still blank is left out entirely rather than sent as an empty string.
+ * still blank is left out entirely rather than sent as an empty string. A field that *was* saved and
+ * is now blank is sent as `null`, which /vector_store/update treats as "clear this field" -- otherwise
+ * it would coerce to `undefined` and be dropped, leaving the stale saved value in place.
  */
 export const buildConnectionUpdateLitellmParams = (
   provider: string,
@@ -63,6 +65,7 @@ export const buildConnectionUpdateLitellmParams = (
           return isSecretParamName(key) && current === REDACTION_SENTINEL ? [[key, REDACTION_SENTINEL] as const] : [];
         }
         const coerced = coerceFieldValue(field, current);
-        return coerced === undefined ? [] : [[key, coerced] as const];
+        if (coerced !== undefined) return [[key, coerced] as const];
+        return initial === "" ? [] : [[key, null] as const];
       }),
   );

@@ -98,4 +98,29 @@ describe("buildConnectionUpdateLitellmParams", () => {
 
     expect(params.mongodb_num_candidates).toBe(250);
   });
+
+  it("clears a saved field", () => {
+    const current = { ...initial, mongodb_collection: "" };
+
+    const params = buildConnectionUpdateLitellmParams("mongodb", initial, current);
+
+    expect(params.mongodb_collection).toBeNull();
+  });
+
+  it("clears a saved override's secret field to null, not the redaction sentinel, when blanked", () => {
+    const current = { ...initial, api_key: "" };
+
+    const params = buildConnectionUpdateLitellmParams("mongodb", initial, current);
+
+    expect(params.api_key).toBeNull();
+  });
+
+  it("clears every field of a collapsed override that had a saved value", () => {
+    const current = { ...initial, api_base: "", api_key: "" };
+
+    const params = buildConnectionUpdateLitellmParams("mongodb", initial, current);
+
+    expect(params.api_base).toBeNull();
+    expect(params.api_key).toBeNull();
+  });
 });
