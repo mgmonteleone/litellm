@@ -27,11 +27,13 @@ VIEWER: Final = UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER_VIEW_ONL
 class FakeConfig:
     def __init__(self) -> None:
         self.test_calls: list[tuple[Mapping[str, object], str | None]] = []
+        self.is_saved_store_calls: list[bool] = []
         self.discover_calls: list[tuple[str, Mapping[str, object], Mapping[str, object]]] = []
         self.executors: list[object] = []
 
-    async def atest_connection(self, litellm_params, vector_store_id, embedding_executor=None):
+    async def atest_connection(self, litellm_params, vector_store_id, embedding_executor=None, *, is_saved_store=False):
         self.test_calls.append((dict(litellm_params), vector_store_id))
+        self.is_saved_store_calls.append(is_saved_store)
         self.executors.append(embedding_executor)
         return VectorStoreTestConnectionResponse(
             ok=True,
@@ -96,6 +98,18 @@ async def test_unsaved_configuration_is_passed_through(fake_config) -> None:
     )
     assert response["ok"] is True
     assert fake_config.test_calls == [(params, None)]
+    assert fake_config.is_saved_store_calls == [False]
+
+
+@pytest.mark.asyncio
+async def test_saved_store_is_flagged_as_saved_so_the_provider_can_apply_strict_checks(
+    fake_config, registry_store
+) -> None:
+    """A saved store's provider config must be told it is complete, so a missing collection or embedding
+    model fails the checklist instead of being treated as an in-progress add-dialog configuration."""
+    await vector_store_test_connection(VectorStoreTestConnectionRequest(vector_store_id="policy_index"), ADMIN)
+
+    assert fake_config.is_saved_store_calls == [True]
 
 
 @pytest.mark.asyncio

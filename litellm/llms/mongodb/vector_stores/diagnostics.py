@@ -20,6 +20,7 @@ from litellm.llms.mongodb.vector_stores.transformation import (
     MongoDBVectorStoreParams,
     embedding_vector,
     sidecar_error_message,
+    validated_params,
     validated_test_connection_params,
 )
 from litellm.types.router import GenericLiteLLMParams
@@ -54,12 +55,16 @@ def check(
 
 
 def _resolve(
-    config: MongoDBVectorStoreConfig, litellm_params: Mapping[str, object]
+    config: MongoDBVectorStoreConfig, litellm_params: Mapping[str, object], is_saved_store: bool
 ) -> tuple[str, dict[str, object], MongoDBVectorStoreParams]:  # mutable-ok: writable HTTP headers
+    """A saved store keeps the pre-relaxation strict rule (missing database/collection fails the whole
+    check) since it is already meant to be complete; an unsaved configuration may still be missing them
+    while the admin is filling in the add dialog, so those checks report skip instead."""
     generic: Final = GenericLiteLLMParams.model_validate(dict(litellm_params))  # mutable-ok: pydantic input copy
     headers: Final = config.validate_environment(headers=_EMPTY, litellm_params=generic)
     api_base: Final = config.get_complete_url(api_base=generic.api_base, litellm_params=litellm_params)
-    return api_base, headers, validated_test_connection_params(litellm_params)
+    validate: Final = validated_params if is_saved_store else validated_test_connection_params
+    return api_base, headers, validate(litellm_params)
 
 
 async def _capabilities(
@@ -116,11 +121,13 @@ async def run_test_connection(
     litellm_params: Mapping[str, object],
     vector_store_id: str | None,
     embedding_executor: VectorStoreEmbeddingExecutor | None = None,
+    *,
+    is_saved_store: bool = False,
 ) -> VectorStoreTestConnectionResponse:
     checks: list[VectorStoreConnectionCheck] = []  # mutable-ok: accumulated checklist
     details: dict[str, object] = {}  # mutable-ok: JSON response
     try:
-        api_base, headers, params = _resolve(config, litellm_params)
+        api_base, headers, params = _resolve(config, litellm_params, is_saved_store)
     except BadRequestError as error:
         return _finish("mongodb", (check("configuration", "fail", str(error.message)),), details)
     client: Final = get_async_httpx_client(llm_provider=LlmProviders.MONGODB)
@@ -185,6 +192,11 @@ async def run_test_connection(
                     f"Embedding model '{params.litellm_embedding_model}' failed: {str(error)[:300]}",
                 )
             )
+    elif is_saved_store:
+        try:
+            params.require_embedding_model()
+        except BadRequestError as error:
+            checks.append(check("embedding_model", "fail", str(error.message)))
     else:
         checks.append(check("embedding_model", "skip", _CHOOSE_EMBEDDING_MODEL_MESSAGE))
     details["embedding_dimensions"] = embedding_dimensions

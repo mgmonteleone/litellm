@@ -873,6 +873,7 @@ async def vector_store_test_connection(
             litellm_params=litellm_params,
             vector_store_id=vector_store_id,
             embedding_executor=_router_embedding_executor(user_api_key_dict),
+            is_saved_store=bool(data.vector_store_id),
         )
     except HTTPException:
         raise

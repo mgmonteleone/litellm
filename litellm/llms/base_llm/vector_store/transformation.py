@@ -224,12 +224,18 @@ class BaseVectorStoreConfig:
         litellm_params: Mapping[str, object],
         vector_store_id: str | None,
         embedding_executor: VectorStoreEmbeddingExecutor | None = None,
+        *,
+        is_saved_store: bool = False,
     ) -> VectorStoreTestConnectionResponse:
         """
         OPTIONAL
 
         Run a provider-specific connection checklist for the dashboard's Test Connection button.
         Providers override this; the default reports that the check is not available.
+
+        `is_saved_store` tells a provider whether `litellm_params` came from an already-saved store
+        (missing configuration is a real problem to report) or an in-progress, unsaved configuration
+        the admin is still filling in (missing configuration is expected and not yet a failure).
         """
         return VectorStoreTestConnectionResponse(
             ok=False,
