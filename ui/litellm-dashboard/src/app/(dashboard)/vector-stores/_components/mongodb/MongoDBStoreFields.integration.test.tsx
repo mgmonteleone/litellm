@@ -242,6 +242,23 @@ describe("MongoDB vector store dialog", () => {
     expect(await screen.findByText("The index expects 1536, this model returns 3072.")).toBeInTheDocument();
   });
 
+  it("blocks Create without a sidecar URL and key when the deployment has no defaults", async () => {
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+    // Deliberately not calling fillConnection(): nothing else can reach the sidecar without it.
+    fireEvent.change(screen.getByPlaceholderText("policy_vector_index"), { target: { value: "policy_index" } });
+    fireEvent.change(screen.getByPlaceholderText("sample_mflix"), { target: { value: "knowledge" } });
+    fireEvent.change(screen.getByPlaceholderText("embedded_movies"), { target: { value: "policies" } });
+    await chooseEmbeddingModel(user);
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(await screen.findByText("Please input the sidecar url")).toBeInTheDocument();
+    expect(screen.getByText("Please input the sidecar api key")).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("creates the store with the index name and coerced advanced params", async () => {
     const user = setupUser();
     renderForm();

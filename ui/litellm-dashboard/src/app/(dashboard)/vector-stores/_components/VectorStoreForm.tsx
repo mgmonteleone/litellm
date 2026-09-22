@@ -39,11 +39,12 @@ import VectorStoreField, { type SelectOption } from "./fields/VectorStoreField";
 import MongoDBSetupAlert from "./mongodb/MongoDBSetupAlert";
 import { supportsFeature } from "./mongodb/mongodbConnection";
 import MongoDBStoreFields from "./mongodb/MongoDBStoreFields";
+import { hasDeploymentDefaults, useMongoDBProviderDefaults } from "./mongodb/useMongoDBProviderDefaults";
 import {
   buildVectorStoreLitellmParams,
   clearUnsupportedCapabilityFields,
   isSupportedProviderField,
-  vectorStoreSchema,
+  makeVectorStoreSchema,
   type VectorStoreFormValues,
 } from "./vectorStoreFormSchema";
 
@@ -95,9 +96,14 @@ const VectorStoreForm: React.FC<VectorStoreFormProps> = ({
   accessToken,
   credentials,
 }) => {
-  const form = useZodForm(vectorStoreSchema, { defaultValues: EMPTY_VALUES });
   const [metadataJson, setMetadataJson] = useState("{}");
   const [selectedProvider, setSelectedProvider] = useState("bedrock");
+  // Gated the same way MongoDBStoreFields mounting used to gate this fetch, so selecting a
+  // non-MongoDB provider never fires it and MongoDB's own discovery timing is unaffected.
+  const providerDefaults = useMongoDBProviderDefaults(selectedProvider === "mongodb" ? accessToken : null);
+  const form = useZodForm(makeVectorStoreSchema(hasDeploymentDefaults(providerDefaults)), {
+    defaultValues: EMPTY_VALUES,
+  });
   const [modelInfo, setModelInfo] = useState<ModelGroup[]>([]);
   const vertexEngineId = useWatch({ control: form.control, name: "vertex_engine_id" });
   const connectionTest = useVectorStoreConnectionTest(accessToken);
@@ -391,6 +397,7 @@ const VectorStoreForm: React.FC<VectorStoreFormProps> = ({
                   control={form.control}
                   setValue={form.setValue}
                   accessToken={accessToken}
+                  providerDefaults={providerDefaults}
                   embeddingModelOptions={embeddingModelOptions}
                   connectionTest={connectionTest}
                   onRunConnectionTest={runConnectionTest}

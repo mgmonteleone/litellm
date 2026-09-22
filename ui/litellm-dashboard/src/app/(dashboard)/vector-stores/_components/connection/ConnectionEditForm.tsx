@@ -15,7 +15,8 @@ import { toast } from "@/lib/toast";
 
 import VectorStoreField, { type SelectOption } from "../fields/VectorStoreField";
 import MongoDBStoreFields from "../mongodb/MongoDBStoreFields";
-import { isSupportedProviderField, vectorStoreSchema } from "../vectorStoreFormSchema";
+import { hasDeploymentDefaults, useMongoDBProviderDefaults } from "../mongodb/useMongoDBProviderDefaults";
+import { isSupportedProviderField, makeVectorStoreSchema } from "../vectorStoreFormSchema";
 import ConnectionChecklist from "./ConnectionChecklist";
 import { buildConnectionUpdateLitellmParams, connectionFormValuesFromLitellmParams } from "./connectionEditPayload";
 import type { LitellmParams } from "./litellmParamsDisplay";
@@ -49,7 +50,8 @@ export const ConnectionEditForm: React.FC<ConnectionEditFormProps> = ({
     () => connectionFormValuesFromLitellmParams(provider, litellmParams),
     [provider, litellmParams],
   );
-  const form = useZodForm(vectorStoreSchema, {
+  const providerDefaults = useMongoDBProviderDefaults(provider === "mongodb" ? accessToken : null);
+  const form = useZodForm(makeVectorStoreSchema(hasDeploymentDefaults(providerDefaults)), {
     defaultValues: { custom_llm_provider: provider, vector_store_id: vectorStoreId, ...initialValues },
   });
   const [modelInfo, setModelInfo] = useState<ModelGroup[]>([]);
@@ -110,6 +112,7 @@ export const ConnectionEditForm: React.FC<ConnectionEditFormProps> = ({
               control={form.control}
               setValue={form.setValue}
               accessToken={accessToken}
+              providerDefaults={providerDefaults}
               embeddingModelOptions={embeddingModelOptions}
               connectionTest={connectionTest}
               onRunConnectionTest={runConnectionTest}
