@@ -141,12 +141,15 @@ def assert_proxy_admin_for_vector_store_params(
         _raise_admin_only(changed)
 
 
+_REQUEST_ADMIN_ONLY_KEYS: Final = VECTOR_STORE_ENDPOINT_KEYS | frozenset({CREDENTIAL_NAME_KEY})
+
+
 def assert_proxy_admin_for_request_endpoints(payload: Mapping[str, object], user_api_key_dict: UserAPIKeyAuth) -> None:
     """A search or query body picks endpoints only at its top level; nested values such as filters are data."""
     if is_proxy_admin(user_api_key_dict):
         return
     requested: Final = frozenset(
-        key for key, value in payload.items() if key in VECTOR_STORE_ENDPOINT_KEYS and value is not None
+        key for key, value in payload.items() if key in _REQUEST_ADMIN_ONLY_KEYS and value is not None
     )
     if requested:
         _raise_admin_only(requested)

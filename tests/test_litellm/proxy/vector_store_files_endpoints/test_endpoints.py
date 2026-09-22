@@ -146,7 +146,10 @@ async def test_raw_file_id_allowed_when_managed_files_not_required():
 @pytest.mark.parametrize(
     "path", ["/v1/vector_stores/vs-1/files", "/v1/vector_stores/vs-1/files/file-1"], ids=["create", "update"]
 )
-def test_vector_store_file_writes_reject_endpoint_params_from_non_admins(path):
+@pytest.mark.parametrize(
+    "param,value", [("aws_region_name", "attacker.example/"), ("litellm_credential_name", "openai-prod")]
+)
+def test_vector_store_file_writes_reject_endpoint_params_from_non_admins(path, param, value):
     """Regression: a file create or update body could pick the region or host that the proxy's own provider
     credentials are sent to."""
     from fastapi.testclient import TestClient
@@ -159,9 +162,9 @@ def test_vector_store_file_writes_reject_endpoint_params_from_non_admins(path):
     original_overrides = app.dependency_overrides.copy()
     app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
     try:
-        response = TestClient(app).post(path, json={"file_id": "file-1", "aws_region_name": "attacker.example/"})
+        response = TestClient(app).post(path, json={"file_id": "file-1", param: value})
     finally:
         app.dependency_overrides = original_overrides
 
     assert response.status_code == 403, response.json()
-    assert "aws_region_name" in str(response.json())
+    assert param in str(response.json())
