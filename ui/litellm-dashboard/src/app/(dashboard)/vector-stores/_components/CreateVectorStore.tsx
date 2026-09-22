@@ -26,6 +26,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import VectorStoreField, { type SelectOption } from "./fields/VectorStoreField";
+import MongoDBSidecarConnectionFields from "./mongodb/MongoDBSidecarConnectionFields";
+import { hasDeploymentDefaults, useMongoDBProviderDefaults } from "./mongodb/useMongoDBProviderDefaults";
 import S3VectorsConfig from "./S3VectorsConfig";
 import {
   buildChunkingStrategy,
@@ -130,6 +132,7 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
   const [chunking, setChunking] = useState<ChunkingInput>(EMPTY_CHUNKING);
   const [modelInfo, setModelInfo] = useState<ModelGroup[]>([]);
   const documentsInputId = useId();
+  const mongoDBProviderDefaults = useMongoDBProviderDefaults(selectedProvider === "mongodb" ? accessToken : null);
 
   /**
    * S3 Vectors keeps its own params in state through its dedicated config component; every other
@@ -198,6 +201,15 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
     for (const field of requiredFields) {
       if (!providerValues[field.name]) {
         toast.warning(`Please provide ${field.label}`);
+        return;
+      }
+    }
+
+    // MongoDB's sidecar URL/API key are the only way to reach it, but only when the deployment
+    // has no default sidecar configured (see vectorStoreFormSchema's same rule for the add dialog).
+    if (selectedProvider === "mongodb" && !hasDeploymentDefaults(mongoDBProviderDefaults)) {
+      if (!asText(providerValues.api_base) || !asText(providerValues.api_key)) {
+        toast.warning("Please provide the MongoDB sidecar URL and API key");
         return;
       }
     }
@@ -418,17 +430,28 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
                 />
               )}
 
+              {/* MongoDB Sidecar Connection */}
+              {selectedProvider === "mongodb" && (
+                <MongoDBSidecarConnectionFields
+                  control={providerForm.control}
+                  setValue={providerForm.setValue}
+                  providerDefaults={mongoDBProviderDefaults}
+                />
+              )}
+
               {/* Other Provider-specific fields */}
               {selectedProvider !== "s3_vectors" &&
-                getProviderSpecificFields(selectedProvider).map((field: VectorStoreFieldConfig) => (
-                  <VectorStoreField
-                    key={field.name}
-                    field={field}
-                    control={providerForm.control}
-                    name={field.name}
-                    fallbackOptions={embeddingModelOptions}
-                  />
-                ))}
+                getProviderSpecificFields(selectedProvider)
+                  .filter((field) => !(selectedProvider === "mongodb" && field.group === "connection"))
+                  .map((field: VectorStoreFieldConfig) => (
+                    <VectorStoreField
+                      key={field.name}
+                      field={field}
+                      control={providerForm.control}
+                      name={field.name}
+                      fallbackOptions={embeddingModelOptions}
+                    />
+                  ))}
 
               <Collapsible>
                 <CollapsibleTrigger
