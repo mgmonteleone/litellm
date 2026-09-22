@@ -1,0 +1,38 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBSidecarConnectionFields.tsx
+  s_d71e62cb6f304c::t_1d348cdd9ff0d7 62-63,65
+  s_d71e62cb6f304c::t_6b044f92053d04 1-61,64,66-95
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.tsx
+  s_d71e62cb6f304c::t_eaacfdabc5a1c0 434-441,444-454
+  s_d71e62cb6f304c::t_bec0936615eddb 29-30
+  s_d71e62cb6f304c::t_aea84b287e57b5 433
+  s_d71e62cb6f304c::t_cdbcfc3708a549 135
+  s_d71e62cb6f304c::t_eb30074b04a9b6 208-216
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.mongodb.test.tsx
+  s_d71e62cb6f304c::t_e06ee5e2ceaa95 73
+  s_d71e62cb6f304c::t_12aad1ea0ea4c9 25-30,34
+  s_d71e62cb6f304c::t_d3738f724fdfb7 1-24,31-33,35-41,43-49,51-72,74-98,100-134
+  s_d71e62cb6f304c::t_9256e398093707 42
+  s_d71e62cb6f304c::t_38078b7bbdd6f8 50
+  s_d71e62cb6f304c::t_7d1ab050eb710b 99
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.test.tsx
+  s_d71e62cb6f304c::t_231ead85b8891a 11-13
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBStoreFields.tsx
+  s_d71e62cb6f304c::t_435d0461a77c3c 3,23
+  s_d71e62cb6f304c::t_7019687cc40a89 149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "e855aed62347328b5775aea016f442da2dc45ed8",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
