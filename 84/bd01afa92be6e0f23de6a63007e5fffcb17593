@@ -1,0 +1,19 @@
+ui/litellm-dashboard/src/lib/http/schema.d.ts
+  s_904317b46153f8::t_c918f8c06404c5 28272-28309,35015,35019,35096,35217,36347-36349,36354-36357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "84bd01afa92be6e0f23de6a63007e5fffcb17593",
+  "prompts": {},
+  "sessions": {
+    "s_904317b46153f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abe9ca31-133a-4bed-8856-640185ecb6d8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
