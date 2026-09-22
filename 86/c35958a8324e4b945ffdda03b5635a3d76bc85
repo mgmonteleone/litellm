@@ -1,0 +1,24 @@
+tests/unit/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_5dc1a97354ebdd 248-259,263
+litellm/router.py
+  s_d71e62cb6f304c::t_5030624bce5d65 411
+tests/test_litellm/llms/s3_vectors/vector_stores/test_s3_vectors_transformation.py
+  s_d71e62cb6f304c::t_16512614be2e93 1
+  s_d71e62cb6f304c::t_d9783b6418de9c 223-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "86c35958a8324e4b945ffdda03b5635a3d76bc85",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
