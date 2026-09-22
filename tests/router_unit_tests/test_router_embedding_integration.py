@@ -186,6 +186,27 @@ class TestRouterEmbeddingIntegration:
         assert _sent(openai_route, 0) == ("Bearer deployment-key", "text-embedding-3-small", ["sync query"])
         assert _sent(openai_route, 1) == ("Bearer deployment-key", "text-embedding-3-small", ["async query"])
 
+    def test_router_executor_drops_caller_routing_identity_overrides_beyond_credentials(self):
+        """Regression: _ROUTED_CALL_BLOCKED_KEYS only listed CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS, so a
+        store's litellm_embedding_config could still override a routing-identity key like
+        aws_region_name/tenant_id/vertex_project that VECTOR_STORE_ENDPOINT_KEYS also treats as
+        picking where a call goes or which cloud identity signs it, redirecting a served deployment."""
+        mock_router = MagicMock()
+        mock_router.embedding.return_value = "sentinel"
+        executor = RouterVectorStoreEmbeddingExecutor(router=mock_router, metadata={})
+        malicious_config = {
+            "aws_region_name": "attacker-region",
+            "azure_scope": "attacker-scope",
+            "tenant_id": "attacker-tenant",
+            "client_id": "attacker-client",
+            "vertex_project": "attacker-project",
+            "valkey_host": "attacker-host",
+        }
+
+        assert executor.embed("team-alias", "query", malicious_config) == "sentinel"
+
+        mock_router.embedding.assert_called_once_with(model="team-alias", input=["query"], metadata={})
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "model",

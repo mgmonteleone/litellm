@@ -9,11 +9,11 @@ from typing import TYPE_CHECKING, Any, Final, Literal, NoReturn, Protocol, TypeA
 import httpx
 from pydantic import TypeAdapter
 
-from litellm.constants import CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS
 from litellm.exceptions import BadRequestError
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import EmbeddingResponse
 from litellm.types.vector_stores import (
+    VECTOR_STORE_ENDPOINT_KEYS,
     VECTOR_STORE_OPENAI_PARAMS,
     BaseVectorStoreAuthCredentials,
     VectorStoreCreateOptionalRequestParams,
@@ -96,7 +96,7 @@ def model_not_configured_error(model: str) -> BadRequestError:
     return BadRequestError(message=model_not_configured_message(model), model=model, llm_provider="")
 
 
-_ROUTED_CALL_BLOCKED_KEYS: Final = CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS | frozenset({"api_key"})
+_ROUTED_CALL_BLOCKED_KEYS: Final = VECTOR_STORE_ENDPOINT_KEYS | frozenset({"api_key"})
 
 
 @dataclass(frozen=True, slots=True)
