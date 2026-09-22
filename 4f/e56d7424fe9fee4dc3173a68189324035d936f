@@ -1,0 +1,53 @@
+tests/unit/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_d92b4f578c03a5 174-178
+  s_d71e62cb6f304c::t_8897a745451860 10
+  s_d71e62cb6f304c::t_a230ef1ca62923 230-269
+  s_d71e62cb6f304c::t_bf07a9251b615b 218-222
+litellm/vector_stores/main.py
+  s_d71e62cb6f304c::t_f77a83515b38db 281
+  s_d71e62cb6f304c::t_2fb67041519f57 123,129-134,155-156
+  s_d71e62cb6f304c::t_e193e23ec2294b 195,211-216
+litellm/proxy/vector_store_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_258ffc5c1cb062 20,23,26,235-238
+tests/router_unit_tests/test_router_embedding_integration.py
+  s_d71e62cb6f304c::t_9a8125e23c8543 164-165
+  s_d71e62cb6f304c::t_90ec316940d284 133,163,166-172,174-187
+  s_d71e62cb6f304c::t_1b816ba74bcc44 173
+litellm/llms/base_llm/vector_store/transformation.py
+  s_d71e62cb6f304c::t_0cfd10cb76dfd0 12
+  s_d71e62cb6f304c::t_077ec61c20663a 340
+  s_d71e62cb6f304c::t_36c412ab86e675 99-101
+  s_d71e62cb6f304c::t_7f4f85dd881be8 267,274-277
+  s_d71e62cb6f304c::t_41b0c9dbbf0659 333
+  s_d71e62cb6f304c::t_dc0a52813d4499 143,150
+  s_d71e62cb6f304c::t_9ccc16005be026 118-127
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_6abc0b7e4a09dc 722,728,745,751
+litellm/llms/custom_httpx/llm_http_handler.py
+  s_d71e62cb6f304c::t_f1397c988955c4 10269,10283
+  s_d71e62cb6f304c::t_fa2b344e941ec0 10316
+  s_d71e62cb6f304c::t_514144218417c2 10240
+  s_d71e62cb6f304c::t_7fd3cd74a14200 10204
+litellm/router.py
+  s_d71e62cb6f304c::t_526ab6530453d0 410-413,6656,6661,6844,6914-6917
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_eb919fc28d6d97 4346-4407
+  s_d71e62cb6f304c::t_bfb75722576359 107-111,116-119
+  s_d71e62cb6f304c::t_2ace80ae473ca7 169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "4fe56d7424fe9fee4dc3173a68189324035d936f",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
