@@ -1,0 +1,23 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.integration.test.tsx
+  s_d71e62cb6f304c::t_5a277b3c2fa52e 106-116
+  s_d71e62cb6f304c::t_c27de7b295383c 288-295
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/VectorStoreConnectionCard.tsx
+  s_d71e62cb6f304c::t_663dbdef361bc4 24-28
+  s_d71e62cb6f304c::t_6b83d32a3c255f 87-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "385feca7344c7d549cfb60465b0b7f0ee5b4093a",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
