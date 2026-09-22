@@ -2,6 +2,7 @@
 import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from itertools import accumulate, chain
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
@@ -116,14 +117,46 @@ def _env_reference_allowlist() -> frozenset[tuple[str, str]]:
     )
 
 
+NestedParamPath = tuple[object, ...]
+_NESTED_PARAMS_MAX_DEPTH: Final = 10
+
+
+def _as_mapping(value: object) -> Mapping[object, object] | None:
+    return value if isinstance(value, Mapping) else None  # pyright: ignore[reportUnknownVariableType]  # isinstance on object cannot recover item types
+
+
+def _as_sequence(value: object) -> Sequence[object] | None:
+    return value if isinstance(value, (list, tuple)) else None  # pyright: ignore[reportUnknownVariableType]  # isinstance on object cannot recover item types
+
+
+def _child_param_entries(path: NestedParamPath, value: object) -> tuple[tuple[NestedParamPath, object], ...]:
+    if (mapping := _as_mapping(value)) is not None:
+        return tuple(((*path, key), item) for key, item in mapping.items())
+    if (sequence := _as_sequence(value)) is not None:
+        return tuple(((*path, index), item) for index, item in enumerate(sequence))
+    return ()
+
+
+def nested_param_entries(value: object) -> tuple[tuple[NestedParamPath, object], ...] | None:
+    """Every (path, value) pair in ``value``, the root included, or None when it nests deeper than the walk goes,
+    so a security check can fail closed instead of missing what sits below the bound."""
+    levels: Final = tuple(
+        accumulate(
+            range(_NESTED_PARAMS_MAX_DEPTH),
+            lambda level, _: tuple(chain.from_iterable(_child_param_entries(path, item) for path, item in level)),
+            initial=(((), value),),
+        )
+    )
+    if levels[-1]:
+        return None
+    return tuple(chain.from_iterable(levels))
+
+
 def contains_env_reference(value: object) -> bool:
-    if isinstance(value, str):
-        return value.startswith(ENV_REFERENCE_PREFIX)
-    if isinstance(value, Mapping):
-        return any(contains_env_reference(item) for item in value.values())
-    if isinstance(value, (list, tuple)):
-        return any(contains_env_reference(item) for item in value)
-    return False
+    entries: Final = nested_param_entries(value)
+    return entries is None or any(
+        isinstance(item, str) and item.startswith(ENV_REFERENCE_PREFIX) for _, item in entries
+    )
 
 
 def resolve_litellm_params_references(
