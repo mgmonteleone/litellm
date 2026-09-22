@@ -20,6 +20,7 @@ from litellm.proxy._types import (
 from litellm.types.utils import LlmProviders
 from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from litellm.utils import ProviderConfigManager
+from litellm.vector_stores.vector_store_registry import contains_env_reference
 
 
 def _normalize_litellm_params(
@@ -55,6 +56,16 @@ def assert_proxy_admin_for_vector_store_index_management(
     raise HTTPException(
         status_code=403,
         detail=(f"Only proxy admins can {operation} vector store indexes. Contact your LiteLLM administrator."),
+    )
+
+
+def assert_proxy_admin_for_env_references(params: object, user_api_key_dict: UserAPIKeyAuth) -> None:
+    if _is_proxy_admin(user_api_key_dict) or not contains_env_reference(params):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Only proxy admins can save or change vector store settings that contain os.environ/ references. "
+        "Enter the value itself, or ask a proxy admin to make this change.",
     )
 
 

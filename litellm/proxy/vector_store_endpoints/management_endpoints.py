@@ -38,6 +38,7 @@ from litellm.proxy._types import (
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.rbac_utils import check_feature_access_for_user
 from litellm.proxy.vector_store_endpoints.utils import (
+    assert_proxy_admin_for_env_references,
     can_user_access_vector_store,
     filter_listable_vector_stores,
 )
@@ -324,6 +325,7 @@ async def new_vector_store(
     - vector_store_metadata: Optional[Dict] - Additional metadata for the vector store
     """
     await check_feature_access_for_user(user_api_key_dict, "vector_stores")
+    assert_proxy_admin_for_env_references(vector_store.get("litellm_params"), user_api_key_dict)
 
     from litellm.proxy.proxy_server import prisma_client
 
@@ -612,11 +614,14 @@ async def update_vector_store(
 
         # Merge request litellm_params over the saved ones, the same way /vector_store/new persists them: request
         # keys win, a value equal to the redaction sentinel keeps the saved secret instead of overwriting it, and
-        # an os.environ/ reference is stored as-is and resolved later by resolve_litellm_params_references (see
-        # build_request_data_from_managed_vector_store), matching how /vector_store/new already behaves. Only the
-        # ad hoc test_connection/discover path (_resolve_connection_target) still rejects unresolved references,
-        # since those run against the value immediately rather than persisting it. This stores the raw params (no
-        # credential resolution), since each search embeds the query through the router at request time.
+        # an os.environ/ reference is stored as-is and resolved later, for allowlisted names only, by
+        # resolve_litellm_params_references. Only proxy admins may save params holding a reference, or repoint a
+        # store that holds one, since a changed api_base would receive the resolved secret. The ad hoc
+        # test_connection/discover path (_resolve_connection_target) rejects references outright. This stores the
+        # raw params (no credential resolution), since each search embeds the query through the router at request
+        # time.
+        if "custom_llm_provider" in update_data:
+            assert_proxy_admin_for_env_references(_saved_raw_litellm_params(saved_store), user_api_key_dict)
         if "litellm_params" in update_data:
             _reject_misspelled_redaction_sentinel(update_data.get("litellm_params") or _EMPTY_PARAMS)
             request_litellm_params: Final = {
@@ -634,6 +639,7 @@ async def update_vector_store(
             merged_litellm_params: Final[dict[str, object]] = {
                 key: value for key, value in _saved_and_request_litellm_params.items() if value is not None
             }
+            assert_proxy_admin_for_env_references(merged_litellm_params, user_api_key_dict)
             litellm_params_dict: Final = GenericLiteLLMParams.model_validate(merged_litellm_params).model_dump(
                 exclude_none=True
             )

@@ -406,6 +406,32 @@ def test_rag_ingest_unmanaged_store_keeps_the_callers_full_config(client_interna
     assert mock_aingest.await_args.kwargs["ingest_options"]["vector_store"] == caller_config
 
 
+def test_rag_ingest_rejects_os_environ_references_from_non_admins(client_internal_user):
+    """Regression: the ingest saves the caller's vector store config as the new store's litellm_params, and a
+    saved os.environ/ reference used to resolve to the proxy's secret on the next search."""
+    create_in_db = AsyncMock()
+    aingest_patch, registry_patch = _patched_ingest_boundary(None, {"vector_store_id": "vs_new", "file_id": "f"})
+    with (
+        aingest_patch as mock_aingest,
+        registry_patch,
+        _patched_prisma_client(MagicMock()),
+        patch(  # test-quality-ok: the DB write boundary the test asserts is never reached
+            "litellm.proxy.vector_store_endpoints.management_endpoints.create_vector_store_in_db",
+            new=create_in_db,
+        ),
+    ):
+        response = client_internal_user.post(
+            "/v1/rag/ingest",
+            **_ingest_form(
+                {"custom_llm_provider": "bedrock", "s3_bucket": {"name": "os.environ/LITELLM_MASTER_KEY"}}
+            ),
+        )
+
+    assert response.status_code == 403, response.json()
+    mock_aingest.assert_not_awaited()
+    create_in_db.assert_not_awaited()
+
+
 def test_rag_ingest_db_managed_store_drops_the_callers_credential_name(client_internal_user):
     aingest_patch, registry_patch = _patched_ingest_boundary(
         DB_MANAGED_STORE, {"vector_store_id": "db-store", "file_id": "file_123"}

@@ -259,3 +259,17 @@ def test_resolve_litellm_params_references_allows_the_mongodb_sidecar_key_for_mo
 
     assert resolve_litellm_params_references(params, "mongodb")["api_key"] == "deployment-key"
     assert resolve_litellm_params_references(params, "openai")["api_key"] == "os.environ/MONGODB_SIDECAR_API_KEY"
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ({"a": [{"b": ("x", "os.environ/SECRET")}]}, True),
+        (["literal", {"nested": "os.environ/SECRET"}], True),
+        ({"a": ["literal", 1, None], "b": {"c": "prefix os.environ/SECRET"}}, False),
+    ],
+)
+def test_contains_env_reference_walks_nested_mappings_and_sequences(value, expected):
+    from litellm.vector_stores.vector_store_registry import contains_env_reference
+
+    assert contains_env_reference(value) is expected
