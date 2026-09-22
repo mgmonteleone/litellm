@@ -4145,7 +4145,19 @@ def test_vector_store_search_rejects_caller_embedding_selection_params(blocked_k
     assert blocked_key in str(response.json())
 
 
-@pytest.mark.parametrize("endpoint_key", ["aws_region_name", "vertex_location", "valkey_host", "endpoint"])
+@pytest.mark.parametrize(
+    "endpoint_key",
+    [
+        "aws_region_name",
+        "vertex_location",
+        "valkey_host",
+        "endpoint",
+        "vertex_credentials",
+        "azure_ad_token",
+        "azure_scope",
+        "s3_endpoint_url",
+    ],
+)
 def test_vector_store_search_rejects_endpoint_params_from_non_admins(endpoint_key):
     """Regression: a search body could pick the region or host of a store the proxy's own env credentials sign for
     (s3_vectors builds its host from aws_region_name), sending the proxy's credentials to the caller's host."""
@@ -4167,6 +4179,35 @@ def test_vector_store_search_rejects_endpoint_params_from_non_admins(endpoint_ke
 
     assert response.status_code == 403, response.json()
     assert endpoint_key in str(response.json())
+
+
+@pytest.mark.parametrize(
+    "request_key",
+    [
+        "vertex_credentials",
+        "vertex_ai_credentials",
+        "azure_ad_token",
+        "azure_scope",
+        "aws_session_tags",
+        "aws_bedrock_project_id",
+        "s3_endpoint_url",
+        "sagemaker_base_url",
+        "deployment_url",
+    ],
+)
+def test_managed_store_search_data_never_takes_a_credential_or_endpoint_from_the_request(request_key):
+    """Regression: a managed store only pinned its host keys, so a request could still hand its search a
+    vertex_credentials workload identity config that makes google-auth post a local file to the caller's host."""
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    store = LiteLLM_ManagedVectorStore(
+        vector_store_id="vs-vertex", custom_llm_provider="vertex_ai", litellm_params={"vertex_project": "p"}
+    )
+
+    search_data = {request_key: "attacker-choice", **build_request_data_from_managed_vector_store(store)}
+
+    assert search_data[request_key] is None
 
 
 def test_request_endpoint_check_ignores_filters_and_admins():

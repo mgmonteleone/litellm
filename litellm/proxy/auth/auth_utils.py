@@ -15,6 +15,7 @@ from litellm import Router, constants, provider_list
 from litellm._logging import verbose_proxy_logger
 from litellm.constants import (
     BATCH_ENQUEUED_TOKEN_LIMIT_METADATA_KEY,
+    CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS,
     EMPTY_MAPPING,
     INVALID_VIRTUAL_KEY_ERROR_MARKER,
     MINIMUM_CUSTOM_KEY_LENGTH,
@@ -304,56 +305,11 @@ def _build_banned_observability_params() -> frozenset[str]:
 
 
 _BANNED_REQUEST_BODY_PARAMS: Final[tuple[str, ...]] = (
-    "api_base",
-    "base_url",
+    *sorted(CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS),
     "user_config",
-    "aws_sts_endpoint",
-    "aws_web_identity_token",
-    "aws_role_name",
-    # Remaining AWS identity selectors. ``get_credentials`` prefers a named
-    # profile over the deployment's static keys, so a caller-supplied
-    # ``aws_profile_name`` signs Bedrock and S3 requests as any profile
-    # present on the proxy host; the two AssumeRole knobs are banned with it
-    # so the whole identity-selection family lives behind the same opt-in.
-    "aws_profile_name",
-    "aws_session_name",
-    "aws_external_id",
-    "aws_session_tags",
-    "vertex_credentials",
-    # Azure managed-identity / federated-auth token. The Azure provider
-    # transformer reads ``azure_ad_token`` (top-level or via
-    # ``extra_body``) and resolves it through ``get_secret`` before
-    # passing it as the bearer token to the Azure endpoint, so a
-    # caller-supplied value is the same exfil shape as
-    # ``aws_web_identity_token`` on the Bedrock path.
-    "azure_ad_token",
-    # Endpoint-targeting fields that retarget the outbound request or
-    # an observability callback. An attacker-controlled value either
-    # exfiltrates the request payload (incl. messages + admin-set
-    # tokens) to the attacker's host, or coerces the proxy into
-    # authenticating against the attacker's host with admin secrets.
-    "aws_bedrock_runtime_endpoint",
-    # Azure endpoint and Azure AI Search service name: both pick the host an
-    # Azure call (including a vector store search) authenticates against.
-    "azure_endpoint",
-    "azure_search_service_name",
-    # Bedrock project/workspace association. Deployments pin this to
-    # enforce a data-retention policy, so a caller-supplied value would
-    # re-route the request's retention and accounting to any project
-    # reachable with the deployment's shared AWS credentials.
-    "aws_bedrock_project_id",
     "bedrock_tags",
-    # Provider-specific endpoint overrides that flow into the outbound
-    # request via ``optional_params``. Same threat as ``api_base``:
-    # ``s3_endpoint_url`` redirects Bedrock file uploads to attacker
-    # S3; ``sagemaker_base_url`` redirects all SageMaker traffic;
-    # ``deployment_url`` redirects SAP deployments.
-    "s3_endpoint_url",
-    "sagemaker_base_url",
-    "deployment_url",
     # NVIDIA Riva fields consumed by the audio-transcription handler
-    # via ``optional_params``. Banned for the same reason as the
-    # provider-specific entries above: a caller-supplied value retargets
+    # via ``optional_params``. A caller-supplied value retargets
     # the request away from the admin's pinned configuration.
     "nvcf_function_id",
     "use_ssl",
@@ -365,7 +321,6 @@ _BANNED_REQUEST_BODY_PARAMS: Final[tuple[str, ...]] = (
     "rust",
     # SDK-only field; also rejected outright in is_request_body_safe.
     "model_list",
-    "vertex_ai_credentials",
     # Observability credentials, hosts, and project identifiers: derived
     # from the canonical ``_supported_callback_params`` allowlist so new
     # integrations are covered automatically. Sorted for stable iteration

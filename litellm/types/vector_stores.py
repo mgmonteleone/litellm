@@ -7,6 +7,8 @@ from typing import Any, Final, Literal
 from pydantic import BaseModel, Field
 from typing_extensions import ReadOnly, TypedDict
 
+from litellm.constants import CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS
+
 
 class SupportedVectorStoreIntegrations(str, Enum):
     """Supported vector store integrations."""
@@ -448,21 +450,11 @@ scalars or lists of scalars, except the keys in NON_ADMIN_VECTOR_STORE_MAPPING_P
 
 NON_ADMIN_VECTOR_STORE_MAPPING_PARAMS: Final = frozenset({"custom_metadata", "mongodb_hybrid_weights"})
 
-VECTOR_STORE_ENDPOINT_KEYS: Final = frozenset(
+VECTOR_STORE_ENDPOINT_KEYS: Final = CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS | frozenset(
     {
-        "api_base",
-        "base_url",
         "endpoint",
-        "azure_endpoint",
-        "azure_search_service_name",
-        "aws_bedrock_runtime_endpoint",
-        "aws_sts_endpoint",
         "aws_region_name",
-        "aws_role_name",
-        "aws_profile_name",
-        "aws_session_name",
-        "aws_external_id",
-        "aws_web_identity_token",
+        "azure_scope",
         "tenant_id",
         "client_id",
         "vertex_project",
@@ -474,8 +466,8 @@ VECTOR_STORE_ENDPOINT_KEYS: Final = frozenset(
         "valkey_ssl",
     }
 )
-"""Params that decide where a vector store sends its traffic, or which cloud identity signs it. Only proxy admins
-may set them, and a managed store's saved values win over anything a request carries."""
+"""Params that decide where a vector store sends its traffic, or which cloud identity signs it. A search or query
+body may not carry them from a non-admin, and a managed store's saved values win over anything a request carries."""
 
 
 VECTOR_STORE_OPENAI_PARAMS = Literal[
