@@ -1,0 +1,30 @@
+tests/unit/llms/mongodb/vector_stores/test_mongodb_diagnostics.py
+  s_d71e62cb6f304c::t_744eccdd6f7d2f 144-270,273
+  s_d71e62cb6f304c::t_7f79665b031524 271-272,356-357
+litellm/llms/mongodb/vector_stores/diagnostics.py
+  s_d71e62cb6f304c::t_bc5a0838a49a3c 23
+  s_d71e62cb6f304c::t_34b3653f2f942b 33-37
+  s_d71e62cb6f304c::t_160b04a8caaf5a 162-165,167-178,180-189
+  s_d71e62cb6f304c::t_5b10d86b4fbb62 254-260,263
+  s_d71e62cb6f304c::t_2c0139a07cc690 270-274,279-280,289-290
+  s_d71e62cb6f304c::t_4d58c487eb4091 62
+  s_d71e62cb6f304c::t_db457ed29429ed 193,201-204,211
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_be056776990a80 297,300,306-308,318-333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "d8dfc148c2a742b5b4cfca2371e975ec9231398b",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
