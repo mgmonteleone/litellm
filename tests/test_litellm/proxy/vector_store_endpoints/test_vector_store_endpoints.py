@@ -2833,6 +2833,61 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
         assert persisted["api_key"] == "sk-real-secret"
 
     @pytest.mark.asyncio
+    async def test_update_litellm_params_null_clears_a_saved_field_and_falls_back_to_the_environment(
+        self, monkeypatch
+    ):
+        """The dashboard sends ``null`` for a field the admin blanked out (see connectionEditPayload.ts).
+        Before this fix that null value round-tripped into the persisted litellm_params, so the store kept
+        pointing at the stale saved api_base instead of clearing it and falling back to the deployment's
+        MONGODB_SIDECAR_API_BASE the way a store that never had a per-store override does."""
+        from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig
+        from litellm.proxy.vector_store_endpoints.endpoints import (
+            build_request_data_from_managed_vector_store,
+        )
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+
+        saved = {
+            "mongodb_database": "knowledge",
+            "api_base": "https://stale-per-store-override.example",
+            "api_key": "sk-real-secret",
+        }
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            response = await update_vector_store(
+                data=VectorStoreUpdateRequest(vector_store_id="vs_owned", litellm_params={"api_base": None}),
+                user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+            )
+
+        persisted = json.loads(
+            mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"]["litellm_params"]
+        )
+        assert "api_base" not in persisted
+        assert "api_base" not in response["vector_store"]["litellm_params"]
+
+        resolved = build_request_data_from_managed_vector_store(
+            LiteLLM_ManagedVectorStore(vector_store_id="vs_owned", litellm_params=persisted)
+        )
+        assert MongoDBVectorStoreConfig().get_complete_url(
+            api_base=resolved.get("api_base"), litellm_params=resolved
+        ) == "https://deployment-sidecar.example"
+
+    @pytest.mark.asyncio
     async def test_update_litellm_params_sentinel_keeps_saved_secret(self):
         """The dashboard round-trips a redacted secret back on save; that placeholder must not
         overwrite the real credential the store already has."""

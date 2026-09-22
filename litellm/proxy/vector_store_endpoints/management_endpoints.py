@@ -618,7 +618,16 @@ async def update_vector_store(
                 for key, value in (update_data.get("litellm_params") or _EMPTY_PARAMS).items()
                 if value != REDACTED_BY_LITELM_STRING
             }
-            merged_litellm_params: Final = {**_saved_raw_litellm_params(saved_store), **request_litellm_params}
+            # A request value of None means "clear this field" (see connectionEditPayload.ts): the merge
+            # below lets it override the saved value, then this drops the key entirely rather than
+            # persisting the field as null.
+            _saved_and_request_litellm_params: Final[dict[str, object]] = {
+                **_saved_raw_litellm_params(saved_store),
+                **request_litellm_params,
+            }
+            merged_litellm_params: Final[dict[str, object]] = {
+                key: value for key, value in _saved_and_request_litellm_params.items() if value is not None
+            }
             litellm_params_dict: Final = GenericLiteLLMParams.model_validate(merged_litellm_params).model_dump(
                 exclude_none=True
             )
