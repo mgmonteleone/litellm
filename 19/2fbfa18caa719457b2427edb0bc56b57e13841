@@ -1,0 +1,29 @@
+tests/router_unit_tests/test_router_embedding_integration.py
+  s_d71e62cb6f304c::t_230ea868cb4188 169-174,176-177,179,181,183,185-188,190-191
+tests/unit/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_d71e62cb6f304c::t_0dd557d9f7f414 553
+  s_d71e62cb6f304c::t_b99c52207a32e0 10,509-552,554-565
+tests/unit/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_1b28a094a5f259 411-444
+tests/test_litellm/llms/s3_vectors/vector_stores/test_s3_vectors_transformation.py
+  s_d71e62cb6f304c::t_f86749d8ea0435 177-179,190,194-196,202
+  s_d71e62cb6f304c::t_d3e5a1f6f8b76f 191-193
+litellm/llms/base_llm/vector_store/transformation.py
+  s_d71e62cb6f304c::t_462af1cdb31efd 7,12,80-97,114,116-117,120,124,128,132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "192fbfa18caa719457b2427edb0bc56b57e13841",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
