@@ -408,9 +408,7 @@ _PreRoutingStrategyT = TypeVar("_PreRoutingStrategyT")
 _ALIAS_PARAMS_NEVER_FORWARDED: Final = frozenset({"model", "api_base", "api_key", "api_version"})
 _ALIAS_MARKER_FORWARDED_PARAMS_KWARG: Final = "_alias_marker_forwarded_params"
 _VECTOR_STORE_CALL_TYPES_NEEDING_EMBEDDING_ROUTING: Final = frozenset({"vector_store_search", "vector_store_create"})
-_AVECTOR_STORE_CALL_TYPES_NEEDING_EMBEDDING_ROUTING: Final = frozenset(
-    {"avector_store_search", "avector_store_create"}
-)
+_AVECTOR_STORE_CALL_TYPES_NEEDING_EMBEDDING_ROUTING: Final = frozenset({"avector_store_search", "avector_store_create"})
 _CLAUDE_CODE_SESSION_ID_RE: Final = re.compile(r"^[a-zA-Z0-9_\-]{8,}$")
 _CLAUDE_CODE_SESSION_ROUTER_TTL_SECONDS: Final = 3600
 

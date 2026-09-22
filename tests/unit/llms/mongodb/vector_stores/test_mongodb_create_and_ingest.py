@@ -245,23 +245,22 @@ async def test_create_dimension_probe_never_embeds_a_model_the_router_does_not_s
     config: Final = MongoDBVectorStoreConfig(direct_executor)
     router_executor: Final = RouterVectorStoreEmbeddingExecutor(router=router, metadata={})
     params: Final = {**BASE_PARAMS, "litellm_embedding_model": "huggingface/http://attacker.example/steal"}
+    create_kwargs: Final = {
+        "vector_store_create_optional_params": {"name": "policy index"},
+        "api_base": "https://sidecar.example",
+        "litellm_params": params,
+        "embedding_executor": router_executor,
+    }
+
+    async def _probe_create() -> None:
+        if asynchronous:
+            await config.atransform_create_vector_store_request_with_litellm_params(**create_kwargs)
+        else:
+            config.transform_create_vector_store_request_with_litellm_params(**create_kwargs)
 
     with patch("litellm.aembedding") as mock_bare, patch("litellm.embedding") as mock_bare_sync:
         with pytest.raises(litellm.BadRequestError, match="not configured on this proxy"):
-            if asynchronous:
-                await config.atransform_create_vector_store_request_with_litellm_params(
-                    vector_store_create_optional_params={"name": "policy index"},
-                    api_base="https://sidecar.example",
-                    litellm_params=params,
-                    embedding_executor=router_executor,
-                )
-            else:
-                config.transform_create_vector_store_request_with_litellm_params(
-                    vector_store_create_optional_params={"name": "policy index"},
-                    api_base="https://sidecar.example",
-                    litellm_params=params,
-                    embedding_executor=router_executor,
-                )
+            await _probe_create()
         mock_bare.assert_not_called()
         mock_bare_sync.assert_not_called()
     direct_executor.call.assert_not_called()

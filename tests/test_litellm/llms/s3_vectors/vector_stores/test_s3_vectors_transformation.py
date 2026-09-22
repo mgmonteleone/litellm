@@ -1,3 +1,4 @@
+import re
 from collections.abc import Mapping
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -219,7 +220,9 @@ class TestS3VectorsVectorStoreConfig:
             patch(  # test-quality-ok: asserts the bare SDK embedding is never reached
                 "litellm.aembedding", new=mock_bare
             ),
-            pytest.raises(Exception, match="embedding model attacker/https://attacker.example is not configured"),
+            pytest.raises(
+                Exception, match=re.escape("embedding model attacker/https://attacker.example is not configured")
+            ),
         ):
             await config.atransform_search_vector_store_request(
                 **_search_kwargs(
