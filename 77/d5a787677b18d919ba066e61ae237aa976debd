@@ -1,0 +1,23 @@
+tests/unit/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_81aa90d04305e7 200,204,216,218
+  s_d71e62cb6f304c::t_f585a45dc1b107 217
+tests/unit/llms/mongodb/vector_stores/test_mongodb_diagnostics.py
+  s_d71e62cb6f304c::t_0a27eb3bb0e1fd 191-203
+  s_d71e62cb6f304c::t_72005c836d2523 190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "77d5a787677b18d919ba066e61ae237aa976debd",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
