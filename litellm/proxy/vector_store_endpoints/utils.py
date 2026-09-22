@@ -20,7 +20,7 @@ from litellm.proxy._types import (
 from litellm.types.utils import LlmProviders
 from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from litellm.utils import ProviderConfigManager
-from litellm.vector_stores.vector_store_registry import contains_env_reference
+from litellm.vector_stores.vector_store_registry import NestedParamPath, contains_env_reference, nested_param_entries
 
 
 def _normalize_litellm_params(
@@ -38,7 +38,7 @@ def _normalize_litellm_params(
     return vector_store
 
 
-def _is_proxy_admin(user_api_key_dict: UserAPIKeyAuth) -> bool:
+def is_proxy_admin(user_api_key_dict: UserAPIKeyAuth) -> bool:
     return (
         user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN
         or user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN.value
@@ -51,7 +51,7 @@ def assert_proxy_admin_for_vector_store_index_management(
     operation: Literal["create", "delete", "update", "list"] = "create",
 ) -> None:
     """Raise 403 unless the caller is a proxy admin."""
-    if _is_proxy_admin(user_api_key_dict):
+    if is_proxy_admin(user_api_key_dict):
         return
     raise HTTPException(
         status_code=403,
@@ -60,12 +60,43 @@ def assert_proxy_admin_for_vector_store_index_management(
 
 
 def assert_proxy_admin_for_env_references(params: object, user_api_key_dict: UserAPIKeyAuth) -> None:
-    if _is_proxy_admin(user_api_key_dict) or not contains_env_reference(params):
+    if is_proxy_admin(user_api_key_dict) or not contains_env_reference(params):
         return
     raise HTTPException(
         status_code=403,
         detail="Only proxy admins can save or change vector store settings that contain os.environ/ references. "
         "Enter the value itself, or ask a proxy admin to make this change.",
+    )
+
+
+CREDENTIAL_NAME_KEY: Final = "litellm_credential_name"
+
+
+def _credential_name_entries(params: object) -> tuple[tuple[NestedParamPath, object], ...] | None:
+    entries: Final = nested_param_entries(params)
+    if entries is None:
+        return None
+    return tuple(
+        (path, value) for path, value in entries if path and path[-1] == CREDENTIAL_NAME_KEY and value is not None
+    )
+
+
+def assert_proxy_admin_for_credential_names(
+    params: object, user_api_key_dict: UserAPIKeyAuth, *, saved_params: object = None
+) -> None:
+    """A named credential's values are merged into the store's params at use time, so whoever picks the name next
+    to their own api_base receives the credential's secrets. Keeping a name ``saved_params`` already holds, at the
+    same place, is allowed."""
+    if is_proxy_admin(user_api_key_dict):
+        return
+    requested: Final = _credential_name_entries(params)
+    saved: Final = _credential_name_entries(saved_params)
+    if requested is not None and saved is not None and all(entry in saved for entry in requested):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail=f"Only proxy admins can set or change a vector store's {CREDENTIAL_NAME_KEY}. "
+        "Enter the provider credentials themselves, or ask a proxy admin to make this change.",
     )
 
 
@@ -176,7 +207,7 @@ async def can_user_access_vector_store(
     contexts as listing (its own grants plus each real team of the user).
     Otherwise access is denied.
     """
-    if _is_proxy_admin(user_api_key_dict):
+    if is_proxy_admin(user_api_key_dict):
         return True
 
     if vector_store.get("team_id") is None:
@@ -261,7 +292,7 @@ async def filter_listable_vector_stores(
     user_api_key_dict: UserAPIKeyAuth,
 ) -> tuple[LiteLLM_ManagedVectorStore, ...]:
     """Non-admins only see stores their key, one of their teams' object_permission, or team ownership grants."""
-    if _is_proxy_admin(user_api_key_dict):
+    if is_proxy_admin(user_api_key_dict):
         return tuple(vector_stores)
 
     auth_contexts: Final = await _vector_store_auth_contexts(user_api_key_dict)

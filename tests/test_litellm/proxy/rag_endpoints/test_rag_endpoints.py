@@ -432,6 +432,30 @@ def test_rag_ingest_rejects_os_environ_references_from_non_admins(client_interna
     create_in_db.assert_not_awaited()
 
 
+def test_rag_ingest_rejects_credential_names_from_non_admins(client_internal_user):
+    """Regression: the ingest saved the named proxy credential as the new store's litellm_params, so a later
+    api_base change on that caller-owned store sent the credential's secret to the caller's host."""
+    create_in_db = AsyncMock()
+    aingest_patch, registry_patch = _patched_ingest_boundary(None, {"vector_store_id": "vs_new", "file_id": "f"})
+    with (
+        aingest_patch as mock_aingest,
+        registry_patch,
+        _patched_prisma_client(MagicMock()),
+        patch(  # test-quality-ok: the DB write boundary the test asserts is never reached
+            "litellm.proxy.vector_store_endpoints.management_endpoints.create_vector_store_in_db",
+            new=create_in_db,
+        ),
+    ):
+        response = client_internal_user.post(
+            "/v1/rag/ingest",
+            **_ingest_form({"custom_llm_provider": "openai", "litellm_credential_name": "openai-prod"}),
+        )
+
+    assert response.status_code == 403, response.json()
+    mock_aingest.assert_not_awaited()
+    create_in_db.assert_not_awaited()
+
+
 def test_rag_ingest_db_managed_store_drops_the_callers_credential_name(client_internal_user):
     aingest_patch, registry_patch = _patched_ingest_boundary(
         DB_MANAGED_STORE, {"vector_store_id": "db-store", "file_id": "file_123"}

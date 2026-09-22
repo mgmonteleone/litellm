@@ -48,6 +48,7 @@ from litellm.proxy.vector_store_endpoints.endpoints import (
     reject_caller_embedding_selection_params,
 )
 from litellm.proxy.vector_store_endpoints.utils import (
+    assert_proxy_admin_for_credential_names,
     assert_proxy_admin_for_env_references,
     assert_user_can_access_vector_store_id,
 )
@@ -626,8 +627,12 @@ async def rag_ingest(
         assert_proxy_admin_for_env_references(ingest_options, user_api_key_dict)
 
         managed_store: Final = resolved_stores.get(request_vector_store_config.get("vector_store_id"))
+        caller_vector_store_options: Final = _caller_vector_store_options(request_vector_store_config, managed_store)
+        assert_proxy_admin_for_credential_names(
+            {**ingest_options, "vector_store": caller_vector_store_options}, user_api_key_dict
+        )
         merged_vector_store_config: Final = {  # mutable-ok: ingestion classes mutate it when loading credentials
-            **_caller_vector_store_options(request_vector_store_config, managed_store),
+            **caller_vector_store_options,
             **_managed_store_overrides(managed_store),
         }
         merged_ingest_options: Final = {  # mutable-ok: litellm.aingest takes a plain dict payload
