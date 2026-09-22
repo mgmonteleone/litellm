@@ -229,6 +229,80 @@ async def test_database_without_collection_also_skips_the_namespace_checks() -> 
     assert "mongodb_collection" not in posted
 
 
+INDEX_NOT_CREATED_REPORT: Final = {
+    "ok": True,
+    "server_version": "8.2.11",
+    "index_dimensions": None,
+    "document_count": 120,
+    "checks": [
+        {"check": "mongodb_ping", "status": "pass", "message": "MongoDB is reachable."},
+        {
+            "check": "mongodb_collection",
+            "status": "pass",
+            "message": "Collection 'policies' exists with 120 documents.",
+        },
+        {"check": "mongodb_index", "status": "skip", "message": "No index named 'policy_index' exists yet."},
+        {
+            "check": "mongodb_index_definition",
+            "status": "skip",
+            "message": "No index named 'policy_index' exists yet.",
+        },
+        {"check": "mongodb_dimensions", "status": "skip", "message": "No index named 'policy_index' exists yet."},
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_index_checks_skip_with_their_own_message_when_the_namespace_is_already_chosen() -> None:
+    """Regression: every skip, including these (which only mean the index does not exist yet because the
+    store has not been saved), used to be reported with the 'choose a database and collection' message
+    and summary even though the admin had already chosen both."""
+    handler, _ = sidecar(report=INDEX_NOT_CREATED_REPORT)
+    config: Final = MongoDBVectorStoreConfig(Executor(dimensions=3))
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        response: Final = await config.atest_connection(BASE_PARAMS, "policy_index")
+    assert response["ok"] is True
+    assert statuses(response)["mongodb_index"] == "skip"
+    message: Final = next(r["message"] for r in response["checks"] if r["check"] == "mongodb_index")
+    assert message == "The index is created when you save this store."
+    assert response["summary"] == "Connected. The index is created when you save this store."
+
+
+@pytest.mark.asyncio
+async def test_a_real_collection_not_found_failure_with_a_chosen_namespace_stays_a_failure() -> None:
+    report: Final = {
+        **INDEX_NOT_CREATED_REPORT,
+        "checks": [
+            {"check": "mongodb_ping", "status": "pass", "message": "MongoDB is reachable."},
+            {"check": "mongodb_collection", "status": "fail", "message": "Collection 'policies' does not exist."},
+        ],
+    }
+    handler, _ = sidecar(report=report)
+    config: Final = MongoDBVectorStoreConfig(Executor(dimensions=3))
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        response: Final = await config.atest_connection(BASE_PARAMS, "policy_index")
+    assert response["ok"] is False
+    assert statuses(response)["mongodb_collection"] == "fail"
+    assert response["summary"] == "Collection 'policies' does not exist."
+
+
+@pytest.mark.asyncio
+async def test_a_failure_alongside_skipped_checks_still_reports_failure() -> None:
+    report: Final = {
+        **INDEX_NOT_CREATED_REPORT,
+        "checks": [
+            {"check": "mongodb_ping", "status": "fail", "message": "MongoDB is unreachable from the sidecar."},
+            {"check": "mongodb_index", "status": "skip", "message": "No index named 'policy_index' exists yet."},
+        ],
+    }
+    handler, _ = sidecar(report=report)
+    config: Final = MongoDBVectorStoreConfig(Executor(dimensions=3))
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        response: Final = await config.atest_connection(BASE_PARAMS, "policy_index")
+    assert response["ok"] is False
+    assert response["summary"] == "MongoDB is unreachable from the sidecar."
+
+
 @pytest.mark.asyncio
 async def test_missing_embedding_model_is_skipped_not_failed_before_the_admin_picks_one() -> None:
     params: Final = {

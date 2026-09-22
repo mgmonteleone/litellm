@@ -66,14 +66,20 @@ interface ConnectionChecklistProps {
   curlCommand?: string;
 }
 
+/** Mirrors litellm.llms.mongodb.vector_stores.diagnostics._CHOOSE_NAMESPACE_MESSAGE. */
+const CHOOSE_NAMESPACE_MESSAGE = "Choose a database and collection to check the index.";
+
 /**
- * A passing result with skipped rows means the sidecar itself checked out fine but the admin has not
- * picked a database and collection yet, so "Connection verified" (implying every row ran) would overstate it.
+ * A passing result with skipped rows usually means the connection is genuinely fine and the skips are
+ * expected, e.g. the index checks before a store is saved. Only a skip that means the admin has not
+ * picked a database and collection yet should hold the headline back from "Connection verified".
  */
 const headline = (result: VectorStoreTestConnectionResponse): string => {
   if (!result.ok) return "Connection failed";
-  const hasSkippedChecks = (result.checks ?? []).some((check) => check.status === "skip");
-  return hasSkippedChecks ? "Sidecar connected" : "Connection verified";
+  const namespaceNotChosen = (result.checks ?? []).some(
+    (check) => check.status === "skip" && check.message === CHOOSE_NAMESPACE_MESSAGE,
+  );
+  return namespaceNotChosen ? "Sidecar connected" : "Connection verified";
 };
 
 export const ConnectionChecklist: React.FC<ConnectionChecklistProps> = ({ result, curlCommand }) => {

@@ -113,4 +113,46 @@ describe("ConnectionChecklist", () => {
     expect(screen.getByText("Choose a database and collection to check the index.")).toBeInTheDocument();
     expect(screen.getByLabelText("Skipped")).toBeInTheDocument();
   });
+
+  it("reads as verified, not 'choose a database', when the namespace is already chosen and only the index checks are skipped", () => {
+    render(
+      <ConnectionChecklist
+        result={{
+          ok: true,
+          summary: "Connected. The index is created when you save this store.",
+          checks: [
+            { check: "sidecar_auth", status: "pass", message: "Authenticated with sidecar v0.2.0." },
+            {
+              check: "mongodb_collection",
+              status: "pass",
+              message: "Collection 'policies' exists with 120 documents.",
+            },
+            { check: "mongodb_index", status: "skip", message: "The index is created when you save this store." },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Connection verified")).toBeInTheDocument();
+    expect(screen.queryByText("Sidecar connected")).not.toBeInTheDocument();
+    expect(screen.getByText("The index is created when you save this store.")).toBeInTheDocument();
+  });
+
+  it("stays a failure when a real failure is reported alongside skipped rows", () => {
+    render(
+      <ConnectionChecklist
+        result={{
+          ok: false,
+          summary: "Collection 'policies' does not exist.",
+          checks: [
+            { check: "mongodb_collection", status: "fail", message: "Collection 'policies' does not exist." },
+            { check: "mongodb_index", status: "skip", message: "The index is created when you save this store." },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Connection failed")).toBeInTheDocument();
+    expect(screen.getAllByText("Collection 'policies' does not exist.")).toHaveLength(2);
+  });
 });
