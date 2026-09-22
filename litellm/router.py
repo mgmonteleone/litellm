@@ -407,6 +407,10 @@ _PreRoutingStrategyT = TypeVar("_PreRoutingStrategyT")
 
 _ALIAS_PARAMS_NEVER_FORWARDED: Final = frozenset({"model", "api_base", "api_key", "api_version"})
 _ALIAS_MARKER_FORWARDED_PARAMS_KWARG: Final = "_alias_marker_forwarded_params"
+_VECTOR_STORE_CALL_TYPES_NEEDING_EMBEDDING_ROUTING: Final = frozenset({"vector_store_search", "vector_store_create"})
+_AVECTOR_STORE_CALL_TYPES_NEEDING_EMBEDDING_ROUTING: Final = frozenset(
+    {"avector_store_search", "avector_store_create"}
+)
 _CLAUDE_CODE_SESSION_ID_RE: Final = re.compile(r"^[a-zA-Z0-9_\-]{8,}$")
 _CLAUDE_CODE_SESSION_ROUTER_TTL_SECONDS: Final = 3600
 
@@ -6649,12 +6653,12 @@ class Router:
                             ),
                         }
                     )
-                    if call_type == "vector_store_search"
+                    if call_type in _VECTOR_STORE_CALL_TYPES_NEEDING_EMBEDDING_ROUTING
                     else provider_kwargs
                 )
                 if search_kwargs.get("model"):
                     return self._generic_api_call_with_fallbacks(original_function=original_function, **search_kwargs)
-                if call_type == "vector_store_search":
+                if call_type in _VECTOR_STORE_CALL_TYPES_NEEDING_EMBEDDING_ROUTING:
                     return original_function(**MappingProxyType({**search_kwargs, "router": self}))
                 return original_function(**search_kwargs)
 
@@ -6837,7 +6841,7 @@ class Router:
                             metadata=self._vector_store_request_metadata(kwargs),
                         ),
                     }
-                    if call_type == "avector_store_search"
+                    if call_type in _AVECTOR_STORE_CALL_TYPES_NEEDING_EMBEDDING_ROUTING
                     else kwargs
                 )
                 return await self._init_vector_store_api_endpoints(
@@ -6907,10 +6911,10 @@ class Router:
                 **kwargs,
             )
 
-        # For search, pass the router so provider transforms can resolve
-        # router-managed embedding models (e.g. S3 Vectors query embeddings).
-        # The merge also overrides any client-supplied `router` key.
-        if call_type == "avector_store_search":
+        # For search and create, pass the router so provider transforms can resolve
+        # router-managed embedding models (e.g. S3 Vectors query embeddings, MongoDB's
+        # dimension probe on create). The merge also overrides any client-supplied `router` key.
+        if call_type in _AVECTOR_STORE_CALL_TYPES_NEEDING_EMBEDDING_ROUTING:
             search_kwargs: Final = MappingProxyType({**kwargs, "router": self})
             return await original_function(**search_kwargs)
 

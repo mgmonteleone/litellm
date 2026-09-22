@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, NoReturn, Protocol, TypeA
 import httpx
 from pydantic import TypeAdapter
 
+from litellm.constants import CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS
 from litellm.exceptions import BadRequestError
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import EmbeddingResponse
@@ -95,6 +96,9 @@ def model_not_configured_error(model: str) -> BadRequestError:
     return BadRequestError(message=model_not_configured_message(model), model=model, llm_provider="")
 
 
+_ROUTED_CALL_BLOCKED_KEYS: Final = CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS | frozenset({"api_key"})
+
+
 @dataclass(frozen=True, slots=True)
 class RouterVectorStoreEmbeddingExecutor:
     router: Router
@@ -109,6 +113,16 @@ class RouterVectorStoreEmbeddingExecutor:
         return {
             **{key: value for key, value in configuration.items() if key not in ("input", "metadata", "model")},
             "metadata": metadata,
+        }
+
+    def _routed_embedding_kwargs(self, configuration: Mapping[str, object]) -> Mapping[str, object]:
+        """A routed call always uses the deployment's own endpoint and credentials, so drop any
+        caller-supplied override before it reaches the Router (defence in depth: the deployment the
+        Router picked already came from an admin-trusted model list, not from this request)."""
+        return {
+            key: value
+            for key, value in self._embedding_kwargs(configuration).items()
+            if key not in _ROUTED_CALL_BLOCKED_KEYS
         }
 
     def _team_id(self) -> str | None:
@@ -126,14 +140,14 @@ class RouterVectorStoreEmbeddingExecutor:
         return self.router.embedding(  # pyright: ignore[reportUnknownMemberType]  # Router embedding input retains a legacy untyped list
             model=model,
             input=[query],  # mutable-ok: Router embedding requires a mutable input list
-            **self._embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
+            **self._routed_embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
         )
 
     async def _aroute(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
         return await self.router.aembedding(  # pyright: ignore[reportUnknownMemberType]  # Router embedding input retains a legacy untyped list
             model=model,
             input=[query],  # mutable-ok: Router embedding requires a mutable input list
-            **self._embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
+            **self._routed_embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
         )
 
     def embed(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
@@ -250,13 +264,17 @@ class BaseVectorStoreConfig:
         vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
         api_base: str,
         litellm_params: Mapping[str, object],
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
     ) -> tuple[str, dict]:
         """
         OPTIONAL
 
         Providers whose create call depends on litellm_params (for example a database and
         collection selected at registration time) override this. The default preserves the
-        original contract for every other provider.
+        original contract for every other provider. ``embedding_executor``, when given, is the
+        proxy's router-backed executor; providers that embed during create (MongoDB's dimension
+        probe) must use it instead of embedding directly, so an unserved model is refused rather
+        than falling back to the SDK with the proxy's own provider keys.
         """
         return self.transform_create_vector_store_request(
             vector_store_create_optional_params=vector_store_create_optional_params,
@@ -312,12 +330,14 @@ class BaseVectorStoreConfig:
         vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
         api_base: str,
         litellm_params: Mapping[str, object],
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
     ) -> tuple[str, dict]:
         """OPTIONAL async variant; providers that embed or probe during create override this."""
         return self.transform_create_vector_store_request_with_litellm_params(
             vector_store_create_optional_params=vector_store_create_optional_params,
             api_base=api_base,
             litellm_params=litellm_params,
+            embedding_executor=embedding_executor,
         )
 
     @abstractmethod

@@ -10201,6 +10201,7 @@ class BaseLLMHTTPHandler:
         custom_llm_provider: str,
         litellm_params: GenericLiteLLMParams,
         logging_obj: LiteLLMLoggingObj,
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
         extra_headers: dict[str, object] | None = None,
         extra_body: dict[str, object] | None = None,
         timeout: float | httpx.Timeout | None = None,
@@ -10236,6 +10237,7 @@ class BaseLLMHTTPHandler:
             vector_store_create_optional_params=vector_store_create_optional_params,
             api_base=api_base,
             litellm_params=dict(litellm_params),  # mutable-ok: the provider hook takes a plain mapping copy
+            embedding_executor=embedding_executor,
         )
 
         logging_obj.pre_call(
@@ -10264,6 +10266,7 @@ class BaseLLMHTTPHandler:
         custom_llm_provider: str,
         litellm_params: GenericLiteLLMParams,
         logging_obj: LiteLLMLoggingObj,
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
         extra_headers: dict[str, object] | None = None,
         extra_body: dict[str, object] | None = None,
         timeout: float | httpx.Timeout | None = None,
@@ -10277,6 +10280,7 @@ class BaseLLMHTTPHandler:
                 litellm_params=litellm_params,
                 logging_obj=logging_obj,
                 custom_llm_provider=custom_llm_provider,
+                embedding_executor=embedding_executor,
                 extra_headers=extra_headers,
                 extra_body=extra_body,
                 timeout=timeout,
@@ -10309,6 +10313,7 @@ class BaseLLMHTTPHandler:
             vector_store_create_optional_params=vector_store_create_optional_params,
             api_base=api_base,
             litellm_params=dict(litellm_params),  # mutable-ok: the provider hook takes a plain mapping copy
+            embedding_executor=embedding_executor,
         )
 
         logging_obj.pre_call(

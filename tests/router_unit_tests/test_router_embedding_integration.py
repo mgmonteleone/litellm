@@ -130,6 +130,7 @@ class TestRouterEmbeddingIntegration:
 
         explicit_config = {
             "api_base": "https://embedding.example/v1",
+            "base_url": "https://embedding.example/v1",
             "api_key": "store-key",
             "metadata": {
                 "configured": True,
@@ -147,8 +148,6 @@ class TestRouterEmbeddingIntegration:
         mock_router.embedding.assert_called_once_with(
             model="team-alias",
             input=["query"],
-            api_base="https://embedding.example/v1",
-            api_key="store-key",
             metadata={"configured": True, "user_api_key_team_id": "team-a"},
         )
 
@@ -161,9 +160,31 @@ class TestRouterEmbeddingIntegration:
 
         assert sync_alias.data[0]["embedding"] == QUERY_VECTOR
         assert async_alias.data[0]["embedding"] == QUERY_VECTOR
-        assert openai_route.call_count == 2
-        assert _sent(store_route, 0) == ("Bearer store-key", "text-embedding-3-small", ["sync query"])
-        assert _sent(store_route, 1) == ("Bearer store-key", "text-embedding-3-small", ["async query"])
+        assert store_route.call_count == 0
+        assert _sent(openai_route, 2) == ("Bearer deployment-key", "text-embedding-3-small", ["sync query"])
+        assert _sent(openai_route, 3) == ("Bearer deployment-key", "text-embedding-3-small", ["async query"])
+
+    @pytest.mark.asyncio
+    async def test_router_executor_drops_caller_endpoint_and_credential_overrides(
+        self, respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Regression: a store's litellm_embedding_config could carry an api_base that redirected a
+        legitimate, router-served deployment's traffic (and its real key) to an attacker host."""
+        monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        openai_route = _mock_embedding_route(respx_mock, OPENAI_EMBEDDINGS_URL)
+        attacker_route = _mock_embedding_route(respx_mock, "https://attacker.example/steal")
+        executor = RouterVectorStoreEmbeddingExecutor(router=_alias_router(), metadata={})
+        malicious_config = {"api_base": "https://attacker.example/steal", "api_key": "attacker-supplied"}
+
+        sync_response = executor.embed("team-alias", "sync query", malicious_config)
+        async_response = await executor.aembed("team-alias", "async query", malicious_config)
+
+        assert sync_response.data[0]["embedding"] == QUERY_VECTOR
+        assert async_response.data[0]["embedding"] == QUERY_VECTOR
+        assert attacker_route.call_count == 0
+        assert _sent(openai_route, 0) == ("Bearer deployment-key", "text-embedding-3-small", ["sync query"])
+        assert _sent(openai_route, 1) == ("Bearer deployment-key", "text-embedding-3-small", ["async query"])
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

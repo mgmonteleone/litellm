@@ -17,10 +17,13 @@ from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_request_processing import ProxyBaseLLMRequestProcessing
 from litellm.proxy.utils import jsonify_object
 from litellm.proxy.vector_store_endpoints.utils import (
+    assert_caller_can_use_models,
     assert_proxy_admin_for_request_endpoints,
     assert_proxy_admin_for_vector_store_index_management,
+    assert_proxy_admin_for_vector_store_params,
     assert_user_can_access_vector_store,
     get_litellm_managed_vector_store,
+    store_embedding_models,
 )
 from litellm.repositories.table_repositories import ManagedVectorStoreIndexRepository
 from litellm.types.vector_stores import IndexCreateRequest, IndexListResponse
@@ -229,6 +232,10 @@ async def vector_store_create(
 
     data: Final = await _read_request_body(request=request)
     assert_proxy_admin_for_request_endpoints(data, user_api_key_dict)
+    assert_proxy_admin_for_vector_store_params(
+        MappingProxyType({"litellm_embedding_config": data.get("litellm_embedding_config")}), user_api_key_dict
+    )
+    await assert_caller_can_use_models(store_embedding_models(data), user_api_key_dict, llm_router)
 
     # Check for target_model_names parameter
     target_model_names: Final = data.pop("target_model_names", None)
