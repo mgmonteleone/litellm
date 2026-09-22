@@ -1,0 +1,41 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionEditForm.tsx
+  s_d71e62cb6f304c::t_42f26175dc9beb 115
+  s_d71e62cb6f304c::t_9638a5eca4eb8c 53
+  s_d71e62cb6f304c::t_757b5218e97371 54
+  s_d71e62cb6f304c::t_e9d64030b1f972 18-19
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vectorStoreFormSchema.test.ts
+  s_d71e62cb6f304c::t_a74a416a40f274 99-105,107-129
+  s_d71e62cb6f304c::t_2c5fc96d53c02c 106
+  s_d71e62cb6f304c::t_308fc71fb9a90f 5-10
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBStoreFields.tsx
+  s_d71e62cb6f304c::t_0800b4c416708f 23
+  s_d71e62cb6f304c::t_10aeed380d6b9c 45-50,60
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreForm.tsx
+  s_d71e62cb6f304c::t_6e837145f98a2e 104-106
+  s_d71e62cb6f304c::t_efb8d84524559c 101-103
+  s_d71e62cb6f304c::t_baffd8c18209d1 400
+  s_d71e62cb6f304c::t_1b31a25c38beb4 42,47
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vectorStoreFormSchema.ts
+  s_d71e62cb6f304c::t_a000f36e72a0e6 93-98,100,106-134
+  s_d71e62cb6f304c::t_8041f84bc582ed 101-105
+  s_d71e62cb6f304c::t_3ac113d6c3d01c 99
+  s_d71e62cb6f304c::t_d506f79a002789 135-137
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBStoreFields.integration.test.tsx
+  s_d71e62cb6f304c::t_867a34dc104f2d 245-261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "271328ee0a0d294f4c09903272c446c77123aa2e",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
