@@ -274,7 +274,7 @@ const VectorStoreForm: React.FC<VectorStoreFormProps> = ({
                 </Alert>
               )}
 
-              {isMongoDB && <MongoDBSetupAlert />}
+              {isMongoDB && !hasDeploymentDefaults(providerDefaults) && <MongoDBSetupAlert />}
 
               {selectedProvider === "valkey" && (
                 <Alert variant="info">

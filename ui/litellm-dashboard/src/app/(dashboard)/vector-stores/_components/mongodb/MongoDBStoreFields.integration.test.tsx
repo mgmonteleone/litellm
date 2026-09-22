@@ -370,6 +370,29 @@ describe("MongoDB deployment-configured sidecar defaults", () => {
     expect(payload.litellm_params).not.toHaveProperty("api_key");
   });
 
+  it("hides the MongoDB Atlas Setup guidance once the deployment has default sidecar credentials", async () => {
+    mockProviderDefaults.mockResolvedValue(WITH_DEPLOYMENT_DEFAULTS);
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+
+    await screen.findByText(/Using this deployment's MongoDB sidecar at/);
+    expect(screen.queryByText("MongoDB Atlas Setup")).not.toBeInTheDocument();
+  });
+
+  it("keeps the MongoDB Atlas Setup guidance hidden even after the admin opens the override", async () => {
+    mockProviderDefaults.mockResolvedValue(WITH_DEPLOYMENT_DEFAULTS);
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+    await screen.findByText(/Using this deployment's MongoDB sidecar at/);
+    await user.click(screen.getByRole("button", { name: "Override sidecar connection" }));
+
+    expect(screen.queryByText("MongoDB Atlas Setup")).not.toBeInTheDocument();
+  });
+
   it("sends the typed override once the admin opens it", async () => {
     mockProviderDefaults.mockResolvedValue(WITH_DEPLOYMENT_DEFAULTS);
     const user = setupUser();
