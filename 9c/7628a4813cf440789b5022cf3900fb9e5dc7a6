@@ -1,0 +1,22 @@
+litellm/vector_stores/vector_store_registry.py
+  s_d71e62cb6f304c::t_68cec146242fa9 5,120-151
+  s_d71e62cb6f304c::t_839afda2835f59 152-154,156-159
+tests/test_litellm/vector_stores/test_vector_store_registry.py
+  s_d71e62cb6f304c::t_932d094aa3636d 276-285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "9c7628a4813cf440789b5022cf3900fb9e5dc7a6",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
