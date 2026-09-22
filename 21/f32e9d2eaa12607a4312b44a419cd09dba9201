@@ -1,0 +1,33 @@
+litellm/vector_stores/vector_store_registry.py
+  s_d71e62cb6f304c::t_2b8660dd45d4ab 23,186-211,638-640,642-650
+litellm/rag/ingestion/base_ingestion.py
+  s_d71e62cb6f304c::t_00b0dbcb81e575 17,32,38-41,80-82,91
+tests/test_litellm/test_rag_openai_ingestion.py
+  s_d71e62cb6f304c::t_335cede6c34ffe 101-126
+litellm/proxy/vector_store_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_7cb5e9a4cd04cd 28,30,78-79
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_63c7f102c7f8f7 2841-2879,2881,2883-2947,2950-2985,2989-2995,2999,3001
+litellm/vector_stores/main.py
+  s_d71e62cb6f304c::t_baea6086483121 405
+litellm/vector_store_files/main.py
+  s_d71e62cb6f304c::t_fbd059e415f5a9 46
+tests/test_litellm/vector_stores/test_main.py
+  s_d71e62cb6f304c::t_24f8c52df64c20 120,122-129,131,133-135,144-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "21f32e9d2eaa12607a4312b44a419cd09dba9201",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
