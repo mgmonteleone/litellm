@@ -116,6 +116,16 @@ def _env_reference_allowlist() -> frozenset[tuple[str, str]]:
     )
 
 
+def contains_env_reference(value: object) -> bool:
+    if isinstance(value, str):
+        return value.startswith(ENV_REFERENCE_PREFIX)
+    if isinstance(value, Mapping):
+        return any(contains_env_reference(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(contains_env_reference(item) for item in value)
+    return False
+
+
 def resolve_litellm_params_references(
     litellm_params: Mapping[str, object] | None, custom_llm_provider: object
 ) -> Mapping[str, object]:
