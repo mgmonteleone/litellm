@@ -117,6 +117,10 @@ class S3VectorsVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig, BaseAWSLLM
         return s3_vectors_configured_embedding_model(litellm_params) or _DEFAULT_QUERY_EMBEDDING_MODEL
 
     @staticmethod
+    def default_query_embedding_model(litellm_params: Mapping[str, object]) -> str | None:
+        return _DEFAULT_QUERY_EMBEDDING_MODEL
+
+    @staticmethod
     def _query_target(vector_store_id: str, litellm_params: Mapping[str, object]) -> tuple[str, str]:
         return split_s3_vectors_store_id(vector_store_id, litellm_params.get("vector_bucket_name"))
 

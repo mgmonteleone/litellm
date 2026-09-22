@@ -111,26 +111,58 @@ class RouterVectorStoreEmbeddingExecutor:
             "metadata": metadata,
         }
 
-    def _assert_router_serves(self, model: str) -> None:
+    def _team_id(self) -> str | None:
         team_id: Final = self.metadata.get("user_api_key_team_id")
-        if not router_serves_model(self.router, model, team_id if isinstance(team_id, str) else None):
+        return team_id if isinstance(team_id, str) else None
+
+    def serves(self, model: str) -> bool:
+        return router_serves_model(self.router, model, self._team_id())
+
+    def _assert_router_serves(self, model: str) -> None:
+        if not self.serves(model):
             raise model_not_configured_error(model)
 
-    def embed(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
-        self._assert_router_serves(model)
+    def _route(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
         return self.router.embedding(  # pyright: ignore[reportUnknownMemberType]  # Router embedding input retains a legacy untyped list
             model=model,
             input=[query],  # mutable-ok: Router embedding requires a mutable input list
             **self._embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
         )
 
-    async def aembed(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
-        self._assert_router_serves(model)
+    async def _aroute(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
         return await self.router.aembedding(  # pyright: ignore[reportUnknownMemberType]  # Router embedding input retains a legacy untyped list
             model=model,
             input=[query],  # mutable-ok: Router embedding requires a mutable input list
             **self._embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
         )
+
+    def embed(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
+        self._assert_router_serves(model)
+        return self._route(model, query, configuration)
+
+    async def aembed(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
+        self._assert_router_serves(model)
+        return await self._aroute(model, query, configuration)
+
+    def embed_with_default_fallback(
+        self, model: str, query: str, configuration: Mapping[str, object]
+    ) -> EmbeddingResponse:
+        """
+        For a provider's hard-coded default embedding model (never a caller-chosen name), call the
+        provider directly when the router doesn't serve it instead of failing the search outright.
+        """
+        if not self.serves(model):
+            return LiteLLMVectorStoreEmbeddingExecutor().embed(model, query, self._embedding_kwargs(configuration))
+        return self._route(model, query, configuration)
+
+    async def aembed_with_default_fallback(
+        self, model: str, query: str, configuration: Mapping[str, object]
+    ) -> EmbeddingResponse:
+        if not self.serves(model):
+            return await LiteLLMVectorStoreEmbeddingExecutor().aembed(
+                model, query, self._embedding_kwargs(configuration)
+            )
+        return await self._aroute(model, query, configuration)
 
 
 class BaseVectorStoreConfig:
@@ -415,6 +447,47 @@ class BaseQueryEmbeddingVectorStoreConfig(BaseVectorStoreConfig):
             return RouterVectorStoreEmbeddingExecutor(router=router, metadata=request_metadata)
         return LiteLLMVectorStoreEmbeddingExecutor()
 
+    @staticmethod
+    def default_query_embedding_model(litellm_params: Mapping[str, object]) -> str | None:
+        """
+        A provider's hard-coded fallback embedding model, used only when the store names none. Returning
+        non-None here is what lets that one default call the provider directly when the router (proxy
+        deployments only) doesn't serve it; every other model name must go through the router or 400.
+        Providers that require an explicit model (the common case) leave this as None.
+        """
+        return None
+
+    def _is_unconfigured_default(self, model: str, litellm_params: Mapping[str, object]) -> bool:
+        return model == self.default_query_embedding_model(litellm_params)
+
+    def _embed_via(
+        self,
+        executor: VectorStoreEmbeddingExecutor,
+        model: str,
+        query_text: str,
+        configuration: Mapping[str, object],
+        litellm_params: Mapping[str, object],
+    ) -> EmbeddingResponse:
+        if isinstance(executor, RouterVectorStoreEmbeddingExecutor) and self._is_unconfigured_default(
+            model, litellm_params
+        ):
+            return executor.embed_with_default_fallback(model, query_text, configuration)
+        return executor.embed(model, query_text, configuration)
+
+    async def _aembed_via(
+        self,
+        executor: VectorStoreEmbeddingExecutor,
+        model: str,
+        query_text: str,
+        configuration: Mapping[str, object],
+        litellm_params: Mapping[str, object],
+    ) -> EmbeddingResponse:
+        if isinstance(executor, RouterVectorStoreEmbeddingExecutor) and self._is_unconfigured_default(
+            model, litellm_params
+        ):
+            return await executor.aembed_with_default_fallback(model, query_text, configuration)
+        return await executor.aembed(model, query_text, configuration)
+
     def embed_query(
         self,
         query_text: str,
@@ -425,7 +498,7 @@ class BaseQueryEmbeddingVectorStoreConfig(BaseVectorStoreConfig):
         configuration: Final = self.query_embedding_configuration(litellm_params)
         executor: Final = self.query_embedding_executor(embedding_executor, None)
         try:
-            response: Final = executor.embed(model, query_text, configuration)
+            response: Final = self._embed_via(executor, model, query_text, configuration, litellm_params)
         except Exception as e:
             raise Exception(f"Failed to generate embedding for query: {e}")
         return _QUERY_VECTOR.validate_python(response.data[0]["embedding"])  # pyright: ignore[reportUnknownMemberType]  # EmbeddingResponse.data is an untyped list, the vector is validated here
@@ -440,7 +513,7 @@ class BaseQueryEmbeddingVectorStoreConfig(BaseVectorStoreConfig):
         configuration: Final = self.query_embedding_configuration(litellm_params)
         executor: Final = self.query_embedding_executor(embedding_executor, None)
         try:
-            response: Final = await executor.aembed(model, query_text, configuration)
+            response: Final = await self._aembed_via(executor, model, query_text, configuration, litellm_params)
         except Exception as e:
             raise Exception(f"Failed to generate embedding for query: {e}")
         return _QUERY_VECTOR.validate_python(response.data[0]["embedding"])  # pyright: ignore[reportUnknownMemberType]  # EmbeddingResponse.data is an untyped list, the vector is validated here
