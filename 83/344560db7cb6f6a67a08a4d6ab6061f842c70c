@@ -1,0 +1,32 @@
+litellm/llms/base_llm/vector_store/transformation.py
+  s_d71e62cb6f304c::t_5b5ee46b7ffa64 171-173,181
+  s_d71e62cb6f304c::t_0bddca957e5a52 145,152
+  s_d71e62cb6f304c::t_db089a4bfbc145 118-123
+tests/test_litellm/llms/s3_vectors/vector_stores/test_s3_vectors_transformation.py
+  s_d71e62cb6f304c::t_6f65db5458bf9e 206-238
+  s_a437fa5c3fe299::t_18d4ff27baaac6 205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "83344560db7cb6f6a67a08a4d6ab6061f842c70c",
+  "prompts": {},
+  "sessions": {
+    "s_a437fa5c3fe299": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "caa2a1a5-d70a-4605-a09d-4c18bbbf3b98",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    },
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
