@@ -35,6 +35,7 @@ _NAMESPACE_CHECKS: Final = frozenset(
     {"mongodb_collection", "mongodb_sample_document", "mongodb_index", "mongodb_index_definition", "mongodb_dimensions"}
 )
 _CHOOSE_NAMESPACE_MESSAGE: Final = "Choose a database and collection to check the index."
+_INDEX_NOT_YET_CREATED_MESSAGE: Final = "The index is created when you save this store."
 _CHOOSE_EMBEDDING_MODEL_MESSAGE: Final = "Choose an embedding model to check its output dimensions."
 
 
@@ -265,11 +266,19 @@ async def run_test_connection(
 
 def _sidecar_check(row: Mapping[str, object], namespace_chosen: bool) -> VectorStoreConnectionCheck:
     """One row of the sidecar's own checklist, keeping its verdict as-is except for the checks that need a
-    database and collection: those are reported as our own skip rather than whatever the sidecar sent, since
-    an admin who has not chosen a namespace yet has not failed anything."""
+    database and collection.
+
+    Without a namespace, those are reported as our own skip rather than whatever the sidecar sent, since an
+    admin who has not chosen one yet has not failed anything. With a namespace but no store saved yet, the
+    sidecar itself still skips them (there is no index to check), which is expected rather than a reason to
+    ask for a database and collection the admin already picked.
+    """
     name: Final = str(row.get("check"))
-    if not namespace_chosen and name in _NAMESPACE_CHECKS:
-        return check(name, "skip", _CHOOSE_NAMESPACE_MESSAGE)
+    if name in _NAMESPACE_CHECKS:
+        if not namespace_chosen:
+            return check(name, "skip", _CHOOSE_NAMESPACE_MESSAGE)
+        if as_status(row.get("status")) == "skip":
+            return check(name, "skip", _INDEX_NOT_YET_CREATED_MESSAGE)
     details: Final = row.get("details")
     return check(
         name,
@@ -288,8 +297,10 @@ def _summary(
         return str(failures[0].get("message"))
     if warnings:
         return f"Connected with {len(warnings)} warning(s): {warnings[0].get('message')}"
-    if skips:
+    if any(row.get("message") == _CHOOSE_NAMESPACE_MESSAGE for row in skips):
         return "Choose a database and collection to finish the checks."
+    if skips:
+        return "Connected. The index is created when you save this store."
     return "All checks passed."
 
 
