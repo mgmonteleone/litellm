@@ -2,6 +2,20 @@ litellm/llms/mongodb/vector_stores/transformation.py
   s_d71e62cb6f304c::t_44a7df46406747 90-91,94-95,97-99
 tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_transformation.py
   s_2209f22f830d7f::t_ca9ce068f020dc 457-507
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_test_connection.py
+  s_d71e62cb6f304c::t_231330a222c034 216,220,230-244
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_231330a222c034 2882-2884,2944,2978-2980,3350-3371,3375,3379,3384
+tests/test_litellm/vector_stores/test_vector_store_registry.py
+  s_d71e62cb6f304c::t_231330a222c034 225,229,231-232,234-240,242,246,249-261
+litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py
+  s_d71e62cb6f304c::t_a501537e57f280 140
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_231330a222c034 743-745
+litellm/vector_stores/vector_store_registry.py
+  s_d71e62cb6f304c::t_231330a222c034 106-107,110-124,127,130-136
+litellm/proxy/vector_store_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_231330a222c034 70-77
 ---
 {
   "schema_version": "authorship/3.0.0",
