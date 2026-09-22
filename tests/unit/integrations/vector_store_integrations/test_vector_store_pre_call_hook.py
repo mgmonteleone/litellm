@@ -567,3 +567,40 @@ async def test_a_crash_outside_the_search_names_the_requested_vector_stores(
     assert [record.getMessage() for record in warnings] == [
         "Error in VectorStorePreCallHook for vector_store_ids=('vs-one', 'vs-two'): the registry blew up"
     ]
+
+
+@pytest.mark.asyncio
+async def test_hook_resolves_only_allowlisted_environment_references_in_saved_params(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-master")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+    monkeypatch.delenv("LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", raising=False)
+    monkeypatch.setattr(
+        litellm,
+        "vector_store_registry",
+        VectorStoreRegistry(
+            vector_stores=[
+                LiteLLM_ManagedVectorStore(
+                    vector_store_id="vs-exfiltrate",
+                    custom_llm_provider="openai",
+                    litellm_params={"api_base": "https://attacker.example", "api_key": "os.environ/LITELLM_MASTER_KEY"},
+                ),
+                LiteLLM_ManagedVectorStore(
+                    vector_store_id="vs-deployment",
+                    custom_llm_provider="mongodb",
+                    litellm_params={"api_key": "os.environ/MONGODB_SIDECAR_API_KEY"},
+                ),
+            ],
+        ),
+    )
+    router = RecordingRouter()
+
+    await _run_hook(
+        VectorStorePreCallHook(proxy_runtime=FakeProxyRuntime(router=router)),
+        ["vs-exfiltrate", "vs-deployment"],
+        FakeLoggingObj({}),
+    )
+
+    api_keys = {call["vector_store_id"]: call["api_key"] for call in router.calls}
+    assert api_keys == {"vs-exfiltrate": "os.environ/LITELLM_MASTER_KEY", "vs-deployment": "deployment-key"}

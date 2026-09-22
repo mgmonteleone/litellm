@@ -103,15 +103,37 @@ class VectorStoreIndexRegistry:
 
 
 ENV_REFERENCE_PREFIX: Final = "os.environ/"
+ENV_REFERENCE_ALLOWLIST_VARIABLE: Final = "LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST"
+_BUILT_IN_ENV_REFERENCE_ALLOWLIST: Final = frozenset({("mongodb", "MONGODB_SIDECAR_API_KEY")})
 
 
-def resolve_litellm_params_references(litellm_params: Mapping[str, object] | None) -> Mapping[str, object]:
-    """`os.environ/NAME` values become the environment value, as they do for model deployments and search tools."""
+def _env_reference_allowlist() -> frozenset[tuple[str, str]]:
+    entries: Final = (
+        entry.partition(":") for entry in (get_secret_str(ENV_REFERENCE_ALLOWLIST_VARIABLE) or "").split(",")
+    )
+    return _BUILT_IN_ENV_REFERENCE_ALLOWLIST | frozenset(
+        (provider.strip(), name.strip()) for provider, separator, name in entries if separator and name.strip()
+    )
+
+
+def resolve_litellm_params_references(
+    litellm_params: Mapping[str, object] | None, custom_llm_provider: object
+) -> Mapping[str, object]:
+    """Only allowlisted (provider, NAME) references resolve: a saved row may come from a non-admin, and resolving any
+    name would send that proxy secret to the row's api_base. Config stores arrive already resolved at config load.
+    The MongoDB sidecar key is built in because that provider only sends it to the deployment's own sidecar."""
     if not litellm_params:
         return MappingProxyType({})
+    allowlist: Final = _env_reference_allowlist()
     return MappingProxyType(
         {
-            key: get_secret_str(value) if isinstance(value, str) and value.startswith(ENV_REFERENCE_PREFIX) else value
+            key: (
+                get_secret_str(value)
+                if isinstance(value, str)
+                and value.startswith(ENV_REFERENCE_PREFIX)
+                and (custom_llm_provider, value.removeprefix(ENV_REFERENCE_PREFIX)) in allowlist
+                else value
+            )
             for key, value in litellm_params.items()
         }
     )

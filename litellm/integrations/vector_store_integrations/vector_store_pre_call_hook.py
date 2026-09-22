@@ -249,7 +249,9 @@ class VectorStorePreCallHook(CustomLogger):
     ) -> SearchOutcome:
         vector_store_id: Final = vector_store.get("vector_store_id", "")
         custom_llm_provider: Final = vector_store.get("custom_llm_provider")
-        litellm_params_for_vector_store: Final = resolve_litellm_params_references(vector_store.get("litellm_params"))
+        litellm_params_for_vector_store: Final = resolve_litellm_params_references(
+            vector_store.get("litellm_params"), custom_llm_provider
+        )
         try:
             search_response: Final = await search_function(
                 **{

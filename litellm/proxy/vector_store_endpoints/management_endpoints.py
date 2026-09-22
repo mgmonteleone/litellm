@@ -740,7 +740,9 @@ def _saved_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str,
     except ValueError:
         raise HTTPException(status_code=400, detail="The saved vector store has malformed litellm_params.") from None
     merged: Final = dict(  # mutable-ok: merged copy
-        resolve_litellm_params_references(parsed if isinstance(parsed, Mapping) else None)
+        resolve_litellm_params_references(
+            parsed if isinstance(parsed, Mapping) else None, vector_store.get("custom_llm_provider")
+        )
     )
     credential_name: Final = vector_store.get("litellm_credential_name")
     if credential_name and litellm.credential_list:
