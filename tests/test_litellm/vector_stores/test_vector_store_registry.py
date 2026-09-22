@@ -222,25 +222,40 @@ def test_sync_with_empty_db_removes_db_stores_but_keeps_config_stores():
     assert [store["vector_store_id"] for store in registry.vector_stores] == ["from_config"]
 
 
-def test_resolve_litellm_params_references_reads_the_environment_and_leaves_literals_alone(monkeypatch):
+def test_resolve_litellm_params_references_resolves_only_allowlisted_provider_and_name_pairs(monkeypatch):
     from litellm.vector_stores.vector_store_registry import resolve_litellm_params_references
 
     monkeypatch.setenv("SIDECAR_KEY_FOR_TEST", "resolved-secret")
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-master")
     monkeypatch.delenv("MISSING_FOR_TEST", raising=False)
-
-    resolved = resolve_litellm_params_references(
-        {
-            "api_key": "os.environ/SIDECAR_KEY_FOR_TEST",
-            "api_base": "https://sidecar.example",
-            "absent": "os.environ/MISSING_FOR_TEST",
-            "mongodb_dimensions": 1536,
-        }
+    monkeypatch.setenv(
+        "LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", " mongodb:SIDECAR_KEY_FOR_TEST, mongodb:MISSING_FOR_TEST,bogus"
     )
+    params = {
+        "api_key": "os.environ/SIDECAR_KEY_FOR_TEST",
+        "api_base": "https://sidecar.example",
+        "absent": "os.environ/MISSING_FOR_TEST",
+        "master": "os.environ/LITELLM_MASTER_KEY",
+        "mongodb_dimensions": 1536,
+    }
 
-    assert dict(resolved) == {
+    assert dict(resolve_litellm_params_references(params, "mongodb")) == {
         "api_key": "resolved-secret",
         "api_base": "https://sidecar.example",
         "absent": None,
+        "master": "os.environ/LITELLM_MASTER_KEY",
         "mongodb_dimensions": 1536,
     }
-    assert dict(resolve_litellm_params_references(None)) == {}
+    assert dict(resolve_litellm_params_references(params, "openai")) == params
+    assert dict(resolve_litellm_params_references(None, "mongodb")) == {}
+
+
+def test_resolve_litellm_params_references_allows_the_mongodb_sidecar_key_for_mongodb_only(monkeypatch):
+    from litellm.vector_stores.vector_store_registry import resolve_litellm_params_references
+
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+    monkeypatch.delenv("LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", raising=False)
+    params = {"api_key": "os.environ/MONGODB_SIDECAR_API_KEY"}
+
+    assert resolve_litellm_params_references(params, "mongodb")["api_key"] == "deployment-key"
+    assert resolve_litellm_params_references(params, "openai")["api_key"] == "os.environ/MONGODB_SIDECAR_API_KEY"

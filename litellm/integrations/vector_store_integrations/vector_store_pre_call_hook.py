@@ -137,7 +137,7 @@ class VectorStorePreCallHook(CustomLogger):
                 vector_store_id = vector_store_to_run.get("vector_store_id", "")
                 custom_llm_provider = vector_store_to_run.get("custom_llm_provider")
                 litellm_params_for_vector_store = resolve_litellm_params_references(
-                    vector_store_to_run.get("litellm_params")
+                    vector_store_to_run.get("litellm_params"), custom_llm_provider
                 )
                 request_litellm_params = litellm_logging_obj.model_call_details.get("litellm_params", {})
                 request_metadata = (

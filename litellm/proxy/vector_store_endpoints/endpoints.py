@@ -67,7 +67,14 @@ def build_request_data_from_managed_vector_store(
             if key in vector_store
         }
     )
-    return MappingProxyType({**top_level, **resolve_litellm_params_references(vector_store.get("litellm_params"))})
+    return MappingProxyType(
+        {
+            **top_level,
+            **resolve_litellm_params_references(
+                vector_store.get("litellm_params"), vector_store.get("custom_llm_provider")
+            ),
+        }
+    )
 
 
 async def _update_request_data_with_litellm_managed_vector_store_registry(
