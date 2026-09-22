@@ -2905,9 +2905,7 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
         assert persisted["api_key"] == "sk-real-secret"
 
     @pytest.mark.asyncio
-    async def test_update_litellm_params_null_clears_a_saved_field_and_falls_back_to_the_environment(
-        self, monkeypatch
-    ):
+    async def test_update_litellm_params_null_clears_a_saved_field_and_falls_back_to_the_environment(self, monkeypatch):
         """The dashboard sends ``null`` for a field the admin blanked out (see connectionEditPayload.ts).
         Before this fix that null value round-tripped into the persisted litellm_params, so the store kept
         pointing at the stale saved api_base instead of clearing it and falling back to the deployment's
@@ -2955,9 +2953,10 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
         resolved = build_request_data_from_managed_vector_store(
             LiteLLM_ManagedVectorStore(vector_store_id="vs_owned", litellm_params=persisted)
         )
-        assert MongoDBVectorStoreConfig().get_complete_url(
-            api_base=resolved.get("api_base"), litellm_params=resolved
-        ) == "https://deployment-sidecar.example"
+        assert (
+            MongoDBVectorStoreConfig().get_complete_url(api_base=resolved.get("api_base"), litellm_params=resolved)
+            == "https://deployment-sidecar.example"
+        )
 
     @pytest.mark.asyncio
     async def test_update_litellm_params_sentinel_keeps_saved_secret(self):
