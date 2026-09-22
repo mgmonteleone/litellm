@@ -2,12 +2,17 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from types import MappingProxyType
-from typing import Final, Literal, NoReturn
+from typing import TYPE_CHECKING, Final, Literal, NoReturn
 
 from fastapi import HTTPException, Request
 
 import litellm
 from litellm._logging import verbose_proxy_logger
+from litellm.llms.base_llm.vector_store.transformation import (
+    ModelKind,
+    model_not_configured_message,
+    router_serves_model,
+)
 from litellm.proxy._experimental.mcp_server.ui_session_utils import (
     is_ui_session_credential,
     resolve_ui_session_team_ids,
@@ -15,6 +20,7 @@ from litellm.proxy._experimental.mcp_server.ui_session_utils import (
 from litellm.proxy._types import (
     LiteLLM_ObjectPermissionTable,
     LitellmUserRoles,
+    ProxyException,
     UserAPIKeyAuth,
 )
 from litellm.types.utils import LlmProviders
@@ -26,6 +32,9 @@ from litellm.types.vector_stores import (
 )
 from litellm.utils import ProviderConfigManager
 from litellm.vector_stores.vector_store_registry import contains_env_reference, nested_param_entries
+
+if TYPE_CHECKING:
+    from litellm.router import Router
 
 
 def _normalize_litellm_params(
@@ -141,6 +150,43 @@ def assert_proxy_admin_for_request_endpoints(payload: Mapping[str, object], user
     )
     if requested:
         _raise_admin_only(requested)
+
+
+STORE_EMBEDDING_MODEL_KEYS: Final = ("litellm_embedding_model", "embedding_model")
+
+
+def store_embedding_models(
+    params: Mapping[str, object] | None, saved_params: Mapping[str, object] | None = None
+) -> tuple[tuple[str, ModelKind], ...]:
+    """The embedding models ``params`` sets on a store, skipping any that ``saved_params`` already holds."""
+    requested: Final = params or _EMPTY_PARAMS
+    saved: Final = saved_params or _EMPTY_PARAMS
+    return tuple(
+        (model, "embedding")
+        for key in STORE_EMBEDDING_MODEL_KEYS
+        if isinstance(model := requested.get(key), str) and model and model != saved.get(key)
+    )
+
+
+async def assert_caller_can_use_models(
+    models: Iterable[tuple[str, ModelKind]],
+    user_api_key_dict: UserAPIKeyAuth,
+    llm_router: "Router | None",
+) -> None:
+    """A non-admin may only name models this proxy serves and their key and team may call."""
+    if is_proxy_admin(user_api_key_dict):
+        return
+    from litellm.proxy.auth.auth_checks import can_key_call_resolved_model
+
+    for model, kind in models:
+        if llm_router is None or not router_serves_model(llm_router, model, user_api_key_dict.team_id):
+            raise HTTPException(status_code=400, detail=model_not_configured_message(model, kind))
+        try:
+            await can_key_call_resolved_model(
+                model=model, llm_model_list=None, valid_token=user_api_key_dict, llm_router=llm_router
+            )
+        except ProxyException as denial:
+            raise HTTPException(status_code=403, detail=denial.message) from None
 
 
 def _suffix_after_index_name(request_path: str, index_name: str) -> str | None:

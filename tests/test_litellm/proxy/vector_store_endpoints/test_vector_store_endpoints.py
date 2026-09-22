@@ -38,6 +38,18 @@ from litellm.types.vector_stores import IndexCreateRequest, IndexListResponse
 from litellm.vector_stores.main import _direct_vector_store_embedding_executor
 
 
+_HANDBOOK_EMBEDDING_MODELS = ("text-embedding-3-small", "text-embedding-3-large")
+
+
+def _embedding_router(*model_names: str) -> litellm.Router:
+    return litellm.Router(
+        model_list=[
+            {"model_name": name, "litellm_params": {"model": f"openai/{name}", "api_key": "deployment-key"}}
+            for name in model_names or _HANDBOOK_EMBEDDING_MODELS
+        ]
+    )
+
+
 def _serialize_litellm_params(litellm_params):
     """Serialize ``litellm_params`` to a string for substring assertions.
 
@@ -2191,7 +2203,13 @@ async def test_new_vector_store_accepts_os_environ_references_from_proxy_admins(
     }
 
 
-async def _create_store(user_role: LitellmUserRoles, registry: object = None, **store_fields) -> MagicMock:
+async def _create_store(
+    user_role: LitellmUserRoles,
+    registry: object = None,
+    user_api_key_dict: UserAPIKeyAuth | None = None,
+    llm_router: object = None,
+    **store_fields,
+) -> MagicMock:
     from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 
     mock_prisma_client = MagicMock()
@@ -2205,13 +2223,14 @@ async def _create_store(user_role: LitellmUserRoles, registry: object = None, **
             new_callable=AsyncMock,
         ),
         patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+        patch("litellm.proxy.proxy_server.llm_router", llm_router or _embedding_router()),
         patch.object(litellm, "vector_store_registry", registry),
     ):
         await new_vector_store(
             vector_store=LiteLLM_ManagedVectorStore(
                 **{"vector_store_id": "vs-new", "custom_llm_provider": "openai", **store_fields}
             ),
-            user_api_key_dict=UserAPIKeyAuth(user_role=user_role),
+            user_api_key_dict=user_api_key_dict or UserAPIKeyAuth(user_role=user_role),
         )
     return mock_prisma_client
 
@@ -2313,6 +2332,53 @@ async def test_new_vector_store_rejects_params_outside_the_non_admin_allowlist(l
 
     assert exc_info.value.status_code == 403
     assert next(iter(litellm_params)) in exc_info.value.detail
+
+
+_ATTACKER_EMBEDDING_MODEL = "huggingface/https://attacker.example/steal"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["litellm_embedding_model", "embedding_model"])
+async def test_new_vector_store_rejects_embedding_models_the_proxy_does_not_serve_from_non_admins(key):
+    """Regression: a non-admin saved huggingface/<their url> as the embedding model, and each search then
+    embedded the query through litellm directly, sending the proxy's HUGGINGFACE_API_KEY to that url."""
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(LitellmUserRoles.INTERNAL_USER, litellm_params={key: _ATTACKER_EMBEDDING_MODEL})
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail.startswith(f"embedding model {_ATTACKER_EMBEDDING_MODEL} is not configured")
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_rejects_embedding_models_the_callers_key_cannot_call():
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(
+            LitellmUserRoles.INTERNAL_USER,
+            user_api_key_dict=UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER, models=["gpt-4o"]),
+            litellm_params={"litellm_embedding_model": "text-embedding-3-small"},
+        )
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "user_api_key_dict",
+    [
+        UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER, models=["text-embedding-3-small"]),
+        UserAPIKeyAuth(user_role=LitellmUserRoles.PROXY_ADMIN, models=["gpt-4o"]),
+    ],
+    ids=["non-admin-with-access", "admin"],
+)
+async def test_new_vector_store_saves_a_router_served_embedding_model(user_api_key_dict):
+    mock_prisma_client = await _create_store(
+        LitellmUserRoles.INTERNAL_USER,
+        user_api_key_dict=user_api_key_dict,
+        litellm_params={"litellm_embedding_model": "text-embedding-3-small"},
+    )
+
+    created = mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]
+    assert json.loads(created["litellm_params"])["litellm_embedding_model"] == "text-embedding-3-small"
 
 
 _MONGODB_DATA_SHAPE_PARAMS = {
@@ -2445,10 +2511,7 @@ async def test_new_vector_store_persists_embedding_reference_without_credentials
     }
 
     # Mock user API key
-    mock_user_api_key = MagicMock(spec=UserAPIKeyAuth)
-    mock_user_api_key.user_role = None
-    mock_user_api_key.team_id = None
-    mock_user_api_key.user_id = None
+    mock_user_api_key = UserAPIKeyAuth()
 
     # Mock database operations
     mock_prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
@@ -2476,6 +2539,7 @@ async def test_new_vector_store_persists_embedding_reference_without_credentials
 
     with (
         patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+        patch("litellm.proxy.proxy_server.llm_router", _embedding_router("text-embedding-ada-002")),
         patch.object(litellm, "vector_store_registry", mock_registry),
     ):
         result = await new_vector_store(vector_store=vector_store_data, user_api_key_dict=mock_user_api_key)
@@ -2524,10 +2588,7 @@ async def test_new_vector_store_auto_resolves_from_router():
     mock_router.get_deployment_by_model_group_name.return_value = mock_deployment
 
     # Mock user API key
-    mock_user_api_key = MagicMock(spec=UserAPIKeyAuth)
-    mock_user_api_key.user_role = None
-    mock_user_api_key.team_id = None
-    mock_user_api_key.user_id = None
+    mock_user_api_key = UserAPIKeyAuth()
 
     # Mock database operations
     mock_prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
@@ -3556,7 +3617,12 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
         mock_prisma_client.db.litellm_managedvectorstorestable.update.assert_not_awaited()
 
     async def _update_as(
-        self, user_role: LitellmUserRoles, saved: dict, request_fields: dict, **saved_row_fields
+        self,
+        user_role: LitellmUserRoles,
+        saved: dict,
+        request_fields: dict,
+        user_api_key_dict: UserAPIKeyAuth | None = None,
+        **saved_row_fields,
     ) -> MagicMock:
         from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
         from litellm.types.vector_stores import VectorStoreUpdateRequest
@@ -3573,11 +3639,13 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
                 return_value=True,
             ),
             patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.proxy.proxy_server.llm_router", _embedding_router()),
             patch("litellm.vector_store_registry", None),
         ):
             await update_vector_store(
                 data=VectorStoreUpdateRequest(vector_store_id="vs_owned", **request_fields),
-                user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A", user_role=user_role),
+                user_api_key_dict=user_api_key_dict
+                or UserAPIKeyAuth(user_id="owner", team_id="team-A", user_role=user_role),
             )
         return mock_prisma_client
 
@@ -3767,6 +3835,41 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
             **saved,
             "mongodb_collection": "company_handbook_v2",
             "litellm_embedding_model": "text-embedding-3-large",
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "user_api_key_dict,status_code",
+        [
+            (UserAPIKeyAuth(user_id="owner", team_id="team-A", user_role=LitellmUserRoles.INTERNAL_USER), 400),
+            (UserAPIKeyAuth(user_id="owner", user_role=LitellmUserRoles.INTERNAL_USER, models=["gpt-4o"]), 403),
+        ],
+        ids=["unserved-model", "model-not-allowed-for-key"],
+    )
+    async def test_non_admin_update_cannot_repoint_the_embedding_model_at_a_model_it_may_not_use(
+        self, user_api_key_dict, status_code
+    ):
+        new_model = _ATTACKER_EMBEDDING_MODEL if status_code == 400 else "text-embedding-3-large"
+        with pytest.raises(HTTPException) as exc_info:
+            await self._update_as(
+                LitellmUserRoles.INTERNAL_USER,
+                {"mongodb_collection": "company_handbook", "litellm_embedding_model": "text-embedding-3-small"},
+                {"litellm_params": {"litellm_embedding_model": new_model}},
+                user_api_key_dict=user_api_key_dict,
+            )
+
+        assert exc_info.value.status_code == status_code
+
+    @pytest.mark.asyncio
+    async def test_non_admin_update_keeps_an_embedding_model_an_admin_saved(self):
+        saved = {"mongodb_collection": "company_handbook", "litellm_embedding_model": "admin-only-embedding"}
+        mock_prisma_client = await self._update_as(
+            LitellmUserRoles.INTERNAL_USER, saved, {"litellm_params": {"mongodb_collection": "company_handbook_v2"}}
+        )
+
+        assert self._persisted_litellm_params(mock_prisma_client, *saved) == {
+            **saved,
+            "mongodb_collection": "company_handbook_v2",
         }
 
     @pytest.mark.asyncio

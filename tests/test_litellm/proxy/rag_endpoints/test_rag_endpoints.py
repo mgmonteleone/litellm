@@ -307,6 +307,22 @@ def _patched_ingest_boundary(registry_store, aingest_response):
     )
 
 
+def _embedding_router(*model_names):
+    return litellm.Router(
+        model_list=[
+            {"model_name": name, "litellm_params": {"model": f"openai/{name}", "api_key": "deployment-key"}}
+            for name in model_names
+        ]
+    )
+
+
+def _patched_llm_router(*model_names):
+    return patch(  # test-quality-ok: proxy module global, no injection seam
+        "litellm.proxy.proxy_server.llm_router",
+        _embedding_router(*model_names),
+    )
+
+
 def _patched_prisma_client(prisma_client):
     return patch(  # test-quality-ok: proxy module global, no injection seam
         "litellm.proxy.proxy_server.prisma_client",
@@ -411,6 +427,7 @@ def test_rag_ingest_unmanaged_store_keeps_the_callers_full_config(client_interna
         aingest_patch as mock_aingest,
         registry_patch,
         _patched_prisma_client(None),
+        _patched_llm_router("amazon.titan-embed-text-v2:0"),
     ):
         response = client_internal_user.post("/v1/rag/ingest", **_ingest_form(caller_config))
 
@@ -680,6 +697,7 @@ def test_rag_ingest_lets_a_non_admin_create_a_mongodb_store_from_data_shape_para
         aingest_patch as mock_aingest,
         registry_patch,
         _patched_prisma_client(prisma_client),
+        _patched_llm_router("text-embedding-3-small"),
         patch(  # test-quality-ok: the DB write boundary whose inputs the test asserts
             "litellm.proxy.vector_store_endpoints.management_endpoints.create_vector_store_in_db",
             new=create_in_db,
@@ -1439,3 +1457,118 @@ async def test_successful_ingest_still_writes_a_vector_store_row():
 
     create_in_db.assert_awaited_once()
     assert create_in_db.await_args.kwargs["vector_store_id"] == "vs_real"
+
+
+_ATTACKER_EMBEDDING_MODEL = "huggingface/https://attacker.example/steal"
+
+
+def _ingest_form_with(ingest_options):
+    return {
+        "files": {"file": ("handbook.txt", io.BytesIO(b"handbook"), "text/plain")},
+        "data": {"request": json.dumps({"ingest_options": ingest_options})},
+    }
+
+
+@pytest.mark.parametrize(
+    "ingest_options",
+    [
+        {"vector_store": {"custom_llm_provider": "mongodb", "litellm_embedding_model": _ATTACKER_EMBEDDING_MODEL}},
+        {"vector_store": {"custom_llm_provider": "s3_vectors", "embedding_model": _ATTACKER_EMBEDDING_MODEL}},
+        {"vector_store": {"custom_llm_provider": "mongodb"}, "embedding": {"model": _ATTACKER_EMBEDDING_MODEL}},
+    ],
+    ids=["store-litellm-embedding-model", "store-embedding-model", "ingest-embedding-option"],
+)
+def test_rag_ingest_rejects_embedding_models_the_proxy_does_not_serve_from_non_admins(
+    client_internal_user, ingest_options
+):
+    """Regression: the ingest embedded chunks with litellm directly for a model the router did not serve, so a
+    non-admin's huggingface/<their url> received the proxy's HUGGINGFACE_API_KEY."""
+    aingest_patch, registry_patch = _patched_ingest_boundary(None, {"vector_store_id": "vs", "file_id": "f"})
+    with (
+        aingest_patch as mock_aingest,
+        registry_patch,
+        _patched_prisma_client(None),
+        _patched_llm_router("text-embedding-3-small"),
+    ):
+        response = client_internal_user.post("/v1/rag/ingest", **_ingest_form_with(ingest_options))
+
+    assert response.status_code == 400, response.json()
+    assert f"embedding model {_ATTACKER_EMBEDDING_MODEL} is not configured on this proxy" in response.json()["detail"]
+    mock_aingest.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "ingest_options",
+    [
+        {"vector_store": {"custom_llm_provider": "mongodb"}, "embedding": {"model": "text-embedding-3-small"}},
+        {"vector_store": {"custom_llm_provider": "mongodb"}, "ocr": {"model": "mistral-ocr"}},
+    ],
+    ids=["embedding", "ocr"],
+)
+def test_rag_ingest_rejects_models_the_callers_key_may_not_call(ingest_options):
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.proxy_server import app
+
+    restricted_key = UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER.value, models=["gpt-4o"])
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: restricted_key
+    aingest_patch, registry_patch = _patched_ingest_boundary(None, {"vector_store_id": "vs", "file_id": "f"})
+    try:
+        with (
+            aingest_patch as mock_aingest,
+            registry_patch,
+            _patched_prisma_client(None),
+            _patched_llm_router("text-embedding-3-small", "mistral-ocr"),
+        ):
+            response = TestClient(app).post("/v1/rag/ingest", **_ingest_form_with(ingest_options))
+    finally:
+        app.dependency_overrides = original_overrides
+
+    assert response.status_code == 403, response.json()
+    mock_aingest.assert_not_awaited()
+
+
+def test_rag_ingest_lets_a_non_admin_use_router_served_models_their_key_may_call(client_internal_user):
+    ingest_options = {
+        "vector_store": {"custom_llm_provider": "mongodb", "litellm_embedding_model": "text-embedding-3-small"},
+        "ocr": {"model": "mistral-ocr"},
+    }
+    aingest_patch, registry_patch = _patched_ingest_boundary(None, {"vector_store_id": "vs", "file_id": "f"})
+    with (
+        aingest_patch as mock_aingest,
+        registry_patch,
+        _patched_prisma_client(None),
+        _patched_llm_router("text-embedding-3-small", "mistral-ocr"),
+    ):
+        response = client_internal_user.post("/v1/rag/ingest", **_ingest_form_with(ingest_options))
+
+    assert response.status_code == 200, response.json()
+    mock_aingest.assert_awaited_once()
+
+
+def test_rag_ingest_fails_for_a_store_embedding_model_the_router_does_not_serve(client_proxy_admin, monkeypatch):
+    """An admin may save any model, but on a proxy the ingest still embeds only through the router, so a model it
+    does not serve fails the ingest instead of reaching the provider with the proxy's own keys."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "sidecar-key")
+    ingest_options = {
+        "vector_store": {
+            "custom_llm_provider": "mongodb",
+            "litellm_embedding_model": _ATTACKER_EMBEDDING_MODEL,
+            "mongodb_database": "knowledge",
+            "mongodb_collection": "company_handbook",
+        }
+    }
+    with (
+        patch.object(litellm, "vector_store_registry", _registry_with(None)),
+        _patched_prisma_client(None),
+        _patched_llm_router("text-embedding-3-small"),
+        patch(  # test-quality-ok: asserts the SDK path is never taken
+            "litellm.aembedding", new=AsyncMock()
+        ) as direct_embedding,
+    ):
+        response = client_proxy_admin.post("/v1/rag/ingest", **_ingest_form_with(ingest_options))
+
+    assert response.json()["status"] == "failed"
+    assert _ATTACKER_EMBEDDING_MODEL in response.json()["error"]
+    direct_embedding.assert_not_awaited()

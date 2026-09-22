@@ -39,11 +39,13 @@ from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.rbac_utils import check_feature_access_for_user
 from litellm.proxy.vector_store_endpoints.utils import (
     CREDENTIAL_NAME_KEY,
+    assert_caller_can_use_models,
     assert_proxy_admin_for_env_references,
     assert_proxy_admin_for_vector_store_params,
     can_user_access_vector_store,
     filter_listable_vector_stores,
     is_proxy_admin,
+    store_embedding_models,
 )
 from litellm.repositories.prisma_protocols import TableActions
 from litellm.repositories.table_repositories import ManagedVectorStoresRepository
@@ -333,6 +335,11 @@ async def new_vector_store(
     assert_proxy_admin_for_vector_store_params(
         MappingProxyType({CREDENTIAL_NAME_KEY: vector_store.get(CREDENTIAL_NAME_KEY)}), user_api_key_dict
     )
+    from litellm.proxy.proxy_server import llm_router
+
+    await assert_caller_can_use_models(
+        store_embedding_models(vector_store.get("litellm_params")), user_api_key_dict, llm_router
+    )
     if (
         not is_proxy_admin(user_api_key_dict)
         and litellm.vector_store_registry is not None
@@ -606,7 +613,7 @@ async def update_vector_store(
     """
     await check_feature_access_for_user(user_api_key_dict, "vector_stores")
 
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import llm_router, prisma_client
     from litellm.types.router import GenericLiteLLMParams
 
     if prisma_client is None:
@@ -652,6 +659,9 @@ async def update_vector_store(
             )
             assert_proxy_admin_for_vector_store_params(
                 merged_litellm_params, user_api_key_dict, saved_params=saved_litellm_params
+            )
+            await assert_caller_can_use_models(
+                store_embedding_models(merged_litellm_params, saved_litellm_params), user_api_key_dict, llm_router
             )
             assert_proxy_admin_for_env_references(data.litellm_params, user_api_key_dict)
             litellm_params_dict: Final = GenericLiteLLMParams.model_validate(merged_litellm_params).model_dump(

@@ -23,6 +23,7 @@ from litellm.constants import DEFAULT_MAX_RECURSE_DEPTH
 from litellm.integrations.vector_store_integrations.vector_store_pre_call_hook import (
     LiteLLM_ManagedVectorStore,
 )
+from litellm.llms.base_llm.vector_store.transformation import ModelKind
 from litellm.proxy._types import *
 from litellm.proxy.auth.auth_utils import is_request_body_safe
 from litellm.proxy.auth.user_api_key_auth import UserAPIKeyAuth, user_api_key_auth
@@ -48,10 +49,12 @@ from litellm.proxy.vector_store_endpoints.endpoints import (
     reject_caller_embedding_selection_params,
 )
 from litellm.proxy.vector_store_endpoints.utils import (
+    assert_caller_can_use_models,
     assert_proxy_admin_for_env_references,
     assert_proxy_admin_for_request_endpoints,
     assert_proxy_admin_for_vector_store_params,
     assert_user_can_access_vector_store_id,
+    store_embedding_models,
 )
 from litellm.rag.main import get_ingestion_class
 from litellm.repositories.table_repositories import ManagedVectorStoresRepository
@@ -178,6 +181,19 @@ def _caller_vector_store_options(
         return request_vector_store_config
     return MappingProxyType(
         {key: value for key, value in request_vector_store_config.items() if key in MANAGED_STORE_CALLER_OPTIONS}
+    )
+
+
+_INGEST_MODEL_OPTIONS: Final[tuple[tuple[str, ModelKind], ...]] = (("embedding", "embedding"), ("ocr", "OCR"))
+
+
+def _ingest_option_models(ingest_options: Mapping[str, object]) -> tuple[tuple[str, ModelKind], ...]:
+    return tuple(
+        (model, kind)
+        for option, kind in _INGEST_MODEL_OPTIONS
+        if (section := _as_string_keyed_mapping(ingest_options.get(option))) is not None
+        and isinstance(model := section.get("model"), str)
+        and model
     )
 
 
@@ -599,6 +615,11 @@ async def rag_ingest(
                 {key: value for key, value in caller_vector_store_options.items() if key != "custom_llm_provider"}
             ),
             user_api_key_dict,
+        )
+        await assert_caller_can_use_models(
+            (*store_embedding_models(caller_vector_store_options), *_ingest_option_models(ingest_options)),
+            user_api_key_dict,
+            llm_router,
         )
         merged_vector_store_config: Final = {  # mutable-ok: ingestion classes mutate it when loading credentials
             **caller_vector_store_options,
