@@ -1,0 +1,78 @@
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 722,728,745,751
+litellm/proxy/auth/auth_utils.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 18,306,340
+tests/test_litellm/llms/s3_vectors/vector_stores/test_s3_vectors_transformation.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 1,178,180-181,188,202,205-234
+  s_d71e62cb6f304c::t_1def91745f82e8 235
+litellm/llms/custom_httpx/llm_http_handler.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 9997,10033,10062,10076,10109
+tests/router_unit_tests/test_router_embedding_integration.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 133,163-165,168,171-172,175-178,180-181,185-187,190-195,197-198,200,202,204,206-209,211-212
+litellm/llms/base_llm/vector_store/transformation.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 7,12-13,81-101,118-128,130,132-139,143,146,150,153-180,267,274-277,333,340,470-510,521,536
+litellm/vector_stores/vector_store_registry.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 5,23,121-155,157-160,186-211,638-640,642-650
+litellm/router.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 372-373,6606,6611,6794,6864-6867
+litellm/types/vector_stores.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 10-11,410-470
+  s_d71e62cb6f304c::t_91462b0e95bdaa 471
+tests/test_litellm/proxy/rag_endpoints/test_rag_endpoints.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 51-61,131,133-139,142,174-176,310-325,420,430,464-504,672,679-715,1082-1101,1132,1460-1574
+litellm/proxy/vector_store_files_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 22,517,939
+litellm/proxy/vector_store_endpoints/utils.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 5,11-15,23,27-32,34-37,55,68,77,86-194,300,384
+litellm/rag/ingestion/base_ingestion.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 17-18,33,39-44,83-85,94-96
+litellm/proxy/rag_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 26,52,54-55,57,187-199,612-623,625,814
+tests/test_litellm/proxy/auth/test_auth_utils.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 2144-2145
+litellm/proxy/vector_store_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 20-21,23,26,32,34,76-78,82-83,154,234-238,472
+litellm/vector_stores/main.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 123,129-134,155-156,195,211-216,281,420
+litellm/llms/s3_vectors/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 76-78
+  s_d71e62cb6f304c::t_e54f39f72ec808 75
+litellm/constants.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 1995-2020
+tests/test_litellm/vector_stores/test_main.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 92-151
+tests/test_litellm/test_rag_openai_ingestion.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 101-126
+litellm/vector_store_files/main.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 46
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 10,174-178,218-222,230-268,459-492
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 41-42,44,47-48,80,334-352,616,642-643,647-654,656-666,764-774
+  s_d71e62cb6f304c::t_e8179d3edb85fc 775-776
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 19,41-52,107-111,116-119,169,2140-2428,2448,2476,2525,2947-3109,3292,3297-3302,3391-3393,3553-3818,4185-4346
+  s_d71e62cb6f304c::t_61fb228dff7b44 4347-4348
+tests/test_litellm/vector_stores/test_vector_store_registry.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 276-285
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 10,509-566
+tests/test_litellm/proxy/vector_store_files_endpoints/test_endpoints.py
+  s_d71e62cb6f304c::t_babc4f31ef90f7 144-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "f86df816db7ec5dd5be58782043ed3c7c7de6519",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
