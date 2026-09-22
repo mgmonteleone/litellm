@@ -1,0 +1,31 @@
+litellm/model_prices_and_context_window_backup.json
+  s_904317b46153f8::t_42e8d49c206646 47780-47800
+litellm/types/utils.py
+  s_904317b46153f8::t_456c37780e7eec 339
+model_prices_and_context_window.json
+  s_904317b46153f8::t_c0cc68b6d9a4f3 47780-47800
+model_prices_and_context_window.schema.json
+  s_904317b46153f8::t_1020ea112790ed 414
+tests/litellm_utils_tests/test_utils.py
+  s_904317b46153f8::t_87f761d8345989 1363
+tests/test_litellm/test_typesafe_model_metadata.py
+  s_904317b46153f8::t_8e6f3d4bef7393 1-17
+tests/test_litellm/test_utils.py
+  s_904317b46153f8::t_bd034d452d3431 1008
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "54290d475a392784b9bf47ef642180ec3e1f9437",
+  "prompts": {},
+  "sessions": {
+    "s_904317b46153f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abe9ca31-133a-4bed-8856-640185ecb6d8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}

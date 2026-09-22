@@ -1,0 +1,29 @@
+litellm/proxy/management_endpoints/auto_router_endpoints.py
+  s_904317b46153f8::t_88d387d9f40a6b 426-432
+litellm/router_strategy/complexity_router/config.py
+  s_904317b46153f8::t_20e93b39051b20 612-620
+tests/test_litellm/proxy/management_endpoints/test_auto_router_endpoints.py
+  s_904317b46153f8::t_1bfa66377017bc 435,486,2619-2690
+tests/test_litellm/router_strategy/complexity_router/test_jev_classifier.py
+  s_904317b46153f8::t_92f072e3dc7363 40,45-77
+litellm/proxy/management_endpoints/model_management_endpoints.py
+  s_904317b46153f8::t_b12be2b1df041c 291-314,881,2022,2207
+tests/test_litellm/proxy/management_endpoints/test_model_management_endpoints.py
+  s_904317b46153f8::t_ccfafce6264f86 33,403-524
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "6897ece597f2c3f7d108d971323cb0f8126909d1",
+  "prompts": {},
+  "sessions": {
+    "s_904317b46153f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abe9ca31-133a-4bed-8856-640185ecb6d8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}

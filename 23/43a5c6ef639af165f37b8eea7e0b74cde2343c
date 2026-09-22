@@ -1,0 +1,29 @@
+litellm/router_strategy/complexity_router/config.py
+  s_904317b46153f8::t_5c3fd7b7a189e2 572-612,636,757,763-764,781,1291-1301,1512
+litellm/router_strategy/complexity_router/jev_classifier.py
+  s_904317b46153f8::t_8a50d3d035ea0b 1-126
+litellm/types/utils.py
+  s_904317b46153f8::t_7c21127ae45fb3 2853,2940-2941,2970-2971
+tests/test_litellm/router_strategy/complexity_router/test_jev_classifier.py
+  s_904317b46153f8::t_a3f6ade07bc72a 1-165
+tests/test_litellm/router_strategy/test_complexity_router.py
+  s_904317b46153f8::t_d191b585d612ad 30,52-57,119-142,265-480
+litellm/router_strategy/complexity_router/complexity_router.py
+  s_904317b46153f8::t_fad0695d33be44 49,55-56,87,90-97,150-158,928,937,944-957,1106-1117,1125,1153-1161,1228-1229,1235-1236,1239-1241,1641-1642,1801-1882,3840-3842,3870-3886
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "2343a5c6ef639af165f37b8eea7e0b74cde2343c",
+  "prompts": {},
+  "sessions": {
+    "s_904317b46153f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abe9ca31-133a-4bed-8856-640185ecb6d8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}

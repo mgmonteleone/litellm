@@ -1,0 +1,28 @@
+tests/test_litellm/proxy/guardrails/guardrail_hooks/test_headroom.py
+  s_904317b46153f8::t_6aa65cfcb51b58 2465-2466,2469
+  s_904317b46153f8::t_5228168ec6144f 2467
+  s_904317b46153f8::t_df0ed1fb856e35 2468
+  s_904317b46153f8::t_8fb89fa0543b11 2462-2464
+  s_904317b46153f8::t_2c5e35b71315ca 2470-2472
+  s_904317b46153f8::t_21af9a78fb0a3f 1718-1719,2433-2461
+litellm/compression/compress.py
+  s_904317b46153f8::t_9ed55d3ff69a7e 208-224,231,235-238,242-243,445
+tests/test_litellm/compression/test_compress.py
+  s_904317b46153f8::t_4ba982a97b3e19 9-10,57-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "b4e5df616248e6d30f40887600ff11e20c62e441",
+  "prompts": {},
+  "sessions": {
+    "s_904317b46153f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abe9ca31-133a-4bed-8856-640185ecb6d8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
