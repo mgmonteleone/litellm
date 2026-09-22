@@ -1,0 +1,41 @@
+litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py
+  s_2209f22f830d7f::t_1ffe6022111a22 252-254
+litellm/proxy/vector_store_endpoints/endpoints.py
+  s_2209f22f830d7f::t_7a35df6091c312 70-77
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_2209f22f830d7f::t_77f8491cd98a99 743-745
+litellm/vector_stores/vector_store_registry.py
+  s_2209f22f830d7f::t_92317f01dce1e0 106-107,110-124,127,130-136
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_71e2afa2b4fda2 2954-2956,3016,3050-3052,3422-3443,3447,3451,3456
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_test_connection.py
+  s_d71e62cb6f304c::t_e696c392e73478 216,220,230-244
+tests/test_litellm/vector_stores/test_vector_store_registry.py
+  s_d71e62cb6f304c::t_bc3a0bbe01d671 225,229,231-232,234-240,242,246,249-261
+tests/unit/integrations/vector_store_integrations/test_vector_store_pre_call_hook.py
+  s_d71e62cb6f304c::t_132260bcedef2e 570-606
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "f99cf63c1d2ff2d397a7c1310683849a51442602",
+  "prompts": {},
+  "sessions": {
+    "s_2209f22f830d7f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "35a2d2ad-0d97-475b-b379-d300c218cb16",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    },
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
