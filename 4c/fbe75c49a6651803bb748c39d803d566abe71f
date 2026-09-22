@@ -1,0 +1,29 @@
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_1233f2966ee1b1 914-933,942
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_provider_defaults.py
+  s_d71e62cb6f304c::t_52914d2e5bd034 48-54,59-61,65-66,70-81
+  s_d71e62cb6f304c::t_28158aee10e907 55-58,62-64,67-69
+  s_d71e62cb6f304c::t_a1827e7a8523f9 82
+tests/unit/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_d71e62cb6f304c::t_c32ecf68281d5e 353-370
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_d55a8d154c4d91 430
+  s_d71e62cb6f304c::t_3ad169391b26e0 68-97
+  s_d71e62cb6f304c::t_506d58193a3809 428-429
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "4cfbe75c49a6651803bb748c39d803d566abe71f",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
