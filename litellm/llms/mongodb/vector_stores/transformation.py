@@ -87,16 +87,16 @@ def resolve_sidecar_api_key(api_base: str | None, api_key: str | None) -> str:
     MONGODB_SIDECAR_API_KEY may only be sent to MONGODB_SIDECAR_API_BASE (or when the store sets no
     api_base at all, which resolves to that same env base in ``get_complete_url``). A store that points
     api_base at a different host must supply its own api_key, or the deployment's key would be handed
-    to an arbitrary host as a Bearer token.
+    to an arbitrary host as a Bearer token. That holds however the key arrived: the env fallback, an
+    explicit value, a resolved ``os.environ/`` reference, or a credential.
     """
-    if api_key:
-        return api_key
-    if not _uses_env_api_base(api_base, get_secret_str("MONGODB_SIDECAR_API_BASE")):
-        raise config_error(_CUSTOM_API_BASE_NEEDS_OWN_KEY)
     env_key: Final = get_secret_str("MONGODB_SIDECAR_API_KEY")
-    if not env_key:
+    key: Final = api_key or env_key
+    if not key:
         raise config_error("MongoDB sidecar api_key is required. Set api_key or MONGODB_SIDECAR_API_KEY.")
-    return env_key
+    if key == env_key and not _uses_env_api_base(api_base, get_secret_str("MONGODB_SIDECAR_API_BASE")):
+        raise config_error(_CUSTOM_API_BASE_NEEDS_OWN_KEY)
+    return key
 
 
 def sidecar_api_base_error(value: str) -> str | None:

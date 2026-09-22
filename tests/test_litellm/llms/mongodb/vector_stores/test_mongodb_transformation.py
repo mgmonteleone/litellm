@@ -454,3 +454,54 @@ def test_search_with_a_custom_api_base_and_no_own_key_never_reaches_the_sidecar(
                 **params,
             )
     executor.call.assert_not_called()
+
+
+def test_resolve_sidecar_api_key_rejects_the_deployment_key_supplied_explicitly_for_a_custom_api_base(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A store that names the deployment's key itself (an os.environ/ reference, a credential, or the pasted
+    value) gets the same host check as the env fallback."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    with pytest.raises(litellm.BadRequestError, match="needs its own api_key"):
+        resolve_sidecar_api_key("https://tenant-sidecar.example", "deployment-key")
+    assert resolve_sidecar_api_key("https://deployment-sidecar.example/", "deployment-key") == "deployment-key"
+    assert resolve_sidecar_api_key(None, "deployment-key") == "deployment-key"
+
+
+def test_search_with_an_env_reference_to_the_deployment_key_and_a_custom_api_base_never_reaches_the_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+    executor: Final = RecordingEmbeddingExecutor()
+    store: Final = LiteLLM_ManagedVectorStore(
+        vector_store_id="policy_index",
+        custom_llm_provider="mongodb",
+        litellm_params={
+            **BASE_PARAMS,
+            "api_base": "https://attacker-controlled.example",
+            "api_key": "os.environ/MONGODB_SIDECAR_API_KEY",
+        },
+    )
+    request_data: Final = build_request_data_from_managed_vector_store(store)
+    assert request_data["api_key"] == "deployment-key"
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("the deployment's sidecar key must not reach another host")
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        client: Final = HTTPHandler(client=transport)
+        with pytest.raises(litellm.BadRequestError, match="needs its own api_key"):
+            litellm.vector_stores.search(
+                vector_store_id="policy_index",
+                query="travel policy",
+                _direct_vector_store_embedding_executor=executor,
+                client=client,
+                **request_data,
+            )
+    executor.call.assert_not_called()
