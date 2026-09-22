@@ -1,0 +1,27 @@
+litellm/llms/mongodb/vector_stores/diagnostics.py
+  s_d71e62cb6f304c::t_53a9a5755d0f2e 38
+  s_d71e62cb6f304c::t_784ca87f8904ab 269-275,277-281,300,302-303
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionChecklist.test.tsx
+  s_d71e62cb6f304c::t_dca1caa8598405 156
+  s_d71e62cb6f304c::t_733c60012c64a6 116-155,157
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionChecklist.tsx
+  s_d71e62cb6f304c::t_49957ed273291d 69-71,73-75,79-82
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_diagnostics.py
+  s_d71e62cb6f304c::t_ceb0ed39831190 232-305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "b425f418283cd69187b3a3fb5070eb76462e3ad6",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

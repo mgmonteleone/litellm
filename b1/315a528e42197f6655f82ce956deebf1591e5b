@@ -1,0 +1,34 @@
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vectorStoreFormSchema.test.ts
+  s_d71e62cb6f304c::t_e4b24f4f316a62 129-160
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vectorStoreFormSchema.ts
+  s_d71e62cb6f304c::t_3be334218d1ed6 110-124,150-154
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_6fec63ceab615f 72-99
+  s_d71e62cb6f304c::t_056eb9fc382931 456
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_d71e62cb6f304c::t_e28b1589470511 11
+  s_d71e62cb6f304c::t_54a801d1f3d9cb 393-456
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.mongodb.test.tsx
+  s_d71e62cb6f304c::t_84977042e18ead 7
+  s_d71e62cb6f304c::t_7aaca08255aa4e 135-153
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.tsx
+  s_d71e62cb6f304c::t_3a65caa54e77d2 224-230
+  s_d71e62cb6f304c::t_3ae050e42ffe02 64-78
+  s_d71e62cb6f304c::t_81eef304759756 223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "b1315a528e42197f6655f82ce956deebf1591e5b",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

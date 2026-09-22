@@ -1,0 +1,34 @@
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_diagnostics.py
+  s_d71e62cb6f304c::t_87fb685ff3d260 250-288
+litellm/llms/mongodb/vector_stores/diagnostics.py
+  s_d71e62cb6f304c::t_986665ebc2a7bb 66-67
+  s_d71e62cb6f304c::t_f85bebb0b1d3a5 23
+  s_d71e62cb6f304c::t_81c95f77564674 58,60-62
+  s_d71e62cb6f304c::t_1c8ab68ec78620 124-125,130
+  s_d71e62cb6f304c::t_b1f2af1057ee2b 195-199
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_test_connection.py
+  s_d71e62cb6f304c::t_c60fb79b2c50ce 30,34,36
+  s_d71e62cb6f304c::t_91ff82f65d9502 101-112
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_4c07dc7998cacf 661-662,666-668
+litellm/llms/base_llm/vector_store/transformation.py
+  s_d71e62cb6f304c::t_8a51fa92f0f984 227-228,235-238
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  s_d71e62cb6f304c::t_4765e6b3b379c0 876
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "1502976b4795712536526d7aa48ce7704b55a94e",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
