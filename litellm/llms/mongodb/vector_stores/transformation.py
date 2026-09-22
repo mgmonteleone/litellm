@@ -719,12 +719,13 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
         api_base: str,
         litellm_params: Mapping[str, object],
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
     ) -> tuple[str, dict]:  # mutable-ok: the provider contract returns a writable JSON request body
         params: Final = validated_params(litellm_params)
         index_name: Final = self._index_name(vector_store_create_optional_params)
         dimensions: Final = params.mongodb_dimensions or len(
             embedding_vector(
-                self.embedding_executor.embed(
+                (embedding_executor or self.embedding_executor).embed(
                     params.require_embedding_model(),
                     DIMENSION_PROBE_TEXT,
                     params.litellm_embedding_config or _EMPTY_EMBEDDING_CONFIG,
@@ -741,12 +742,13 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
         api_base: str,
         litellm_params: Mapping[str, object],
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
     ) -> tuple[str, dict]:  # mutable-ok: the provider contract returns a writable JSON request body
         params: Final = validated_params(litellm_params)
         index_name: Final = self._index_name(vector_store_create_optional_params)
         dimensions: Final = params.mongodb_dimensions or len(
             embedding_vector(
-                await self.embedding_executor.aembed(
+                await (embedding_executor or self.embedding_executor).aembed(
                     params.require_embedding_model(),
                     DIMENSION_PROBE_TEXT,
                     params.litellm_embedding_config or _EMPTY_EMBEDDING_CONFIG,

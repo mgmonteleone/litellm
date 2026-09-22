@@ -7,6 +7,8 @@ from typing import Any, Final, Literal
 from pydantic import BaseModel, Field
 from typing_extensions import ReadOnly, TypedDict
 
+from litellm.constants import CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS
+
 
 class SupportedVectorStoreIntegrations(str, Enum):
     """Supported vector store integrations."""
@@ -404,6 +406,68 @@ MANAGED_STORE_CALLER_OPTIONS: Final = frozenset(
 )
 """Per-request ingest options a caller may send for a managed store, as opposed to the
 store's own configuration. Providers treat them as recognised keys rather than typos."""
+
+NON_ADMIN_VECTOR_STORE_PARAMS: Final = frozenset(
+    {
+        *MANAGED_STORE_CALLER_OPTIONS,
+        "litellm_embedding_model",
+        "embedding_model",
+        "ttl_days",
+        "wait_for_import",
+        "import_timeout",
+        "s3_prefix",
+        "vector_bucket_name",
+        "index_name",
+        "dimension",
+        "distance_metric",
+        "non_filterable_metadata_keys",
+        "vertex_collection_id",
+        "vertex_engine_id",
+        "azure_search_vector_field",
+        "milvus_db_name",
+        "milvus_partition_names",
+        "milvus_text_field",
+        "valkey_text_field",
+        "valkey_embedding_field",
+        "mongodb_database",
+        "mongodb_collection",
+        "mongodb_text_field",
+        "mongodb_embedding_field",
+        "mongodb_num_candidates",
+        "mongodb_dimensions",
+        "mongodb_similarity",
+        "mongodb_filter_fields",
+        "mongodb_text_index",
+        "mongodb_hybrid_search",
+        "mongodb_hybrid_weights",
+        "mongodb_exact_search",
+        "mongodb_score_threshold",
+    }
+)
+"""The only litellm_params a non-admin may set, change or clear on a vector store: what data to read and how to
+shape it, never where traffic goes or what signs it. Each one only reaches a request path or body. Values must be
+scalars or lists of scalars, except the keys in NON_ADMIN_VECTOR_STORE_MAPPING_PARAMS."""
+
+NON_ADMIN_VECTOR_STORE_MAPPING_PARAMS: Final = frozenset({"custom_metadata", "mongodb_hybrid_weights"})
+
+VECTOR_STORE_ENDPOINT_KEYS: Final = CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS | frozenset(
+    {
+        "endpoint",
+        "aws_region_name",
+        "azure_scope",
+        "tenant_id",
+        "client_id",
+        "vertex_project",
+        "vertex_ai_project",
+        "vertex_location",
+        "vertex_ai_location",
+        "valkey_host",
+        "valkey_port",
+        "valkey_ssl",
+    }
+)
+"""Params that decide where a vector store sends its traffic, or which cloud identity signs it. A search or query
+body may not carry them from a non-admin, and a managed store's saved values win over anything a request carries."""
 
 
 VECTOR_STORE_OPENAI_PARAMS = Literal[

@@ -73,6 +73,10 @@ class S3VectorsVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig, BaseAWSLLM
         return configured if isinstance(configured, str) and configured else _DEFAULT_QUERY_EMBEDDING_MODEL
 
     @staticmethod
+    def default_query_embedding_model(litellm_params: Mapping[str, object]) -> str | None:
+        return _DEFAULT_QUERY_EMBEDDING_MODEL
+
+    @staticmethod
     def _query_target(vector_store_id: str, litellm_params: Mapping[str, object]) -> tuple[str, str]:
         if ":" in vector_store_id:
             bucket_name, index_name = vector_store_id.split(":", 1)

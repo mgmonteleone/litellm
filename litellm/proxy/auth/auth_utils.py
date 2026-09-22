@@ -15,6 +15,7 @@ from litellm import Router, provider_list
 from litellm._logging import verbose_proxy_logger
 from litellm.constants import (
     BATCH_ENQUEUED_TOKEN_LIMIT_METADATA_KEY,
+    CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS,
     EMPTY_MAPPING,
     INVALID_VIRTUAL_KEY_ERROR_MARKER,
     MINIMUM_CUSTOM_KEY_LENGTH,
@@ -302,8 +303,7 @@ def _build_banned_observability_params() -> frozenset[str]:
 
 
 _BANNED_REQUEST_BODY_PARAMS: Final[tuple[str, ...]] = (
-    "api_base",
-    "base_url",
+    *sorted(CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS),
     "user_config",
     "aws_sts_endpoint",
     "aws_web_identity_token",
@@ -336,17 +336,8 @@ _BANNED_REQUEST_BODY_PARAMS: Final[tuple[str, ...]] = (
     # reachable with the deployment's shared AWS credentials.
     "aws_bedrock_project_id",
     "bedrock_tags",
-    # Provider-specific endpoint overrides that flow into the outbound
-    # request via ``optional_params``. Same threat as ``api_base``:
-    # ``s3_endpoint_url`` redirects Bedrock file uploads to attacker
-    # S3; ``sagemaker_base_url`` redirects all SageMaker traffic;
-    # ``deployment_url`` redirects SAP deployments.
-    "s3_endpoint_url",
-    "sagemaker_base_url",
-    "deployment_url",
     # NVIDIA Riva fields consumed by the audio-transcription handler
-    # via ``optional_params``. Banned for the same reason as the
-    # provider-specific entries above: a caller-supplied value retargets
+    # via ``optional_params``. A caller-supplied value retargets
     # the request away from the admin's pinned configuration.
     "nvcf_function_id",
     "use_ssl",
@@ -358,7 +349,6 @@ _BANNED_REQUEST_BODY_PARAMS: Final[tuple[str, ...]] = (
     "rust",
     # SDK-only field; also rejected outright in is_request_body_safe.
     "model_list",
-    "vertex_ai_credentials",
     # Observability credentials, hosts, and project identifiers: derived
     # from the canonical ``_supported_callback_params`` allowlist so new
     # integrations are covered automatically. Sorted for stable iteration

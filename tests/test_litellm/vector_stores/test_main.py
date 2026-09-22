@@ -89,3 +89,63 @@ def test_search_router_not_in_litellm_params():
     litellm_params = mock_handler.call_args.kwargs["litellm_params"]
     assert "router" not in litellm_params.model_dump(exclude_none=True)
     assert getattr(litellm_params, "router", None) is None
+
+
+@pytest.mark.parametrize(
+    "store_params,credential_values,expected_api_base",
+    [
+        ({}, {"api_key": "sk-credential"}, None),
+        ({}, {"api_key": "sk-credential", "api_base": "https://credential.example"}, "https://credential.example"),
+        ({"api_base": "https://store.example"}, {"api_key": "sk-credential"}, "https://store.example"),
+        (
+            {"api_base": "https://store.example"},
+            {"api_key": "sk-credential", "api_base": "https://credential.example"},
+            "https://store.example",
+        ),
+    ],
+    ids=["neither-sets-it", "credential-endpoint", "store-endpoint", "store-over-credential"],
+)
+def test_search_pins_a_registry_stores_endpoint_over_the_callers(store_params, credential_values, expected_api_base):
+    """Regression: the caller's api_base stayed next to the registry credential's api_key, and a store's own saved
+    api_base was dropped whenever it named a credential."""
+    import litellm
+    from litellm.types.utils import CredentialItem
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+    from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+    registry = VectorStoreRegistry(
+        vector_stores=[
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs-cred",
+                custom_llm_provider="openai",
+                litellm_credential_name="openai-prod",
+                litellm_params=store_params,
+            )
+        ]
+    )
+    credential = CredentialItem(credential_name="openai-prod", credential_values=credential_values, credential_info={})
+
+    with (
+        patch.object(litellm, "vector_store_registry", registry),
+        patch.object(litellm, "credential_list", [credential]),
+        patch(  # test-quality-ok: stubs provider config resolution; the seam under test is litellm_params contents
+            "litellm.vector_stores.main.ProviderConfigManager.get_provider_vector_stores_config",
+            return_value=MagicMock(),
+        ),
+        patch.object(  # test-quality-ok: the handler call is where the outgoing endpoint and key surface
+            vector_stores_main.base_llm_http_handler,
+            "vector_store_search_handler",
+            return_value=MOCK_SEARCH_RESPONSE,
+        ) as mock_handler,
+    ):
+        search(
+            vector_store_id="vs-cred",
+            query="q",
+            custom_llm_provider="openai",
+            api_base="https://attacker.example",
+            litellm_logging_obj=MagicMock(),
+        )
+
+    litellm_params = mock_handler.call_args.kwargs["litellm_params"]
+    assert litellm_params.api_key == "sk-credential"
+    assert litellm_params.api_base == expected_api_base

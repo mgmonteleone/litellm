@@ -38,9 +38,14 @@ from litellm.proxy._types import (
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.rbac_utils import check_feature_access_for_user
 from litellm.proxy.vector_store_endpoints.utils import (
+    CREDENTIAL_NAME_KEY,
+    assert_caller_can_use_models,
     assert_proxy_admin_for_env_references,
+    assert_proxy_admin_for_vector_store_params,
     can_user_access_vector_store,
     filter_listable_vector_stores,
+    is_proxy_admin,
+    store_embedding_models,
 )
 from litellm.repositories.prisma_protocols import TableActions
 from litellm.repositories.table_repositories import ManagedVectorStoresRepository
@@ -72,7 +77,7 @@ def _row_to_vector_store(row: "_VectorStoreRow") -> LiteLLM_ManagedVectorStore:
 
 
 _LITELLM_PARAMS_MASKER: Final = SensitiveDataMasker(extra_sensitive_patterns=frozenset(("connection",)))
-_EMPTY_PARAMS: Final = MappingProxyType({})
+_EMPTY_PARAMS: Final[Mapping[str, object]] = MappingProxyType({})
 
 # The redaction placeholder every read path echoes back for a saved secret, and the only string an update
 # request can send to mean "keep the saved value" (see ``update_vector_store``). It is REDACTED_BY_LITELM,
@@ -326,6 +331,25 @@ async def new_vector_store(
     """
     await check_feature_access_for_user(user_api_key_dict, "vector_stores")
     assert_proxy_admin_for_env_references(vector_store.get("litellm_params"), user_api_key_dict)
+    assert_proxy_admin_for_vector_store_params(vector_store.get("litellm_params"), user_api_key_dict)
+    assert_proxy_admin_for_vector_store_params(
+        MappingProxyType({CREDENTIAL_NAME_KEY: vector_store.get(CREDENTIAL_NAME_KEY)}), user_api_key_dict
+    )
+    from litellm.proxy.proxy_server import llm_router
+
+    await assert_caller_can_use_models(
+        store_embedding_models(vector_store.get("litellm_params")), user_api_key_dict, llm_router
+    )
+    if (
+        not is_proxy_admin(user_api_key_dict)
+        and litellm.vector_store_registry is not None
+        and vector_store.get("vector_store_id") in litellm.vector_store_registry.config_vector_store_ids
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="A vector store from the proxy config already uses this vector_store_id. Only proxy admins can "
+            "save a database store under it, since that store would take its place for every caller.",
+        )
 
     from litellm.proxy.proxy_server import prisma_client
 
@@ -589,7 +613,7 @@ async def update_vector_store(
     """
     await check_feature_access_for_user(user_api_key_dict, "vector_stores")
 
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import llm_router, prisma_client
     from litellm.types.router import GenericLiteLLMParams
 
     if prisma_client is None:
@@ -615,31 +639,31 @@ async def update_vector_store(
         # Merge request litellm_params over the saved ones, the same way /vector_store/new persists them: request
         # keys win, a value equal to the redaction sentinel keeps the saved secret instead of overwriting it, and
         # an os.environ/ reference is stored as-is and resolved later, for allowlisted names only, by
-        # resolve_litellm_params_references. Only proxy admins may save params holding a reference, or repoint a
-        # store that holds one, since a changed api_base would receive the resolved secret. The ad hoc
+        # resolve_litellm_params_references. Only proxy admins may send a reference, or set, change or clear anything
+        # outside NON_ADMIN_VECTOR_STORE_PARAMS (or the provider). The ad hoc
         # test_connection/discover path (_resolve_connection_target) rejects references outright. This stores the
         # raw params (no credential resolution), since each search embeds the query through the router at request
         # time.
-        if "custom_llm_provider" in update_data:
-            assert_proxy_admin_for_env_references(_saved_raw_litellm_params(saved_store), user_api_key_dict)
+        if (
+            "custom_llm_provider" in update_data
+            and data.custom_llm_provider != saved_store.get("custom_llm_provider")
+            and not is_proxy_admin(user_api_key_dict)
+        ):
+            raise HTTPException(
+                status_code=403, detail="Only proxy admins can change a vector store's custom_llm_provider."
+            )
         if "litellm_params" in update_data:
-            _reject_misspelled_redaction_sentinel(update_data.get("litellm_params") or _EMPTY_PARAMS)
-            request_litellm_params: Final = {
-                key: value
-                for key, value in (update_data.get("litellm_params") or _EMPTY_PARAMS).items()
-                if value != REDACTED_BY_LITELM_STRING
-            }
-            # A request value of None means "clear this field" (see connectionEditPayload.ts): the merge
-            # below lets it override the saved value, then this drops the key entirely rather than
-            # persisting the field as null.
-            _saved_and_request_litellm_params: Final[dict[str, object]] = {
-                **_saved_raw_litellm_params(saved_store),
-                **request_litellm_params,
-            }
-            merged_litellm_params: Final[dict[str, object]] = {
-                key: value for key, value in _saved_and_request_litellm_params.items() if value is not None
-            }
-            assert_proxy_admin_for_env_references(merged_litellm_params, user_api_key_dict)
+            saved_litellm_params: Final = _saved_raw_litellm_params(saved_store)
+            merged_litellm_params: Final = _merge_update_litellm_params(
+                saved_litellm_params, data.litellm_params or _EMPTY_PARAMS
+            )
+            assert_proxy_admin_for_vector_store_params(
+                merged_litellm_params, user_api_key_dict, saved_params=saved_litellm_params
+            )
+            await assert_caller_can_use_models(
+                store_embedding_models(merged_litellm_params, saved_litellm_params), user_api_key_dict, llm_router
+            )
+            assert_proxy_admin_for_env_references(data.litellm_params, user_api_key_dict)
             litellm_params_dict: Final = GenericLiteLLMParams.model_validate(merged_litellm_params).model_dump(
                 exclude_none=True
             )
@@ -735,6 +759,19 @@ def _reject_misspelled_redaction_sentinel(params: Mapping[str, object]) -> None:
             detail=f"'{key}' looks like a misspelled redaction sentinel. Use the exact string "
             f"'{REDACTED_BY_LITELM_STRING}' to keep the saved secret.",
         )
+
+
+def _merge_update_litellm_params(
+    saved_litellm_params: Mapping[str, object], request_litellm_params: Mapping[str, object]
+) -> dict[str, object]:  # mutable-ok: GenericLiteLLMParams.model_validate takes the merged dict
+    """A request value of None means "clear this field" (see connectionEditPayload.ts), so it overrides the saved
+    value and then drops the key rather than persisting the field as null."""
+    _reject_misspelled_redaction_sentinel(request_litellm_params)
+    kept_or_replaced: Final = {
+        **saved_litellm_params,
+        **{key: value for key, value in request_litellm_params.items() if value != REDACTED_BY_LITELM_STRING},
+    }
+    return {key: value for key, value in kept_or_replaced.items() if value is not None}
 
 
 def _saved_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str, object]:  # mutable-ok: merged copy

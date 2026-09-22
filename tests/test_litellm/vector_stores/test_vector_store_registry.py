@@ -273,3 +273,13 @@ def test_contains_env_reference_walks_nested_mappings_and_sequences(value, expec
     from litellm.vector_stores.vector_store_registry import contains_env_reference
 
     assert contains_env_reference(value) is expected
+
+
+def test_contains_env_reference_fails_closed_past_the_walk_depth():
+    from functools import reduce
+
+    from litellm.vector_stores.vector_store_registry import contains_env_reference
+
+    deeply_nested = reduce(lambda inner, _: {"nested": inner}, range(12), "literal")
+
+    assert contains_env_reference(deeply_nested) is True

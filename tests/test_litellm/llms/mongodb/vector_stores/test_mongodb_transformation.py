@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 import litellm
+from litellm.llms.base_llm.vector_store.transformation import RouterVectorStoreEmbeddingExecutor
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig, resolve_sidecar_api_key
 from litellm.types.utils import EmbeddingResponse
@@ -505,3 +506,61 @@ def test_search_with_an_env_reference_to_the_deployment_key_and_a_custom_api_bas
                 **request_data,
             )
     executor.call.assert_not_called()
+
+
+def _handbook_router() -> litellm.Router:
+    return litellm.Router(
+        model_list=[
+            {
+                "model_name": "text-embedding-3-small",
+                "litellm_params": {
+                    "model": "openai/text-embedding-3-small",
+                    "api_key": "deployment-key",
+                    "mock_response": [0.4, 0.5, 0.6],
+                },
+            }
+        ]
+    )
+
+
+def _search_kwargs(embedding_model: str) -> Mapping[str, object]:
+    return {
+        "vector_store_id": "handbook_index",
+        "query": "travel policy",
+        "vector_store_search_optional_params": {},
+        "api_base": BASE_PARAMS["api_base"],
+        "litellm_logging_obj": MagicMock(),
+        "litellm_params": {
+            **BASE_PARAMS,
+            "mongodb_database": "knowledge",
+            "mongodb_collection": "company_handbook",
+            "litellm_embedding_model": embedding_model,
+        },
+        "embedding_executor": RouterVectorStoreEmbeddingExecutor(router=_handbook_router(), metadata={}),
+    }
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.asyncio
+async def test_proxy_search_embeds_the_company_handbook_query_through_the_router(asynchronous: bool) -> None:
+    config: Final = MongoDBVectorStoreConfig()
+    kwargs: Final = _search_kwargs("text-embedding-3-small")
+    _, body = (
+        await config.atransform_search_vector_store_request(**kwargs)
+        if asynchronous
+        else config.transform_search_vector_store_request(**kwargs)
+    )
+    assert body["query_vector"] == (0.4, 0.5, 0.6)
+
+
+def test_proxy_search_rejects_a_store_embedding_model_the_router_does_not_serve() -> None:
+    kwargs: Final = _search_kwargs("huggingface/https://attacker.example/steal")
+    with pytest.raises(litellm.BadRequestError, match="is not configured on this proxy"):
+        MongoDBVectorStoreConfig().transform_search_vector_store_request(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_async_proxy_search_rejects_a_store_embedding_model_the_router_does_not_serve() -> None:
+    kwargs: Final = _search_kwargs("huggingface/https://attacker.example/steal")
+    with pytest.raises(litellm.BadRequestError, match="is not configured on this proxy"):
+        await MongoDBVectorStoreConfig().atransform_search_vector_store_request(**kwargs)

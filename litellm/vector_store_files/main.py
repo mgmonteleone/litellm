@@ -43,12 +43,7 @@ def _prepare_registry_credentials(
 ) -> None:
     if litellm.vector_store_registry is None:
         return
-    try:
-        registry_credentials: Final = litellm.vector_store_registry.get_credentials_for_vector_store(vector_store_id)
-        if registry_credentials:
-            kwargs.update(registry_credentials)
-    except Exception:
-        pass
+    kwargs.update(litellm.vector_store_registry.get_request_params_for_vector_store(vector_store_id))
 
 
 @client

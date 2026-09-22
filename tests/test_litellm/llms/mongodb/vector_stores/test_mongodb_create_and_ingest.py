@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 import litellm
+from litellm.llms.base_llm.vector_store.transformation import RouterVectorStoreEmbeddingExecutor
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig
 from litellm.rag.ingestion.mongodb_ingestion import MongoDBRAGIngestion
@@ -170,7 +171,11 @@ async def test_public_sdk_create_posts_to_sidecar_and_returns_openai_shape() -> 
         return_value=MongoDBVectorStoreConfig(executor),
     ):
         response: Final = await litellm.vector_stores.acreate(
-            name="policy_index", custom_llm_provider="mongodb", client=client, **BASE_PARAMS
+            name="policy_index",
+            custom_llm_provider="mongodb",
+            client=client,
+            _direct_vector_store_embedding_executor=executor,
+            **BASE_PARAMS,
         )
     assert response["id"] == "policy_index"
     assert response["status"] == "in_progress"
@@ -210,12 +215,55 @@ async def test_create_resolves_api_base_from_the_deployment_sidecar_env_var(monk
         return_value=MongoDBVectorStoreConfig(executor),
     ):
         response: Final = await litellm.vector_stores.acreate(
-            name="policy_index", custom_llm_provider="mongodb", client=client, **params_without_api_base
+            name="policy_index",
+            custom_llm_provider="mongodb",
+            client=client,
+            _direct_vector_store_embedding_executor=executor,
+            **params_without_api_base,
         )
     assert response["id"] == "policy_index"
     # The assertion on request.url inside _respond only ever runs if the mock transport is actually
     # hit; without this, a bug that skips the HTTP call entirely could still leave the test green.
     respond.assert_called_once()
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.asyncio
+async def test_create_dimension_probe_never_embeds_a_model_the_router_does_not_serve(asynchronous: bool) -> None:
+    """Regression: POST /v1/vector_stores' dimension probe used to always embed through the SDK
+    directly, so a non-admin's huggingface/<attacker host> embedding model reached that host with
+    the proxy's own provider keys instead of being refused as an unconfigured model."""
+    router: Final = MagicMock()
+    router.get_model_list.return_value = [
+        {"model_name": "team-embeddings", "litellm_params": {"model": "openai/text-embedding-3-small"}}
+    ]
+    router.resolved_litellm_models.return_value = []
+    router.embedding = MagicMock(side_effect=AssertionError("unserved model must not reach the Router"))
+    router.aembedding = MagicMock(side_effect=AssertionError("unserved model must not reach the Router"))
+
+    direct_executor: Final = RecordingEmbeddingExecutor()
+    config: Final = MongoDBVectorStoreConfig(direct_executor)
+    router_executor: Final = RouterVectorStoreEmbeddingExecutor(router=router, metadata={})
+    params: Final = {**BASE_PARAMS, "litellm_embedding_model": "huggingface/http://attacker.example/steal"}
+    create_kwargs: Final = {
+        "vector_store_create_optional_params": {"name": "policy index"},
+        "api_base": "https://sidecar.example",
+        "litellm_params": params,
+        "embedding_executor": router_executor,
+    }
+
+    async def _probe_create() -> None:
+        if asynchronous:
+            await config.atransform_create_vector_store_request_with_litellm_params(**create_kwargs)
+        else:
+            config.transform_create_vector_store_request_with_litellm_params(**create_kwargs)
+
+    with patch("litellm.aembedding") as mock_bare, patch("litellm.embedding") as mock_bare_sync:
+        with pytest.raises(litellm.BadRequestError, match="not configured on this proxy"):
+            await _probe_create()
+        mock_bare.assert_not_called()
+        mock_bare_sync.assert_not_called()
+    direct_executor.call.assert_not_called()
 
 
 def test_mongodb_is_registered_for_rag_ingestion() -> None:
@@ -408,3 +456,37 @@ def test_embedding_config_drops_reserved_kwargs_and_vectors_are_floats() -> None
 
     (document,) = _documents(["a"], [[1, 0]], {}, 0, 1)
     assert document["embedding"] == (1.0, 0.0) and all(isinstance(v, float) for v in document["embedding"])
+
+
+def _handbook_router() -> litellm.Router:
+    return litellm.Router(
+        model_list=[
+            {
+                "model_name": "text-embedding-3-small",
+                "litellm_params": {
+                    "model": "openai/text-embedding-3-small",
+                    "api_key": "deployment-key",
+                    "mock_response": [0.4, 0.5, 0.6],
+                },
+            }
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_proxy_ingestion_embeds_the_company_handbook_through_the_router() -> None:
+    ingestion: Final = MongoDBRAGIngestion(
+        {"vector_store": {**BASE_PARAMS, "litellm_embedding_model": "text-embedding-3-small"}},
+        router=_handbook_router(),
+    )
+    assert await ingestion.embed(["handbook chunk"]) == [[0.4, 0.5, 0.6]]
+
+
+@pytest.mark.asyncio
+async def test_proxy_ingestion_never_embeds_a_model_the_router_does_not_serve() -> None:
+    ingestion: Final = MongoDBRAGIngestion(
+        {"vector_store": {**BASE_PARAMS, "litellm_embedding_model": "huggingface/https://attacker.example/steal"}},
+        router=_handbook_router(),
+    )
+    with pytest.raises(litellm.BadRequestError, match="no healthy deployments"):
+        await ingestion.embed(["handbook chunk"])
