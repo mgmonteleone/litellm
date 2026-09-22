@@ -4,11 +4,12 @@ from abc import abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, NoReturn, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Final, Literal, NoReturn, Protocol, TypeAlias, runtime_checkable
 
 import httpx
 from pydantic import TypeAdapter
 
+from litellm.exceptions import BadRequestError
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import EmbeddingResponse
 from litellm.types.vector_stores import (
@@ -76,6 +77,24 @@ def vector_store_request_metadata(kwargs: Mapping[str, object]) -> Mapping[str, 
     return MappingProxyType({})
 
 
+def router_serves_model(router: Router, model: str, team_id: str | None) -> bool:
+    deployment_models: Final = (
+        deployment.get("litellm_params", {}).get("model") for deployment in router.get_model_list() or ()
+    )
+    return bool(router.resolved_litellm_models(model, team_id)) or model in deployment_models
+
+
+ModelKind: TypeAlias = Literal["embedding", "OCR"]
+
+
+def model_not_configured_message(model: str, kind: ModelKind = "embedding") -> str:
+    return f"{kind} model {model} is not configured on this proxy. Ask a proxy admin to add it as a model."
+
+
+def model_not_configured_error(model: str) -> BadRequestError:
+    return BadRequestError(message=model_not_configured_message(model), model=model, llm_provider="")
+
+
 @dataclass(frozen=True, slots=True)
 class RouterVectorStoreEmbeddingExecutor:
     router: Router
@@ -92,32 +111,25 @@ class RouterVectorStoreEmbeddingExecutor:
             "metadata": metadata,
         }
 
-    def _router_serves(self, model: str) -> bool:
+    def _assert_router_serves(self, model: str) -> None:
         team_id: Final = self.metadata.get("user_api_key_team_id")
-        resolved: Final = self.router.resolved_litellm_models(model, team_id if isinstance(team_id, str) else None)
-        deployment_models: Final = (
-            deployment.get("litellm_params", {}).get("model") for deployment in self.router.get_model_list() or ()
-        )
-        return bool(resolved) or model in deployment_models
+        if not router_serves_model(self.router, model, team_id if isinstance(team_id, str) else None):
+            raise model_not_configured_error(model)
 
     def embed(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
-        embedding_kwargs: Final = self._embedding_kwargs(configuration)
-        if not self._router_serves(model):
-            return LiteLLMVectorStoreEmbeddingExecutor().embed(model, query, embedding_kwargs)
+        self._assert_router_serves(model)
         return self.router.embedding(  # pyright: ignore[reportUnknownMemberType]  # Router embedding input retains a legacy untyped list
             model=model,
             input=[query],  # mutable-ok: Router embedding requires a mutable input list
-            **embedding_kwargs,  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
+            **self._embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
         )
 
     async def aembed(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
-        embedding_kwargs: Final = self._embedding_kwargs(configuration)
-        if not self._router_serves(model):
-            return await LiteLLMVectorStoreEmbeddingExecutor().aembed(model, query, embedding_kwargs)
+        self._assert_router_serves(model)
         return await self.router.aembedding(  # pyright: ignore[reportUnknownMemberType]  # Router embedding input retains a legacy untyped list
             model=model,
             input=[query],  # mutable-ok: Router embedding requires a mutable input list
-            **embedding_kwargs,  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
+            **self._embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
         )
 
 

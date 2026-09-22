@@ -408,3 +408,37 @@ def test_embedding_config_drops_reserved_kwargs_and_vectors_are_floats() -> None
 
     (document,) = _documents(["a"], [[1, 0]], {}, 0, 1)
     assert document["embedding"] == (1.0, 0.0) and all(isinstance(v, float) for v in document["embedding"])
+
+
+def _handbook_router() -> litellm.Router:
+    return litellm.Router(
+        model_list=[
+            {
+                "model_name": "text-embedding-3-small",
+                "litellm_params": {
+                    "model": "openai/text-embedding-3-small",
+                    "api_key": "deployment-key",
+                    "mock_response": [0.4, 0.5, 0.6],
+                },
+            }
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_proxy_ingestion_embeds_the_company_handbook_through_the_router() -> None:
+    ingestion: Final = MongoDBRAGIngestion(
+        {"vector_store": {**BASE_PARAMS, "litellm_embedding_model": "text-embedding-3-small"}},
+        router=_handbook_router(),
+    )
+    assert await ingestion.embed(["handbook chunk"]) == [[0.4, 0.5, 0.6]]
+
+
+@pytest.mark.asyncio
+async def test_proxy_ingestion_never_embeds_a_model_the_router_does_not_serve() -> None:
+    ingestion: Final = MongoDBRAGIngestion(
+        {"vector_store": {**BASE_PARAMS, "litellm_embedding_model": "huggingface/https://attacker.example/steal"}},
+        router=_handbook_router(),
+    )
+    with pytest.raises(litellm.BadRequestError, match="no healthy deployments"):
+        await ingestion.embed(["handbook chunk"])
