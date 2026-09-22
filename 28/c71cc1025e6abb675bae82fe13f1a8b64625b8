@@ -1,0 +1,29 @@
+litellm/llms/mongodb/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_44a7df46406747 90-91,94-95,97-99
+tests/unit/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  s_2209f22f830d7f::t_ca9ce068f020dc 457-507
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "28c71cc1025e6abb675bae82fe13f1a8b64625b8",
+  "prompts": {},
+  "sessions": {
+    "s_2209f22f830d7f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "35a2d2ad-0d97-475b-b379-d300c218cb16",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    },
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
