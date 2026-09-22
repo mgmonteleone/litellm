@@ -20,7 +20,7 @@ from litellm.llms.mongodb.vector_stores.transformation import (
     MongoDBVectorStoreParams,
     embedding_vector,
     sidecar_error_message,
-    validated_params,
+    validated_test_connection_params,
 )
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import LlmProviders
@@ -30,6 +30,11 @@ PROBE_TIMEOUT_SECONDS: Final = 15.0
 DISCOVERY_KINDS: Final = frozenset({"databases", "collections", "indexes", "fields"})
 _EMPTY: Final = MappingProxyType({})
 _STATUSES: Final = MappingProxyType({"pass": "pass", "warn": "warn", "fail": "fail", "skip": "skip"})
+_NAMESPACE_CHECKS: Final = frozenset(
+    {"mongodb_collection", "mongodb_sample_document", "mongodb_index", "mongodb_index_definition", "mongodb_dimensions"}
+)
+_CHOOSE_NAMESPACE_MESSAGE: Final = "Choose a database and collection to check the index."
+_CHOOSE_EMBEDDING_MODEL_MESSAGE: Final = "Choose an embedding model to check its output dimensions."
 
 
 def as_status(value: object) -> CheckStatus:
@@ -54,7 +59,7 @@ def _resolve(
     generic: Final = GenericLiteLLMParams.model_validate(dict(litellm_params))  # mutable-ok: pydantic input copy
     headers: Final = config.validate_environment(headers=_EMPTY, litellm_params=generic)
     api_base: Final = config.get_complete_url(api_base=generic.api_base, litellm_params=litellm_params)
-    return api_base, headers, validated_params(litellm_params)
+    return api_base, headers, validated_test_connection_params(litellm_params)
 
 
 async def _capabilities(
@@ -154,49 +159,56 @@ async def run_test_connection(
         details["sidecar"] = dict(capabilities)  # mutable-ok: JSON response
 
     embedding_dimensions: int | None = None
-    try:
-        probe: Final = await (embedding_executor or config.embedding_executor).aembed(
-            params.require_embedding_model(), DIMENSION_PROBE_TEXT, params.litellm_embedding_config or _EMPTY
-        )
-        embedding_dimensions = len(embedding_vector(probe))
-        checks.append(
-            check(
-                "embedding_model",
-                "pass",
-                f"Embedding model '{params.litellm_embedding_model}' returns {embedding_dimensions}-dimensional vectors.",
-                {  # mutable-ok: JSON response
-                    "model": params.litellm_embedding_model,
-                    "dimensions": embedding_dimensions,
-                },  # mutable-ok: JSON response
+    if params.litellm_embedding_model:
+        try:
+            probe: Final = await (embedding_executor or config.embedding_executor).aembed(
+                params.require_embedding_model(), DIMENSION_PROBE_TEXT, params.litellm_embedding_config or _EMPTY
             )
-        )
-    except Exception as error:  # noqa: BLE001  # any provider failure is a diagnostic result, not a crash
-        checks.append(
-            check(
-                "embedding_model",
-                "fail",
-                f"Embedding model '{params.litellm_embedding_model}' failed: {str(error)[:300]}",
+            embedding_dimensions = len(embedding_vector(probe))
+            checks.append(
+                check(
+                    "embedding_model",
+                    "pass",
+                    f"Embedding model '{params.litellm_embedding_model}' returns "
+                    f"{embedding_dimensions}-dimensional vectors.",
+                    {  # mutable-ok: JSON response
+                        "model": params.litellm_embedding_model,
+                        "dimensions": embedding_dimensions,
+                    },  # mutable-ok: JSON response
+                )
             )
-        )
+        except Exception as error:  # noqa: BLE001  # any provider failure is a diagnostic result, not a crash
+            checks.append(
+                check(
+                    "embedding_model",
+                    "fail",
+                    f"Embedding model '{params.litellm_embedding_model}' failed: {str(error)[:300]}",
+                )
+            )
+    else:
+        checks.append(check("embedding_model", "skip", _CHOOSE_EMBEDDING_MODEL_MESSAGE))
     details["embedding_dimensions"] = embedding_dimensions
 
     if auth_check.get("status") == "pass" and capabilities is not None:
+        namespace_chosen: Final = bool(params.mongodb_database) and bool(params.mongodb_collection)
         body: dict[str, object] = {  # mutable-ok: JSON transport
-            "mongodb_database": params.require_database(),
-            "mongodb_collection": params.require_collection(),
             "index_name": vector_store_id,
             "mongodb_embedding_field": params.embedding_field,
             "mongodb_text_field": params.text_field,
             "expected_dimensions": embedding_dimensions,
             "timeout_ms": int(PROBE_TIMEOUT_SECONDS * 1000),
         }
+        if params.mongodb_database:
+            body["mongodb_database"] = params.mongodb_database
+        if params.mongodb_collection:
+            body["mongodb_collection"] = params.mongodb_collection
         try:
             report: Final = await client.post(
                 f"{api_base}/v1/test_connection", headers=headers, json=body, timeout=PROBE_TIMEOUT_SECONDS
             )
             payload: Final = report.json()
             rows: Final = payload.get("checks", ()) if isinstance(payload, Mapping) else ()
-            checks.extend(_sidecar_check(row) for row in rows if isinstance(row, Mapping))
+            checks.extend(_sidecar_check(row, namespace_chosen) for row in rows if isinstance(row, Mapping))
             if isinstance(payload, Mapping):
                 details["mongodb"] = {  # mutable-ok: JSON response
                     key: payload.get(key)  # mutable-ok: JSON response
@@ -239,21 +251,33 @@ async def run_test_connection(
     return _finish("mongodb", checks, details)
 
 
-def _sidecar_check(row: Mapping[str, object]) -> VectorStoreConnectionCheck:
+def _sidecar_check(row: Mapping[str, object], namespace_chosen: bool) -> VectorStoreConnectionCheck:
+    """One row of the sidecar's own checklist, keeping its verdict as-is except for the checks that need a
+    database and collection: those are reported as our own skip rather than whatever the sidecar sent, since
+    an admin who has not chosen a namespace yet has not failed anything."""
+    name: Final = str(row.get("check"))
+    if not namespace_chosen and name in _NAMESPACE_CHECKS:
+        return check(name, "skip", _CHOOSE_NAMESPACE_MESSAGE)
     details: Final = row.get("details")
     return check(
-        str(row.get("check")),
+        name,
         as_status(row.get("status")),
         str(row.get("message")),
         details if isinstance(details, Mapping) else None,
     )
 
 
-def _summary(failures: Sequence[VectorStoreConnectionCheck], warnings: Sequence[VectorStoreConnectionCheck]) -> str:
+def _summary(
+    failures: Sequence[VectorStoreConnectionCheck],
+    warnings: Sequence[VectorStoreConnectionCheck],
+    skips: Sequence[VectorStoreConnectionCheck],
+) -> str:
     if failures:
         return str(failures[0].get("message"))
     if warnings:
         return f"Connected with {len(warnings)} warning(s): {warnings[0].get('message')}"
+    if skips:
+        return "Choose a database and collection to finish the checks."
     return "All checks passed."
 
 
@@ -262,7 +286,8 @@ def _finish(
 ) -> VectorStoreTestConnectionResponse:
     failures: Final = tuple(row for row in checks if row.get("status") == "fail")
     warnings: Final = tuple(row for row in checks if row.get("status") == "warn")
-    summary: Final = _summary(failures, warnings)
+    skips: Final = tuple(row for row in checks if row.get("status") == "skip")
+    summary: Final = _summary(failures, warnings, skips)
     return VectorStoreTestConnectionResponse(
         ok=not failures,
         supported=True,

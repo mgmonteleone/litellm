@@ -294,18 +294,18 @@ def reject_unknown_params(litellm_params: Mapping[str, object]) -> None:
         )
 
 
-def validated_params(litellm_params: Mapping[str, object]) -> MongoDBVectorStoreParams:
-    """Validate litellm_params for any MongoDB operation; search, create, and ingest share these rules."""
+def _parsed_params(litellm_params: Mapping[str, object]) -> MongoDBVectorStoreParams:
     reject_unknown_params(litellm_params)
     try:
-        params: Final = MongoDBVectorStoreParams.model_validate(litellm_params)
+        return MongoDBVectorStoreParams.model_validate(litellm_params)
     except ValidationError:
         raise config_error(
             "Invalid MongoDB vector-store configuration. Check the database, collection, fields, "
             "similarity, filter fields, and candidate count."
         ) from None
-    params.require_database()
-    params.require_collection()
+
+
+def _check_shared_constraints(params: MongoDBVectorStoreParams) -> None:
     if params.mongodb_dimensions is not None and not 1 <= params.mongodb_dimensions <= MAX_DIMENSIONS:
         raise config_error(
             f"mongodb_dimensions must be between 1 and {MAX_DIMENSIONS}, got {params.mongodb_dimensions}"
@@ -315,6 +315,22 @@ def validated_params(litellm_params: Mapping[str, object]) -> MongoDBVectorStore
             raise config_error("mongodb_filter_fields entries must be nonblank field paths that do not start with $")
     if params.mongodb_score_threshold is not None and not 0.0 <= params.mongodb_score_threshold <= 1.0:
         raise config_error("mongodb_score_threshold must be between 0 and 1")
+
+
+def validated_params(litellm_params: Mapping[str, object]) -> MongoDBVectorStoreParams:
+    """Validate litellm_params for any MongoDB operation; search, create, and ingest share these rules."""
+    params: Final = _parsed_params(litellm_params)
+    params.require_database()
+    params.require_collection()
+    _check_shared_constraints(params)
+    return params
+
+
+def validated_test_connection_params(litellm_params: Mapping[str, object]) -> MongoDBVectorStoreParams:
+    """Validate litellm_params for test_connection, where an admin may not have chosen a database and
+    collection yet. Every other rule (unknown keys, dimensions, filter fields, score threshold) still applies."""
+    params: Final = _parsed_params(litellm_params)
+    _check_shared_constraints(params)
     return params
 
 

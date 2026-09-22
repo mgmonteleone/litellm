@@ -141,6 +141,136 @@ async def test_bad_key_and_bad_embedding_model_both_fail_clearly() -> None:
     assert "rejected the API key" in response["summary"]
 
 
+NAMESPACE_LESS_REPORT: Final = {
+    "ok": True,
+    "server_version": "8.2.11",
+    "index_dimensions": None,
+    "document_count": None,
+    "checks": [
+        {"check": "mongodb_ping", "status": "pass", "message": "MongoDB is reachable."},
+        {
+            "check": "mongodb_version",
+            "status": "pass",
+            "message": "MongoDB 8.2.11.",
+            "details": {"server_version": "8.2.11"},
+        },
+        {
+            "check": "mongodb_collection",
+            "status": "skip",
+            "message": "Provide mongodb_database and mongodb_collection to check the collection.",
+        },
+        {
+            "check": "mongodb_sample_document",
+            "status": "skip",
+            "message": "Provide mongodb_database and mongodb_collection to check the collection.",
+        },
+        {
+            "check": "mongodb_index",
+            "status": "skip",
+            "message": "Provide mongodb_database and mongodb_collection to check the collection.",
+        },
+        {
+            "check": "mongodb_index_definition",
+            "status": "skip",
+            "message": "Provide mongodb_database and mongodb_collection to check the collection.",
+        },
+        {
+            "check": "mongodb_dimensions",
+            "status": "skip",
+            "message": "Provide mongodb_database and mongodb_collection to check the collection.",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_missing_database_and_collection_still_verifies_the_sidecar_connection() -> None:
+    """The bug this guards: clicking Test connection before picking a database/collection used to raise
+    'mongodb_database is required in litellm_params' instead of running the checks it actually can."""
+    params: Final = {
+        key: value for key, value in BASE_PARAMS.items() if key not in ("mongodb_database", "mongodb_collection")
+    }
+    handler, seen = sidecar(report=NAMESPACE_LESS_REPORT)
+    config: Final = MongoDBVectorStoreConfig(Executor(dimensions=3))
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        response: Final = await config.atest_connection(params, "policy_index")
+    assert response["ok"] is True
+    assert statuses(response) == {
+        "sidecar_reachable": "pass",
+        "sidecar_auth": "pass",
+        "embedding_model": "pass",
+        "mongodb_ping": "pass",
+        "mongodb_version": "pass",
+        "mongodb_collection": "skip",
+        "mongodb_sample_document": "skip",
+        "mongodb_index": "skip",
+        "mongodb_index_definition": "skip",
+        "mongodb_dimensions": "skip",
+    }
+    messages: Final = {row["check"]: row["message"] for row in response["checks"]}
+    assert messages["mongodb_collection"] == "Choose a database and collection to check the index."
+    assert response["summary"] == "Choose a database and collection to finish the checks."
+    posted: Final = json.loads(next(r for r in seen if r.url.path == "/v1/test_connection").content)
+    assert "mongodb_database" not in posted
+    assert "mongodb_collection" not in posted
+
+
+@pytest.mark.asyncio
+async def test_database_without_collection_also_skips_the_namespace_checks() -> None:
+    params: Final = {key: value for key, value in BASE_PARAMS.items() if key != "mongodb_collection"}
+    handler, seen = sidecar(report=NAMESPACE_LESS_REPORT)
+    config: Final = MongoDBVectorStoreConfig(Executor(dimensions=3))
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        response: Final = await config.atest_connection(params, "policy_index")
+    assert response["ok"] is True
+    assert statuses(response)["mongodb_collection"] == "skip"
+    posted: Final = json.loads(next(r for r in seen if r.url.path == "/v1/test_connection").content)
+    assert posted["mongodb_database"] == "knowledge"
+    assert "mongodb_collection" not in posted
+
+
+@pytest.mark.asyncio
+async def test_missing_embedding_model_is_skipped_not_failed_before_the_admin_picks_one() -> None:
+    params: Final = {
+        key: value
+        for key, value in BASE_PARAMS.items()
+        if key not in ("mongodb_database", "mongodb_collection", "litellm_embedding_model")
+    }
+    handler, _ = sidecar(report=NAMESPACE_LESS_REPORT)
+    config: Final = MongoDBVectorStoreConfig(Executor(dimensions=3))
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        response: Final = await config.atest_connection(params, "policy_index")
+    assert response["ok"] is True
+    assert statuses(response)["embedding_model"] == "skip"
+    assert response["details"]["embedding_dimensions"] is None
+    message: Final = next(r["message"] for r in response["checks"] if r["check"] == "embedding_model")
+    assert message == "Choose an embedding model to check its output dimensions."
+
+
+@pytest.mark.asyncio
+async def test_unrecognised_param_still_fails_without_a_database_or_collection() -> None:
+    params: Final = {
+        key: value for key, value in BASE_PARAMS.items() if key not in ("mongodb_database", "mongodb_collection")
+    } | {"mongodb_bogus": "x"}
+    config: Final = MongoDBVectorStoreConfig(Executor())
+    response: Final = await config.atest_connection(params, "policy_index")
+    assert response["ok"] is False
+    assert statuses(response) == {"configuration": "fail"}
+    assert "mongodb_bogus" in response["summary"]
+
+
+@pytest.mark.asyncio
+async def test_bad_dimensions_still_fails_without_a_database_or_collection() -> None:
+    params: Final = {
+        key: value for key, value in BASE_PARAMS.items() if key not in ("mongodb_database", "mongodb_collection")
+    } | {"mongodb_dimensions": 999_999}
+    config: Final = MongoDBVectorStoreConfig(Executor())
+    response: Final = await config.atest_connection(params, "policy_index")
+    assert response["ok"] is False
+    assert statuses(response) == {"configuration": "fail"}
+    assert "mongodb_dimensions must be between" in response["summary"]
+
+
 @pytest.mark.asyncio
 async def test_hybrid_prerequisites_are_checked() -> None:
     handler, _ = sidecar()
@@ -221,9 +351,9 @@ async def test_discovery_forwards_kind_and_scope_to_the_sidecar() -> None:
 
 
 def test_default_provider_hook_reports_unsupported() -> None:
-    from litellm.llms.openai.vector_stores.transformation import OpenAIVectorStoreConfig
-
     import asyncio
+
+    from litellm.llms.openai.vector_stores.transformation import OpenAIVectorStoreConfig
 
     response: Final = asyncio.run(OpenAIVectorStoreConfig().atest_connection({}, None))
     assert response["supported"] is False and response["ok"] is False
