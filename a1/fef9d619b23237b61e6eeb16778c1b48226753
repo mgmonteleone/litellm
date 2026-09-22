@@ -1,0 +1,30 @@
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  s_d71e62cb6f304c::t_5bc44a19395f7a 19,2797-2825
+  s_d71e62cb6f304c::t_a0c0c685b842af 2826-2827
+litellm/litellm_core_utils/credential_accessor.py
+  s_d71e62cb6f304c::t_87cb6b2b7908be 3-4,10-11,28-45
+litellm/proxy/vector_store_endpoints/endpoints.py
+  s_d71e62cb6f304c::t_1977d4eb825d48 15,71-77,81
+litellm/rag/ingestion/base_ingestion.py
+  s_d71e62cb6f304c::t_d987bbea986e1f 88-89
+litellm/vector_stores/main.py
+  s_d71e62cb6f304c::t_f97d54be694e3a 16,408-409
+tests/test_litellm/vector_stores/test_main.py
+  s_d71e62cb6f304c::t_174bcfccdfc08e 117-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "a1fef9d619b23237b61e6eeb16778c1b48226753",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
