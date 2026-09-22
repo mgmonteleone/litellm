@@ -65,6 +65,36 @@ def config_error(message: str) -> BadRequestError:
     return BadRequestError(message=message, model=None, llm_provider="mongodb")
 
 
+_NO_CREDENTIALS_QUERY_OR_FRAGMENT: Final = (
+    "MongoDB sidecar api_base must be an HTTP or HTTPS URL without credentials, query, or fragment."
+)
+_HTTPS_REQUIRED: Final = "MongoDB sidecar requires HTTPS. HTTP is supported only for a loopback IP such as 127.0.0.1."
+
+
+def sidecar_api_base_error(value: str) -> str | None:
+    """None if ``value`` is a usable MongoDB sidecar api_base; otherwise why it is not.
+
+    Shared by ``MongoDBVectorStoreConfig.get_complete_url`` (which validates a per-request api_base)
+    and the proxy's ``/vector_store/provider_defaults`` endpoint (which validates the deployment's
+    ``MONGODB_SIDECAR_API_BASE`` before ever reporting it to the dashboard), so both apply the same
+    scheme, credentials, and loopback rules.
+    """
+    try:
+        parsed: Final = urlsplit(value)
+        valid: Final = parsed.scheme in ("http", "https") and bool(parsed.hostname) and parsed.port != 0
+    except ValueError:
+        return "MongoDB sidecar api_base must be a valid HTTP or HTTPS URL."
+    if not valid or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return _NO_CREDENTIALS_QUERY_OR_FRAGMENT
+    if parsed.scheme != "http":
+        return None
+    try:
+        loopback: Final = ip_address(parsed.hostname or "").is_loopback
+    except ValueError:
+        return _HTTPS_REQUIRED
+    return None if loopback else _HTTPS_REQUIRED
+
+
 class _Content(BaseModel):
     model_config = ConfigDict(frozen=True, strict=True)
     type: Literal["text"]
@@ -395,26 +425,9 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
                 "MongoDB sidecar api_base is required. Set api_base or MONGODB_SIDECAR_API_BASE, "
                 "for example http://127.0.0.1:8080."
             )
-        try:
-            parsed: Final = urlsplit(resolved)
-            valid: Final = parsed.scheme in ("http", "https") and bool(parsed.hostname) and parsed.port != 0
-        except ValueError:
-            raise config_error("MongoDB sidecar api_base must be a valid HTTP or HTTPS URL.") from None
-        if not valid or parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise config_error(
-                "MongoDB sidecar api_base must be an HTTP or HTTPS URL without credentials, query, or fragment."
-            )
-        if parsed.scheme == "http":
-            try:
-                loopback: Final = ip_address(parsed.hostname or "").is_loopback
-            except ValueError:
-                raise config_error(
-                    "MongoDB sidecar requires HTTPS. HTTP is supported only for a loopback IP such as 127.0.0.1."
-                ) from None
-            if not loopback:
-                raise config_error(
-                    "MongoDB sidecar requires HTTPS. HTTP is supported only for a loopback IP such as 127.0.0.1."
-                )
+        error: Final = sidecar_api_base_error(resolved)
+        if error is not None:
+            raise config_error(error)
         return resolved.rstrip("/")
 
     @staticmethod

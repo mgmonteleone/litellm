@@ -350,6 +350,24 @@ def test_get_complete_url_without_either_source_names_both_options(monkeypatch: 
         MongoDBVectorStoreConfig().get_complete_url(api_base=None, litellm_params={})
 
 
+def test_get_complete_url_rejects_a_deployment_env_var_that_carries_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://user:pass@sidecar.internal")
+
+    with pytest.raises(litellm.BadRequestError, match="without credentials, query, or fragment"):
+        MongoDBVectorStoreConfig().get_complete_url(api_base=None, litellm_params={})
+
+
+def test_get_complete_url_rejects_a_deployment_env_var_that_is_non_loopback_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "http://evil.example")
+
+    with pytest.raises(litellm.BadRequestError, match="requires HTTPS"):
+        MongoDBVectorStoreConfig().get_complete_url(api_base=None, litellm_params={})
+
+
 @pytest.mark.asyncio
 async def test_search_resolves_api_base_from_the_deployment_sidecar_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     """An admin should not need to know the sidecar's address: the deployment configures it once."""
