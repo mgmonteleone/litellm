@@ -88,4 +88,29 @@ describe("ConnectionChecklist", () => {
     expect(screen.getByText("Connection verified")).toBeInTheDocument();
     expect(screen.getByLabelText("Passed")).toBeInTheDocument();
   });
+
+  it("reads as success with a next-step summary when the sidecar checked out but the namespace checks were skipped", () => {
+    render(
+      <ConnectionChecklist
+        result={{
+          ok: true,
+          summary: "Choose a database and collection to finish the checks.",
+          checks: [
+            { check: "sidecar_auth", status: "pass", message: "Authenticated with sidecar v0.2.0." },
+            {
+              check: "mongodb_collection",
+              status: "skip",
+              message: "Choose a database and collection to check the index.",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Sidecar connected")).toBeInTheDocument();
+    expect(screen.queryByText("Connection verified")).not.toBeInTheDocument();
+    expect(screen.getByText("Choose a database and collection to finish the checks.")).toBeInTheDocument();
+    expect(screen.getByText("Choose a database and collection to check the index.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Skipped")).toBeInTheDocument();
+  });
 });

@@ -66,6 +66,16 @@ interface ConnectionChecklistProps {
   curlCommand?: string;
 }
 
+/**
+ * A passing result with skipped rows means the sidecar itself checked out fine but the admin has not
+ * picked a database and collection yet, so "Connection verified" (implying every row ran) would overstate it.
+ */
+const headline = (result: VectorStoreTestConnectionResponse): string => {
+  if (!result.ok) return "Connection failed";
+  const hasSkippedChecks = (result.checks ?? []).some((check) => check.status === "skip");
+  return hasSkippedChecks ? "Sidecar connected" : "Connection verified";
+};
+
 export const ConnectionChecklist: React.FC<ConnectionChecklistProps> = ({ result, curlCommand }) => {
   const checks = result.checks ?? [];
   const summaryStatus = result.ok ? STATUS_STYLE.pass : STATUS_STYLE.fail;
@@ -76,9 +86,7 @@ export const ConnectionChecklist: React.FC<ConnectionChecklistProps> = ({ result
       <div className="flex items-start gap-2.5 border-b p-3">
         <SummaryIcon className={cn("mt-0.5 size-5 shrink-0", summaryStatus.className)} aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className={cn("text-sm font-medium", summaryStatus.className)}>
-            {result.ok ? "Connection verified" : "Connection failed"}
-          </p>
+          <p className={cn("text-sm font-medium", summaryStatus.className)}>{headline(result)}</p>
           <p className="text-sm break-words text-muted-foreground">{result.summary}</p>
         </div>
         {curlCommand && <CopyButton value={curlCommand} label="Copy as curl" />}

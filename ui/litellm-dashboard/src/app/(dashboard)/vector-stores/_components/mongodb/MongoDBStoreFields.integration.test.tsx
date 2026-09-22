@@ -55,6 +55,22 @@ const PASSING_RESULT = {
   details: { embedding_dimensions: 1536, mongodb: { index_dimensions: 1536 } },
 };
 
+const CONNECTION_ONLY_RESULT = {
+  ok: true,
+  supported: true,
+  custom_llm_provider: "mongodb",
+  summary: "Choose a database and collection to finish the checks.",
+  checks: [
+    { check: "sidecar_auth", status: "pass" as const, message: "Authenticated with sidecar v0.2.0." },
+    {
+      check: "mongodb_collection",
+      status: "skip" as const,
+      message: "Choose a database and collection to check the index.",
+    },
+  ],
+  details: {},
+};
+
 const discoveryPayloads: Record<string, unknown> = {
   databases: { databases: ["knowledge", "litellm_smoke"] },
   collections: { collections: [{ name: "policies", document_count: 3 }] },
@@ -162,6 +178,20 @@ describe("MongoDB vector store dialog", () => {
     // redaction sentinel is ever echoed back verbatim, and the raw key never appears either way.
     expect(copied).not.toContain("sidecar-key");
     expect(copied).not.toContain(REDACTION_SENTINEL);
+  });
+
+  it("reads as a passing connection and keeps the Database combobox usable when Test connection runs before a database is chosen", async () => {
+    mockTest.mockResolvedValue(CONNECTION_ONLY_RESULT);
+    const user = setupUser();
+    renderForm();
+
+    await chooseMongoDB(user);
+    fillConnection();
+    await user.click(screen.getByRole("button", { name: /Test connection/ }));
+
+    expect(await screen.findByText("Sidecar connected")).toBeInTheDocument();
+    expect(screen.getByText("Choose a database and collection to check the index.")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Enter a value that is not listed" })).toBeInTheDocument();
   });
 
   it("fills the Database field from discovery once the sidecar details are in", async () => {
