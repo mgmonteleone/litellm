@@ -1,0 +1,21 @@
+litellm/proxy/management_endpoints/auto_router_endpoints.py
+  s_904317b46153f8::t_25929928cdcbfa 281,307-314
+tests/test_litellm/proxy/management_endpoints/test_auto_router_endpoints.py
+  s_904317b46153f8::t_af1e4afbee1ef3 6,9,16-17,24,30-35,421-480,482-529,540-541
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "85ee463d112f5ac3750b07f837da8ec432b1dc4b",
+  "prompts": {},
+  "sessions": {
+    "s_904317b46153f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "abe9ca31-133a-4bed-8856-640185ecb6d8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
