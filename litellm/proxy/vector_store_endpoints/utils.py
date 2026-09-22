@@ -157,6 +157,17 @@ def assert_proxy_admin_for_request_endpoints(payload: Mapping[str, object], user
 
 STORE_EMBEDDING_MODEL_KEYS: Final = ("litellm_embedding_model", "embedding_model")
 
+_URL_OR_HOST_MODEL_SUFFIX: Final = re.compile(r"://|^//|^[^/\s]+:\d+(?:[/?]|$)|\s")
+
+
+def _model_suffix_looks_like_url_or_host(model: str) -> bool:
+    """True when the part of ``model`` after its provider prefix (e.g. ``http://host/x`` in
+    ``huggingface/http://host/x``) looks like a URL or a host, rather than a model name. A wildcard
+    deployment such as ``huggingface/*`` serves any suffix, so router_serves_model alone would let a
+    non-admin pick that suffix and have every search send the proxy's real provider key there."""
+    _, separator, suffix = model.partition("/")
+    return bool(separator) and bool(_URL_OR_HOST_MODEL_SUFFIX.search(suffix))
+
 
 def store_embedding_models(
     params: Mapping[str, object] | None, saved_params: Mapping[str, object] | None = None
@@ -182,7 +193,11 @@ async def assert_caller_can_use_models(
     from litellm.proxy.auth.auth_checks import can_key_call_resolved_model
 
     for model, kind in models:
-        if llm_router is None or not router_serves_model(llm_router, model, user_api_key_dict.team_id):
+        if (
+            _model_suffix_looks_like_url_or_host(model)
+            or llm_router is None
+            or not router_serves_model(llm_router, model, user_api_key_dict.team_id)
+        ):
             raise HTTPException(status_code=400, detail=model_not_configured_message(model, kind))
         try:
             await can_key_call_resolved_model(

@@ -2356,6 +2356,27 @@ async def test_new_vector_store_rejects_embedding_models_the_proxy_does_not_serv
 
 
 @pytest.mark.asyncio
+async def test_new_vector_store_rejects_url_like_embedding_models_even_when_a_wildcard_deployment_serves_them():
+    """Regression: a `huggingface/*` wildcard deployment makes router_serves_model true for any suffix, so
+    the router-serves check alone let a non-admin pick huggingface/<attacker host> as the embedding model
+    whenever the proxy had a wildcard deployment for that provider, reaching that host with the proxy's
+    own provider key on every search."""
+    wildcard_router = litellm.Router(
+        model_list=[{"model_name": "huggingface/*", "litellm_params": {"model": "huggingface/*"}}]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(
+            LitellmUserRoles.INTERNAL_USER,
+            llm_router=wildcard_router,
+            litellm_params={"litellm_embedding_model": _ATTACKER_EMBEDDING_MODEL},
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail.startswith(f"embedding model {_ATTACKER_EMBEDDING_MODEL} is not configured")
+
+
+@pytest.mark.asyncio
 async def test_new_vector_store_rejects_embedding_models_the_callers_key_cannot_call():
     with pytest.raises(HTTPException) as exc_info:
         await _create_store(
