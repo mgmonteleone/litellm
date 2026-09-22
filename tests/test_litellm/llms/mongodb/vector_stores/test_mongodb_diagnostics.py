@@ -188,6 +188,20 @@ async def test_connection_without_an_api_base_names_both_ways_to_provide_it(monk
 
 
 @pytest.mark.asyncio
+async def test_discovery_resolves_api_base_from_the_deployment_sidecar_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Discovery shares get_complete_url with search, create, ingest, and test_connection, so it must
+    fall back to the deployment's MONGODB_SIDECAR_API_BASE the same way they do."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    handler, seen = sidecar()
+    config: Final = MongoDBVectorStoreConfig(Executor())
+    params_without_api_base: Final = {key: value for key, value in BASE_PARAMS.items() if key != "api_base"}
+    with patch("litellm.llms.mongodb.vector_stores.diagnostics.get_async_httpx_client", return_value=handler):
+        databases: Final = await config.adiscover("databases", params_without_api_base, {})
+    assert dict(databases) == {"kind": "databases", "query": {}}
+    assert [str(r.url) for r in seen] == ["https://deployment-sidecar.example/v1/discovery/databases"]
+
+
+@pytest.mark.asyncio
 async def test_discovery_forwards_kind_and_scope_to_the_sidecar() -> None:
     handler, seen = sidecar()
     config: Final = MongoDBVectorStoreConfig(Executor())

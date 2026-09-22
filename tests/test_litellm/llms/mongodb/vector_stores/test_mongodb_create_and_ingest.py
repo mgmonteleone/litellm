@@ -197,10 +197,11 @@ async def test_create_resolves_api_base_from_the_deployment_sidecar_env_var(monk
     executor: Final = RecordingEmbeddingExecutor(dimensions=4)
     params_without_api_base: Final = {key: value for key, value in BASE_PARAMS.items() if key != "api_base"}
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def _respond(request: httpx.Request) -> httpx.Response:
         assert request.url == "https://deployment-sidecar.example/v1/vector_stores"
         return httpx.Response(201, json=INDEX_STATUS)
 
+    respond: Final = MagicMock(side_effect=_respond)
     client: Final = AsyncHTTPHandler()
     await client.client.aclose()
     client.client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
@@ -212,6 +213,9 @@ async def test_create_resolves_api_base_from_the_deployment_sidecar_env_var(monk
             name="policy_index", custom_llm_provider="mongodb", client=client, **params_without_api_base
         )
     assert response["id"] == "policy_index"
+    # The assertion on request.url inside _respond only ever runs if the mock transport is actually
+    # hit; without this, a bug that skips the HTTP call entirely could still leave the test green.
+    respond.assert_called_once()
 
 
 def test_mongodb_is_registered_for_rag_ingestion() -> None:
