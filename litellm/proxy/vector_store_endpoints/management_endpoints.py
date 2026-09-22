@@ -701,16 +701,26 @@ def _reject_environment_references(params: Mapping[str, object]) -> None:
     _reject_os_environ_references(dict(params))  # mutable-ok: the shared guard takes a dict
 
 
+def _looks_like_misspelled_sentinel(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(_REDACTION_SENTINEL_TYPO_PATTERN.match(value))
+        and value != REDACTED_BY_LITELM_STRING
+    )
+
+
 def _reject_misspelled_redaction_sentinel(params: Mapping[str, object]) -> None:
-    """update_vector_store persists an os.environ/ api_key as-is (unlike _resolve_connection_target above), so a
+    """update_vector_store persists an os.environ/ value as-is (unlike _resolve_connection_target above), so a
     fat-fingered sentinel like ``REDACTED_BY_LITELLM`` no longer gets caught by the "reject env references" guard;
-    it would instead be saved verbatim as the literal api_key value, silently clobbering the real secret."""
-    api_key: Final = params.get("api_key")
-    looks_like_sentinel: Final = isinstance(api_key, str) and bool(_REDACTION_SENTINEL_TYPO_PATTERN.match(api_key))
-    if looks_like_sentinel and api_key != REDACTED_BY_LITELM_STRING:
+    it would instead be saved verbatim as the literal secret value, silently clobbering the real one. Checks every
+    key the litellm_params masker treats as sensitive (``api_key``, ``valkey_password``, ...), not just api_key,
+    since any of them can carry a redacted secret the caller round-trips back unchanged."""
+    for key, value in params.items():
+        if not _LITELLM_PARAMS_MASKER.is_sensitive_key(key) or not _looks_like_misspelled_sentinel(value):
+            continue
         raise HTTPException(
             status_code=400,
-            detail=f"'api_key' looks like a misspelled redaction sentinel. Use the exact string "
+            detail=f"'{key}' looks like a misspelled redaction sentinel. Use the exact string "
             f"'{REDACTED_BY_LITELM_STRING}' to keep the saved secret.",
         )
 
