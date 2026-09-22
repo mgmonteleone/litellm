@@ -2,6 +2,7 @@ import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { vectorStoreProviderDefaultsCall } from "@/components/networking";
+import { ApiError } from "@/lib/http/client";
 
 import { hasDeploymentDefaults, useMongoDBProviderDefaults } from "./useMongoDBProviderDefaults";
 
@@ -55,6 +56,17 @@ describe("useMongoDBProviderDefaults", () => {
     const { result } = renderHook(() => useMongoDBProviderDefaults("test-token"));
 
     await vi.waitFor(() => expect(result.current.status).toBe("unavailable"));
+  });
+
+  it("treats a 403 (a non-admin caller) as unavailable too, so the form falls back to plain fields", async () => {
+    mockProviderDefaults.mockRejectedValue(
+      new ApiError("Only proxy admins can read provider defaults for vector store connections.", 403, null),
+    );
+
+    const { result } = renderHook(() => useMongoDBProviderDefaults("test-token"));
+
+    await vi.waitFor(() => expect(result.current.status).toBe("unavailable"));
+    expect(hasDeploymentDefaults(result.current)).toBe(false);
   });
 
   it("stays unavailable and never calls the endpoint without an access token", () => {
