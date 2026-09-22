@@ -21,7 +21,11 @@ interface VectorStoreConnectionCardProps {
   connectionTest: ConnectionTestState;
   onRunConnectionTest: () => void;
   accessToken: string | null;
-  /** Gates the edit form the same way the rest of the info page gates its own "Edit Vector Store" action. */
+  /**
+   * Gates the edit form and the Test connection button the same way the rest of the info page gates
+   * its own "Edit Vector Store" action: /vector_store/test_connection is admin-only, so a non-admin
+   * must not see a control for it that would just 403.
+   */
   canEdit: boolean;
   onConnectionUpdated: () => void;
 }
@@ -80,16 +84,18 @@ export const VectorStoreConnectionCard: React.FC<VectorStoreConnectionCardProps>
                 Edit connection
               </Button>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={connectionTest.isRunning}
-              onClick={onRunConnectionTest}
-            >
-              {connectionTest.isRunning ? <UiLoadingSpinner className="size-4" /> : <PlugZap className="size-4" />}
-              Test connection
-            </Button>
+            {canEdit && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={connectionTest.isRunning}
+                onClick={onRunConnectionTest}
+              >
+                {connectionTest.isRunning ? <UiLoadingSpinner className="size-4" /> : <PlugZap className="size-4" />}
+                Test connection
+              </Button>
+            )}
           </div>
         </div>
 
