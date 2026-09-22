@@ -911,6 +911,26 @@ async def discover_vector_store_resources(
         raise HTTPException(status_code=502, detail=str(error)[:500])
 
 
+def _mongodb_provider_default_api_base() -> str | None:
+    """The deployment's MONGODB_SIDECAR_API_BASE, or None if unset or not a usable sidecar URL.
+
+    Applies the same scheme/credentials/loopback guard ``MongoDBVectorStoreConfig.get_complete_url``
+    enforces per-request, so a misconfigured env var (userinfo, a bare HTTP host, ...) is never handed
+    to the dashboard as a default to pre-fill instead of being caught at request time.
+    """
+    from litellm.llms.mongodb.vector_stores.transformation import sidecar_api_base_error
+    from litellm.secret_managers.main import get_secret_str
+
+    api_base: Final = get_secret_str("MONGODB_SIDECAR_API_BASE")
+    if api_base is None:
+        return None
+    error: Final = sidecar_api_base_error(api_base)
+    if error is not None:
+        verbose_proxy_logger.warning("MONGODB_SIDECAR_API_BASE is not a usable sidecar URL: %s", error)
+        return None
+    return api_base
+
+
 def _provider_defaults(custom_llm_provider: str) -> VectorStoreProviderDefaultsResponse:
     """The deployment-configured connection defaults for a provider. Never includes the secret itself."""
     from litellm.secret_managers.main import get_secret_str
@@ -919,7 +939,7 @@ def _provider_defaults(custom_llm_provider: str) -> VectorStoreProviderDefaultsR
         case "mongodb":
             return VectorStoreProviderDefaultsResponse(
                 custom_llm_provider=custom_llm_provider,
-                api_base=get_secret_str("MONGODB_SIDECAR_API_BASE"),
+                api_base=_mongodb_provider_default_api_base(),
                 api_key_configured=bool(get_secret_str("MONGODB_SIDECAR_API_KEY")),
             )
         case _:
