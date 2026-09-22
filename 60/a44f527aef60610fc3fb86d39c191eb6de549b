@@ -1,0 +1,25 @@
+tests/test_litellm/llms/s3_vectors/vector_stores/test_s3_vectors_transformation.py
+  s_d71e62cb6f304c::t_650494a0ed5deb 177-207,222,226-227
+litellm/llms/base_llm/vector_store/transformation.py
+  s_d71e62cb6f304c::t_0f1a973beb6761 490
+  s_d71e62cb6f304c::t_812b63b54fc6bb 114,116-122,125,132,139-166,450-489,501,516
+litellm/llms/s3_vectors/vector_stores/transformation.py
+  s_d71e62cb6f304c::t_812b63b54fc6bb 120-122
+  s_d71e62cb6f304c::t_160d2f20d1ddf6 119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "60a44f527aef60610fc3fb86d39c191eb6de549b",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
