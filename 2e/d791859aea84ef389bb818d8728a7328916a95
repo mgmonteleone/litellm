@@ -1,0 +1,38 @@
+litellm/constants.py
+  h_69b863911ebf05 1968-1976
+litellm/proxy/_types.py
+  h_69b863911ebf05 3000-3005,3034,3704-3707
+litellm/proxy/auth/auth_exception_handler.py
+  h_69b863911ebf05 176-180
+litellm/proxy/db/db_spend_update_writer.py
+  h_69b863911ebf05 2037-2046
+litellm/proxy/management_endpoints/common_daily_activity.py
+  h_69b863911ebf05 12-16,680,689-693,715,717,723-732,735-769,771-830,834,838-843,1177-1184
+litellm/proxy/spend_tracking/spend_tracking_utils.py
+  h_69b863911ebf05 167
+litellm/proxy/utils.py
+  h_69b863911ebf05 2653-2657,5255-5282,5387-5389,5392,5395-5402
+tests/test_litellm/proxy/db/test_db_spend_update_writer.py
+  h_69b863911ebf05 2750-2793
+tests/test_litellm/proxy/db/test_prisma_self_heal.py
+  h_69b863911ebf05 631-634
+tests/test_litellm/proxy/management_endpoints/test_common_daily_activity.py
+  h_69b863911ebf05 1,5,12-16,18,20,2116-2207
+tests/test_litellm/proxy/spend_tracking/test_spend_management_endpoints.py
+  h_69b863911ebf05 3096,3192,3286
+tests/test_litellm/proxy/test_litellm_pre_call_utils.py
+  h_69b863911ebf05 6074-6081
+tests/test_litellm/proxy/utils/prisma_and_spend/test_prisma_client_reconnect.py
+  h_69b863911ebf05 1104-1156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "2ed791859aea84ef389bb818d8728a7328916a95",
+  "prompts": {},
+  "humans": {
+    "h_69b863911ebf05": {
+      "author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
