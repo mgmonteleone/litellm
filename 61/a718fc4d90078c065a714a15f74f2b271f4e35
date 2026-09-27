@@ -1,0 +1,33 @@
+litellm/proxy/_types.py
+  s_e0bc7d6e875242::t_0d961597ec6dcf 3000-3005,3034,3704-3707
+litellm/proxy/auth/auth_exception_handler.py
+  s_e0bc7d6e875242::t_fbb0b9f4350fb5 176-180
+litellm/proxy/db/db_spend_update_writer.py
+  s_e0bc7d6e875242::t_b9661d70760492 2037-2046
+litellm/proxy/spend_tracking/spend_tracking_utils.py
+  s_e0bc7d6e875242::t_330fb878cb57f8 167
+litellm/proxy/utils.py
+  s_e0bc7d6e875242::t_838aef35f7f3f2 2653-2657
+tests/test_litellm/proxy/db/test_db_spend_update_writer.py
+  s_e0bc7d6e875242::t_93084116ec73e0 2750-2793
+tests/test_litellm/proxy/spend_tracking/test_spend_management_endpoints.py
+  s_e0bc7d6e875242::t_a1340005d5064e 3096,3192,3286
+tests/test_litellm/proxy/test_litellm_pre_call_utils.py
+  s_e0bc7d6e875242::t_bf24484dd1f0f1 6074-6081
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "61a718fc4d90078c065a714a15f74f2b271f4e35",
+  "prompts": {},
+  "sessions": {
+    "s_e0bc7d6e875242": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c37c9d46-795c-4cd1-835d-84b84570be9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
