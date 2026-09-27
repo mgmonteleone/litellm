@@ -1,0 +1,22 @@
+litellm/llms/base_llm/vector_store/transformation.py
+  h_69b863911ebf05 16,99,118-123,145,152,171-173,181
+litellm/proxy/vector_store_endpoints/utils.py
+  h_69b863911ebf05 160-170,196-200
+tests/router_unit_tests/test_router_embedding_integration.py
+  h_69b863911ebf05 189-209
+tests/test_litellm/llms/s3_vectors/vector_stores/test_s3_vectors_transformation.py
+  h_69b863911ebf05 205-238
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  h_69b863911ebf05 2286-2306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "b4982f4985d303adfa4b9c65b4bf0a6c9d09c65c",
+  "prompts": {},
+  "humans": {
+    "h_69b863911ebf05": {
+      "author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
