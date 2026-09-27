@@ -1,0 +1,22 @@
+tests/router_unit_tests/test_router_embedding_integration.py
+  s_d71e62cb6f304c::t_2f650205439444 189-209
+litellm/llms/base_llm/vector_store/transformation.py
+  s_d71e62cb6f304c::t_7ea5226916bdb7 16
+  s_d71e62cb6f304c::t_aa6c5d4e7a2e40 99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "2177b0f8c93308713b15bc138926d32b14df3a2b",
+  "prompts": {},
+  "sessions": {
+    "s_d71e62cb6f304c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "598183a5-6865-48f8-80e7-37d24447f686",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
