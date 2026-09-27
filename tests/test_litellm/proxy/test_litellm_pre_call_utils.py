@@ -6071,6 +6071,14 @@ def test_via_virtual_key_cannot_be_forged_from_validated_input():
     assert from_dict.via_virtual_key is False
 
 
+def test_unresolved_key_cannot_be_forged_from_validated_input():
+    from_kwargs = UserAPIKeyAuth(api_key="b" * 64, unresolved_key=True)
+    assert from_kwargs.unresolved_key is False
+
+    from_dict = UserAPIKeyAuth.model_validate({"api_key": "b" * 64, "unresolved_key": True})
+    assert from_dict.unresolved_key is False
+
+
 @pytest.mark.asyncio
 async def test_overwrite_user_with_key_hash_stamps_master_key_alias(monkeypatch):
     """Master-key requests carry the stable alias instead of a hash (so the master

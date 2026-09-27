@@ -2650,6 +2650,11 @@ class ProxyLogging:
 
         Is triggered when self._is_proxy_only_error() returns True
         """
+        # Carried into SpendLogsMetadata so daily spend aggregation can skip rows whose
+        # api_key hash is a credential no key in the DB matched.
+        if user_api_key_dict.unresolved_key:
+            request_data.setdefault("metadata", {})["unresolved_key"] = True
+
         litellm_logging_obj: Logging | None = request_data.get("litellm_logging_obj", None)
         if litellm_logging_obj is None:
             from litellm._uuid import uuid

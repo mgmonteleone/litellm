@@ -2997,6 +2997,12 @@ class UserAPIKeyAuth(LiteLLM_VerificationTokenView):  # the expected response ob
             "user id."
         ),
     )
+    # Server-only marker set exclusively by the auth failure path when no identity could be
+    # resolved for the presented credential, i.e. the key does not exist in the DB. Stripped
+    # from validated input like the markers above. Daily spend aggregation reads it to skip
+    # writing a LiteLLM_DailyUserSpend row keyed on a caller-supplied token, which would
+    # otherwise let unauthenticated traffic grow that table without bound.
+    unresolved_key: bool = Field(default=False, exclude=True)
     budget_reservation: dict[str, Any] | None = Field(default=None, exclude=True)
     matched_model_access_groups: list[str] | None = Field(default=None, exclude=True)
     budget_throttle_pct: float | None = Field(default=None, exclude=True)
@@ -3025,6 +3031,7 @@ class UserAPIKeyAuth(LiteLLM_VerificationTokenView):  # the expected response ob
         values.pop("mcp_source_team_rpm_limits", None)
         values.pop("mcp_session_resource_server_id", None)
         values.pop("via_virtual_key", None)
+        values.pop("unresolved_key", None)
         if values.get("api_key") is not None:
             values.update({"token": cls._safe_hash_litellm_api_key(values.get("api_key"))})
             if isinstance(values.get("api_key"), str):
@@ -3694,6 +3701,10 @@ class SpendLogsMetadata(TypedDict):
     vector_store_request_metadata: list[StandardLoggingVectorStoreRequest] | None
     routing_decision: StandardLoggingRoutingDecision | None
     internal_call_origin: InternalCallOrigin | None
+    # True when auth resolved no identity for the presented credential, i.e. the key does not
+    # exist. The user_api_key hash on such a log is caller-supplied and unbounded in
+    # cardinality, so daily spend aggregation skips it.
+    unresolved_key: bool | None
     guardrail_information: list[StandardLoggingGuardrailInformation] | None
     eval_information: Any | None
     status: StandardLoggingPayloadStatus

@@ -2034,6 +2034,16 @@ class DBSpendUpdateWriter:
         request_status: Final = prisma_client.get_request_status(payload)
         verbose_proxy_logger.debug("Logged request status: %s", request_status)
         _metadata: Final[SpendLogsMetadata] = json.loads(payload["metadata"])
+        # A credential that matched no key in the DB. The api_key column is a hash of
+        # caller-supplied input, so one row per distinct token tried: a key-scanning sweep
+        # grows this table without bound and the cardinality later breaks the aggregated
+        # analytics rollups. The spend log itself is still written, so the attempt stays
+        # auditable; only the per-key daily aggregate is skipped.
+        if _metadata.get("unresolved_key"):
+            verbose_proxy_logger.debug(
+                "Unresolved key on failed auth, skipping from daily_user_spend_transactions"
+            )
+            return None
         usage_obj: Final = _metadata.get("usage_object", {}) or {}
         if isinstance(payload["startTime"], datetime):
             start_time: Final = payload["startTime"].isoformat()

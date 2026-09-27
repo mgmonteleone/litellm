@@ -173,6 +173,11 @@ class UserAPIKeyAuthExceptionHandler:
             user_api_key_dict = resolved_identity.model_copy() if resolved_identity is not None else UserAPIKeyAuth()
             user_api_key_dict.parent_otel_span = parent_otel_span
             user_api_key_dict.request_route = route
+            # No identity resolved means the presented credential matched no key in the DB, so
+            # the hash stamped below is caller-supplied and unbounded in cardinality. Mark it so
+            # daily spend aggregation skips it; a key-scanning sweep would otherwise write one
+            # LiteLLM_DailyUserSpend row per token tried.
+            user_api_key_dict.unresolved_key = resolved_identity is None
             user_api_key_dict.api_key = user_api_key_dict.api_key or UserAPIKeyAuth(api_key=api_key).api_key
 
             # Stamp identity onto the request's server span now, before the request
