@@ -9,11 +9,11 @@ from typing import TYPE_CHECKING, Any, Final, Literal, NoReturn, Protocol, TypeA
 import httpx
 from pydantic import TypeAdapter
 
-from litellm.constants import CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS
 from litellm.exceptions import BadRequestError
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import EmbeddingResponse
 from litellm.types.vector_stores import (
+    VECTOR_STORE_ENDPOINT_KEYS,
     VECTOR_STORE_OPENAI_PARAMS,
     BaseVectorStoreAuthCredentials,
     VectorStoreCreateOptionalRequestParams,
@@ -96,7 +96,7 @@ def model_not_configured_error(model: str) -> BadRequestError:
     return BadRequestError(message=model_not_configured_message(model), model=model, llm_provider="")
 
 
-_ROUTED_CALL_BLOCKED_KEYS: Final = CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS | frozenset({"api_key"})
+_ROUTED_CALL_BLOCKED_KEYS: Final = VECTOR_STORE_ENDPOINT_KEYS | frozenset({"api_key"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,10 +115,12 @@ class RouterVectorStoreEmbeddingExecutor:
             "metadata": metadata,
         }
 
-    def _routed_embedding_kwargs(self, configuration: Mapping[str, object]) -> Mapping[str, object]:
-        """A routed call always uses the deployment's own endpoint and credentials, so drop any
-        caller-supplied override before it reaches the Router (defence in depth: the deployment the
-        Router picked already came from an admin-trusted model list, not from this request)."""
+    def _sanitized_embedding_kwargs(self, configuration: Mapping[str, object]) -> Mapping[str, object]:
+        """A routed call always uses the deployment's own endpoint and credentials, and the SDK
+        fallback for a provider's default model always uses the proxy's own environment credentials,
+        so drop any caller-supplied override of where the call goes or what signs it before either one
+        runs (defence in depth: a routed deployment already came from an admin-trusted model list, and
+        the fallback is a provider's hard-coded default, neither from this request)."""
         return {
             key: value
             for key, value in self._embedding_kwargs(configuration).items()
@@ -140,14 +142,14 @@ class RouterVectorStoreEmbeddingExecutor:
         return self.router.embedding(  # pyright: ignore[reportUnknownMemberType]  # Router embedding input retains a legacy untyped list
             model=model,
             input=[query],  # mutable-ok: Router embedding requires a mutable input list
-            **self._routed_embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
+            **self._sanitized_embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
         )
 
     async def _aroute(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
         return await self.router.aembedding(  # pyright: ignore[reportUnknownMemberType]  # Router embedding input retains a legacy untyped list
             model=model,
             input=[query],  # mutable-ok: Router embedding requires a mutable input list
-            **self._routed_embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
+            **self._sanitized_embedding_kwargs(configuration),  # pyright: ignore[reportArgumentType]  # provider kwargs are intentionally dynamic
         )
 
     def embed(self, model: str, query: str, configuration: Mapping[str, object]) -> EmbeddingResponse:
@@ -166,7 +168,9 @@ class RouterVectorStoreEmbeddingExecutor:
         provider directly when the router doesn't serve it instead of failing the search outright.
         """
         if not self.serves(model):
-            return LiteLLMVectorStoreEmbeddingExecutor().embed(model, query, self._embedding_kwargs(configuration))
+            return LiteLLMVectorStoreEmbeddingExecutor().embed(
+                model, query, self._sanitized_embedding_kwargs(configuration)
+            )
         return self._route(model, query, configuration)
 
     async def aembed_with_default_fallback(
@@ -174,7 +178,7 @@ class RouterVectorStoreEmbeddingExecutor:
     ) -> EmbeddingResponse:
         if not self.serves(model):
             return await LiteLLMVectorStoreEmbeddingExecutor().aembed(
-                model, query, self._embedding_kwargs(configuration)
+                model, query, self._sanitized_embedding_kwargs(configuration)
             )
         return await self._aroute(model, query, configuration)
 

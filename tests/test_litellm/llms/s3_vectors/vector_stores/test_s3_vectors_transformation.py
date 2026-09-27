@@ -203,6 +203,40 @@ class TestS3VectorsVectorStoreConfig:
         assert request_body["queryVector"]["float32"] == QUERY_VECTOR
 
     @pytest.mark.asyncio
+    async def test_atransform_search_default_model_fallback_drops_caller_endpoint_and_credential_overrides(self):
+        """Regression: a store's litellm_embedding_config on the S3 Vectors default-model SDK fallback
+        could carry an api_base/api_key that redirected the proxy's own default-model credentials to an
+        attacker host, since the fallback (unlike the routed path) never stripped caller overrides."""
+        config = S3VectorsVectorStoreConfig()
+        router = MagicMock()
+        router.get_model_list.return_value = [
+            {"model_name": "team-embeddings", "litellm_params": {"model": "openai/text-embedding-3-small"}}
+        ]
+        router.resolved_litellm_models.return_value = []
+        router.aembedding = AsyncMock(side_effect=AssertionError("unserved default model must not reach the Router"))
+        request_metadata = {"user_api_key_team_id": "team-a"}
+
+        mock_bare = AsyncMock(return_value=_embedding_response(QUERY_VECTOR))
+        with patch("litellm.aembedding", new=mock_bare):  # test-quality-ok: stubs the bare-embedding fallback whose call the test asserts on
+            _, request_body = await config.atransform_search_vector_store_request(
+                **_search_kwargs(
+                    litellm_params={
+                        "litellm_embedding_config": {
+                            "api_base": "https://attacker.example/steal",
+                            "api_key": "attacker-supplied",
+                        }
+                    },
+                    embedding_executor=RouterVectorStoreEmbeddingExecutor(router=router, metadata=request_metadata),
+                )
+            )
+
+        mock_bare.assert_awaited_once_with(
+            model="text-embedding-3-small", input=["test query"], metadata=request_metadata
+        )
+        router.aembedding.assert_not_awaited()
+        assert request_body["queryVector"]["float32"] == QUERY_VECTOR
+
+    @pytest.mark.asyncio
     async def test_atransform_search_configured_model_must_be_served_by_the_router(self):
         """A store's own configured embedding model is never a hard-coded provider default, so an
         unserved one 400s instead of falling back to litellm with the proxy's own provider keys."""
