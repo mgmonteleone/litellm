@@ -1,15 +1,23 @@
+import re
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Final
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from litellm.proxy.spend_tracking.ptu_feature_flag import PTU_COST_ATTRIBUTION_ENV_VAR
 
 
+from litellm.constants import (
+    DAILY_ACTIVITY_MAX_BREAKDOWN_KEYS,
+    PTU_SENTINEL_API_KEY,
+    TRUNCATED_BREAKDOWN_API_KEY,
+)
 from litellm.proxy.management_endpoints.common_daily_activity import (
+    _GroupingSetsRow,
     _adjust_dates_for_timezone,
+    _aggregate_grouping_sets_records,
     _build_aggregated_sql_query,
     _build_entity_rollup_sql_query,
     _is_user_agent_tag,
@@ -2105,3 +2113,95 @@ async def test_get_daily_activity_aggregated_with_entity_breakdown():
     # Rollups with the entity bit set must still land in their usual buckets
     assert daily.breakdown.models["gpt-4o"].metrics.spend == 18.0
     assert daily.breakdown.api_keys["key-1"].metrics.spend == 12.0
+
+
+class TestAggregatedBreakdownTruncation:
+    """api_key is a hash of caller-presented credentials, so its cardinality is driven by
+    whoever is sending traffic. An untrimmed rollup over a key-scanning sweep produced a
+    result set large enough to kill the Prisma query engine, which took the proxy's
+    database down with it until the liveness probe restarted the instance."""
+
+    def _sql(self, **overrides):
+        kwargs = dict(
+            table_name="litellm_dailyuserspend",
+            entity_id_field="user_id",
+            entity_id=None,
+            start_date="2026-09-20",
+            end_date="2026-09-27",
+            model=None,
+            api_key=None,
+        )
+        kwargs.update(overrides)
+        sql, _params = _build_aggregated_sql_query(**kwargs)
+        return sql
+
+    def test_defaults_to_the_shared_cap(self):
+        sql = self._sql()
+        assert f"key_rank <= {DAILY_ACTIVITY_MAX_BREAKDOWN_KEYS}" in sql
+        assert f"key_rank > {DAILY_ACTIVITY_MAX_BREAKDOWN_KEYS}" in sql
+
+    def test_cap_is_configurable(self):
+        assert "key_rank <= 5" in self._sql(max_breakdown_keys=5)
+
+    def test_cap_is_coerced_to_int_so_it_cannot_inject(self):
+        """The cap reaches SQL by interpolation, not as a bound parameter, because
+        Postgres would otherwise have to infer a type for the ROW_NUMBER() comparison."""
+        with pytest.raises((ValueError, TypeError)):
+            self._sql(max_breakdown_keys="1; DROP TABLE users--")
+
+    def test_tail_folds_into_the_truncation_sentinel(self):
+        sql = self._sql()
+        assert f"'{TRUNCATED_BREAKDOWN_API_KEY}' AS api_key" in sql
+
+    def test_rolled_up_and_ptu_rows_are_never_truncated(self):
+        """Rows whose grouping set rolls api_key up carry the day/model/provider totals.
+        Ranking them 0 keeps every total exact no matter how small the cap is."""
+        sql = self._sql(max_breakdown_keys=1)
+        assert f"WHEN api_key IS NULL OR api_key = '{PTU_SENTINEL_API_KEY}' THEN 0" in sql
+
+    def test_union_branches_project_identical_columns(self):
+        """UNION ALL matches by position. A drift between the two column lists would
+        silently transpose metrics into the wrong fields rather than fail loudly."""
+        sql = self._sql()
+        kept = re.search(r"SELECT (date, model.*?)\n\s+FROM ranked\n\s+WHERE key_rank <=", sql, re.S)
+        tail = re.search(r"UNION ALL\n\s+SELECT\n(.*?)\n\s+FROM ranked\n\s+WHERE key_rank >", sql, re.S)
+        assert kept and tail
+
+        kept_cols = [c.strip() for c in kept.group(1).split(",")]
+        tail_cols = [
+            c.strip().split(" AS ")[-1].strip()
+            for c in re.split(r",(?![^()]*\))", tail.group(1))
+        ]
+        assert kept_cols == tail_cols
+        assert len(kept_cols) == 22
+
+    def test_generated_sql_parses_as_postgres(self):
+        """Every assertion above is a string check; this one is the only thing standing
+        between a malformed rollup and another engine death in production."""
+        pglast = pytest.importorskip("pglast")
+        for table in ("litellm_dailyuserspend", "litellm_dailyteamspend"):
+            pglast.parse_sql(self._sql(table_name=table))
+
+
+@pytest.mark.asyncio
+async def test_truncation_sentinel_is_not_looked_up_in_the_key_table():
+    """__other__ stands in for the trimmed tail and PTU for flat cost attributed across
+    every key. Neither exists in LiteLLM_VerificationToken, so querying for them would
+    only ever miss."""
+    prisma_client = MagicMock()
+    records = [
+        _GroupingSetsRow(api_key=TRUNCATED_BREAKDOWN_API_KEY, date="2026-09-26", group_level=0),
+        _GroupingSetsRow(api_key=PTU_SENTINEL_API_KEY, date="2026-09-26", group_level=0),
+        _GroupingSetsRow(api_key="sk-real-key-hash", date="2026-09-26", group_level=0),
+    ]
+
+    with patch(
+        "litellm.proxy.management_endpoints.common_daily_activity.get_api_key_metadata",
+        new=AsyncMock(return_value={}),
+    ) as mock_lookup, patch(
+        "litellm.proxy.management_endpoints.common_daily_activity._aggregate_grouping_sets_records_sync",
+        return_value={"results": [], "totals": SpendMetrics()},
+    ):
+        await _aggregate_grouping_sets_records(prisma_client=prisma_client, records=records)
+
+    assert mock_lookup.await_args.args[1] == {"sk-real-key-hash"}
