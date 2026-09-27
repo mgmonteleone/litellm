@@ -1965,6 +1965,15 @@ NON_INFERENCE_CALL_TYPES: Final[frozenset[str]] = frozenset(
 # spend under the table's composite unique constraint.
 PTU_SENTINEL_API_KEY: Final[str] = "__ptu_flat_cost__"
 PTU_ROLLUP_JOB_ID: Final[str] = "ptu_flat_cost_rollup_job"
+# Aggregated daily-activity rollups fan out across api_key, and that column is a hash of
+# whatever credential the caller presented. A key-scanning sweep therefore drives its
+# cardinality without bound, and the resulting result set is large enough to kill the
+# Prisma query engine mid-request. Keep only the top N keys per rollup bucket by spend and
+# fold the tail into TRUNCATED_BREAKDOWN_API_KEY. Day totals are unaffected: they come from
+# the grouping sets that do not include api_key.
+DAILY_ACTIVITY_MAX_BREAKDOWN_KEYS: Final[int] = 100
+TRUNCATED_BREAKDOWN_API_KEY: Final[str] = "__other__"
+
 PTU_ROLLUP_LOCK_TTL_SECONDS: Final[int] = 900
 # Furthest back the catch-up pass looks for unpriced PTU days when a deployment
 # declares no ptu_effective_from, bounding the scan for an open-ended window.

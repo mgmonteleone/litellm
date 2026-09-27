@@ -9,7 +9,11 @@ from fastapi import HTTPException, status
 from typing_extensions import ReadOnly, TypedDict
 
 from litellm._logging import verbose_proxy_logger
-from litellm.constants import PTU_SENTINEL_API_KEY
+from litellm.constants import (
+    DAILY_ACTIVITY_MAX_BREAKDOWN_KEYS,
+    PTU_SENTINEL_API_KEY,
+    TRUNCATED_BREAKDOWN_API_KEY,
+)
 from litellm.proxy._types import CommonProxyErrors
 from litellm.proxy.spend_tracking.key_metadata_recovery import (
     attach_user_emails,
@@ -673,6 +677,7 @@ def _build_aggregated_sql_query(
     exclude_entity_ids: list[str] | None = None,  # mutable-ok: filter union shared with the paginated path
     timezone_offset_minutes: int | None = None,
     include_current_utc_day: bool = False,
+    max_breakdown_keys: int = DAILY_ACTIVITY_MAX_BREAKDOWN_KEYS,
 ) -> tuple[str, list[str]]:  # mutable-ok: SQL text plus its ordered $N params
     """Build a parameterized SQL GROUP BY query for aggregated daily activity.
 
@@ -680,6 +685,11 @@ def _build_aggregated_sql_query(
     mcp_namespaced_tool_name, endpoint) with SUMs on all metric columns.
     The entity_id column is intentionally omitted from GROUP BY to collapse
     rows across entities — this is where the biggest row reduction comes from.
+
+    Per-key breakdowns are capped at ``max_breakdown_keys`` entries per rollup bucket,
+    with the remainder folded into a single TRUNCATED_BREAKDOWN_API_KEY row, so an
+    unbounded api_key cardinality cannot produce a result set large enough to kill the
+    query engine. Totals are unaffected.
 
     Returns:
         Tuple of (sql_query, params_list) ready for prisma_client.db.query_raw().
@@ -702,61 +712,135 @@ def _build_aggregated_sql_query(
         exclude_entity_ids=exclude_entity_ids,
     )
 
-    # Postgres computes every rollup level the response needs — per-date
+    # Postgres computes every rollup level the response needs -- per-date
     # totals, per-(date, model), per-(date, model, api_key), per-provider,
-    # etc. — in a single pass via GROUPING SETS. The GROUPING() bitmask
+    # etc. -- in a single pass via GROUPING SETS. The GROUPING() bitmask
     # encodes which level a row belongs to so Python can dispatch rows
     # straight into their buckets without re-summing. The leaf grouping
     # is omitted on purpose: nothing in the response shape needs it once
     # all the rollups are present.
     #
+    # The rollup is then trimmed to the top `max_breakdown_keys` api_keys per bucket
+    # before it leaves Postgres. api_key is a hash of caller-presented credentials, so a
+    # key-scanning sweep drives its cardinality without bound, and the untrimmed result
+    # set is large enough to kill the query engine mid-request, taking the proxy's
+    # database with it. Trimming here means Postgres absorbs the width -- on its own
+    # instance, spilling to disk if it must -- and only bounded output crosses into the
+    # engine. Rows whose grouping set rolls api_key up rank as 0 and always survive, so
+    # every day/model/provider total stays exact; only the per-key breakdown is capped,
+    # with the tail folded into a single sentinel row.
+    #
     # TODO: drop the successful_requests/failed_requests aggregates (and the
     # total_successful_requests metadata they feed) once the admin UI reads SGR
-    # only from LiteLLM_DailyGatewayRequests. The remaining spend, token and
-    # api_requests rollups are still served from here.
+    # only from LiteLLM_DailyGatewayRequests. This path derives the counts from
+    # spend-log metadata rather than from what the gateway answered, so the two
+    # intentionally disagree. The remaining spend, token and api_requests rollups
+    # are still served from here.
+    dimensions = (
+        "date",
+        "model",
+        "model_group",
+        "custom_llm_provider",
+        "mcp_namespaced_tool_name",
+        "endpoint",
+    )
+    metrics = (
+        "spend",
+        "ptu_flat_cost",
+        "prompt_tokens",
+        "completion_tokens",
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+        "compression_saved_tokens",
+        "compression_savings_spend",
+        "prompt_caching_savings_spend",
+        "gateway_injected_caching_savings_spend",
+        "autorouter_savings_spend",
+        "api_requests",
+        "successful_requests",
+        "failed_requests",
+    )
+    partition_by: Final = ", ".join(("group_level", *dimensions))
+    passthrough_cols: Final = ", ".join((*dimensions, "api_key", "group_level", *metrics))
+    tail_sums: Final = ", ".join(f"SUM({metric}) AS {metric}" for metric in metrics)
+    # Inlined rather than bound so Postgres need not infer a type for the comparison
+    # against ROW_NUMBER()'s bigint. int() is what keeps it injection-safe.
+    key_limit: Final = int(max_breakdown_keys)
+
     sql_query: Final = f"""
+        WITH rollup AS (
+            SELECT
+                date,
+                api_key,
+                model,
+                COALESCE(NULLIF(model_group, ''), model) AS model_group,
+                custom_llm_provider,
+                mcp_namespaced_tool_name,
+                endpoint,
+                GROUPING(date, api_key, model, COALESCE(NULLIF(model_group, ''), model),
+                         custom_llm_provider, mcp_namespaced_tool_name,
+                         endpoint) AS group_level,
+                SUM(spend)::float AS spend,
+                {_ptu_flat_cost_select(table_name)},
+                SUM(prompt_tokens)::bigint AS prompt_tokens,
+                SUM(completion_tokens)::bigint AS completion_tokens,
+                SUM(cache_read_input_tokens)::bigint AS cache_read_input_tokens,
+                SUM(cache_creation_input_tokens)::bigint AS cache_creation_input_tokens,
+                SUM(compression_saved_tokens)::bigint AS compression_saved_tokens,
+                SUM(compression_savings_spend)::float AS compression_savings_spend,
+                SUM(prompt_caching_savings_spend)::float AS prompt_caching_savings_spend,
+                SUM(gateway_injected_caching_savings_spend)::float AS gateway_injected_caching_savings_spend,
+                SUM(autorouter_savings_spend)::float AS autorouter_savings_spend,
+                SUM(api_requests)::bigint AS api_requests,
+                SUM(successful_requests)::bigint AS successful_requests,
+                SUM(failed_requests)::bigint AS failed_requests
+            FROM "{pg_table}"
+            WHERE {where_clause}
+            GROUP BY GROUPING SETS (
+                (date),
+                (date, api_key),
+                (date, model),
+                (date, model, api_key),
+                (date, COALESCE(NULLIF(model_group, ''), model)),
+                (date, COALESCE(NULLIF(model_group, ''), model), api_key),
+                (date, custom_llm_provider),
+                (date, custom_llm_provider, api_key),
+                (date, mcp_namespaced_tool_name),
+                (date, mcp_namespaced_tool_name, api_key),
+                (date, endpoint),
+                (date, endpoint, api_key),
+                ()
+            )
+        ),
+        ranked AS (
+            SELECT
+                rollup.*,
+                CASE
+                    WHEN api_key IS NULL OR api_key = '{PTU_SENTINEL_API_KEY}' THEN 0
+                    ELSE ROW_NUMBER() OVER (
+                        PARTITION BY {partition_by}
+                        ORDER BY spend DESC, api_requests DESC, api_key ASC
+                    )
+                END AS key_rank
+            FROM rollup
+        )
+        SELECT {passthrough_cols}
+        FROM ranked
+        WHERE key_rank <= {key_limit}
+        UNION ALL
         SELECT
             date,
-            api_key,
             model,
-            COALESCE(NULLIF(model_group, ''), model) AS model_group,
+            model_group,
             custom_llm_provider,
             mcp_namespaced_tool_name,
             endpoint,
-            GROUPING(date, api_key, model, COALESCE(NULLIF(model_group, ''), model),
-                     custom_llm_provider, mcp_namespaced_tool_name,
-                     endpoint) AS group_level,
-            SUM(spend)::float AS spend,
-            {_ptu_flat_cost_select(table_name)},
-            SUM(prompt_tokens)::bigint AS prompt_tokens,
-            SUM(completion_tokens)::bigint AS completion_tokens,
-            SUM(cache_read_input_tokens)::bigint AS cache_read_input_tokens,
-            SUM(cache_creation_input_tokens)::bigint AS cache_creation_input_tokens,
-            SUM(compression_saved_tokens)::bigint AS compression_saved_tokens,
-            SUM(compression_savings_spend)::float AS compression_savings_spend,
-            SUM(prompt_caching_savings_spend)::float AS prompt_caching_savings_spend,
-            SUM(gateway_injected_caching_savings_spend)::float AS gateway_injected_caching_savings_spend,
-            SUM(autorouter_savings_spend)::float AS autorouter_savings_spend,
-            SUM(api_requests)::bigint AS api_requests,
-            SUM(successful_requests)::bigint AS successful_requests,
-            SUM(failed_requests)::bigint AS failed_requests
-        FROM "{pg_table}"
-        WHERE {where_clause}
-        GROUP BY GROUPING SETS (
-            (date),
-            (date, api_key),
-            (date, model),
-            (date, model, api_key),
-            (date, COALESCE(NULLIF(model_group, ''), model)),
-            (date, COALESCE(NULLIF(model_group, ''), model), api_key),
-            (date, custom_llm_provider),
-            (date, custom_llm_provider, api_key),
-            (date, mcp_namespaced_tool_name),
-            (date, mcp_namespaced_tool_name, api_key),
-            (date, endpoint),
-            (date, endpoint, api_key),
-            ()
-        )
+            '{TRUNCATED_BREAKDOWN_API_KEY}' AS api_key,
+            group_level,
+            {tail_sums}
+        FROM ranked
+        WHERE key_rank > {key_limit}
+        GROUP BY {partition_by}
     """
 
     return sql_query, sql_params
@@ -1090,7 +1174,14 @@ async def _aggregate_grouping_sets_records(
     records: Sequence[_GroupingSetsRow],
 ) -> _AggregatedSpendData:
     """Async wrapper: fetch api_key_metadata, then dispatch on a worker thread."""
-    api_keys: Final[set[str]] = {r.api_key for r in records if r.api_key and r.api_key != PTU_SENTINEL_API_KEY}
+    # Neither sentinel is a real key: PTU carries flat cost attributed across every key,
+    # and the truncation bucket stands in for the tail the SQL trimmed. Looking either up
+    # in the key table would only ever miss.
+    api_keys: Final[set[str]] = {
+        r.api_key
+        for r in records
+        if r.api_key and r.api_key not in (PTU_SENTINEL_API_KEY, TRUNCATED_BREAKDOWN_API_KEY)
+    }
 
     api_key_metadata: dict[str, _KeyMetadataDict] = {}
     if api_keys:

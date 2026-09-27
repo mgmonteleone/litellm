@@ -1101,3 +1101,56 @@ async def test_attempt_db_reconnect_cancelled_while_waiting_does_not_strand_lock
     prisma_client._db_reconnect_lock.release()
     await asyncio.sleep(0.05)
     assert prisma_client._db_reconnect_lock.locked() is False
+
+
+@pytest.mark.asyncio
+async def test_run_reconnect_cycle_repairs_a_dead_reader_behind_a_healthy_writer(
+    prisma_client: PrismaClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dead reader engine must be repaired even though the writer answers.
+
+    Reads route to the reader, so a poisoned reader fails every routed query
+    while `_engine_confirmed_dead` and `_engine_pid` — both writer-side — stay
+    clean and send the cycle down the direct path. Skipping the recreate on
+    the writer's word alone leaves the reader dead AND unflagged, so reads keep
+    hitting it, each watchdog tick reports a repair that never happened, and
+    the consecutive-failure count resets before it can escalate: a proxy that
+    serves 500s on every read-backed endpoint indefinitely.
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgres://x:y@h:5432/db")
+    writer, reader = _routing_client(prisma_client, reader_generation=1, writer_generation=1)
+    writer.query_raw = AsyncMock(return_value=[{"?column?": 1}])
+    reader.query_raw = AsyncMock(side_effect=ConnectionError("All connection attempts failed"))
+    prisma_client._engine_confirmed_dead = False
+    prisma_client._engine_pid = 0
+    prisma_client.db.recreate_prisma_client = AsyncMock(return_value=True)
+    prisma_client._start_engine_watcher = AsyncMock()
+    prisma_client._cleanup_engine_watcher = MagicMock()
+
+    await prisma_client._run_reconnect_cycle(timeout_seconds=5)
+
+    assert prisma_client.db.recreate_prisma_client.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_reconnect_cycle_skips_recreate_when_reader_already_failed_over(
+    prisma_client: PrismaClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reader already marked unavailable needs no probe and no recreate:
+    reads are being served by the writer, which just answered. Probing it
+    anyway would churn a healthy writer engine on every watchdog tick for as
+    long as the replica stays down."""
+    monkeypatch.setenv("DATABASE_URL", "postgres://x:y@h:5432/db")
+    writer, reader = _routing_client(prisma_client, reader_generation=1, writer_generation=1)
+    writer.query_raw = AsyncMock(return_value=[{"?column?": 1}])
+    reader.query_raw = AsyncMock(side_effect=AssertionError("reader must not be probed"))
+    prisma_client.db._reader_unavailable = True
+    prisma_client._engine_confirmed_dead = False
+    prisma_client._engine_pid = 0
+    prisma_client.db.recreate_prisma_client = AsyncMock(return_value=True)
+    prisma_client._start_engine_watcher = AsyncMock()
+    prisma_client._cleanup_engine_watcher = MagicMock()
+
+    await prisma_client._run_reconnect_cycle(timeout_seconds=5)
+
+    assert prisma_client.db.recreate_prisma_client.await_count == 0

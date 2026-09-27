@@ -628,6 +628,10 @@ async def test_direct_reconnect_probe_success_clears_writer_unavailable(
     writer = MagicMock()
     writer.query_raw = AsyncMock(return_value=[{"result": 1}])
     reader = MagicMock()
+    # The reader answers too: the early return is what this test pins, and it
+    # requires BOTH engines reachable, since skipping the recreate on a dead
+    # reader would leave every routed read failing.
+    reader.query_raw = AsyncMock(return_value=[{"result": 1}])
     routing = RoutingPrismaWrapper(writer=writer, reader=reader)
     routing._writer_unavailable = True
     client.db = routing

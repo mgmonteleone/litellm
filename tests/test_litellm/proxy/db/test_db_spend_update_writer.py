@@ -2747,6 +2747,50 @@ async def test_daily_transaction_internal_call_keeps_spend_but_not_request_count
     assert user_sent["successful_requests"] == 1
 
 
+@pytest.mark.asyncio
+async def test_daily_transaction_skipped_for_unresolved_key():
+    """A credential matching no key in the DB must not produce a daily spend row. The
+    api_key column would be a hash of caller-supplied input, so a key-scanning sweep
+    writes one row per token tried and the cardinality later breaks the aggregated
+    analytics rollups."""
+    writer = DBSpendUpdateWriter()
+    mock_prisma = MagicMock()
+    mock_prisma.get_request_status = MagicMock(return_value="failure")
+
+    def _payload(metadata: dict) -> dict:
+        return {
+            "request_id": "req-scan-1",
+            "user": "",
+            "startTime": "2026-09-26T00:00:00",
+            "api_key": "[redacted]]",
+            "model": "claude-sonnet-5",
+            "custom_llm_provider": "anthropic",
+            "model_group": "claude-sonnet-5",
+            "call_type": "acompletion",
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "spend": 0.0,
+            "metadata": json.dumps(metadata),
+        }
+
+    unresolved = await writer._common_add_spend_log_transaction_to_daily_transaction(
+        payload=_payload({"unresolved_key": True, "status": "failure"}),
+        prisma_client=mock_prisma,
+        type="user",
+    )
+    known_key_failure = await writer._common_add_spend_log_transaction_to_daily_transaction(
+        payload=_payload({"status": "failure"}),
+        prisma_client=mock_prisma,
+        type="user",
+    )
+
+    assert unresolved is None
+    # A failure on a key that does exist is still aggregated: the cardinality is bounded
+    # by the key table, and dropping it would hide real error rates from the dashboard.
+    assert known_key_failure is not None
+    assert known_key_failure["failed_requests"] == 1
+
+
 def _deadlock_error():
     from prisma.errors import RawQueryError
 
