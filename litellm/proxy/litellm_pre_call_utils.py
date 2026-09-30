@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+import os
 import re
 import time
 from collections import OrderedDict
@@ -2385,14 +2386,22 @@ async def add_litellm_data_to_request(
         # logic for tracking IP Address
 
         # logic for tracking IP Address
+        is_xff_enabled = (
+            (general_settings is not None and general_settings.get("use_x_forwarded_for") is True)
+            or os.getenv("USE_X_FORWARDED_FOR", "").lower() in ("true", "1")
+            or os.getenv("LITELLM_USE_X_FORWARDED_FOR", "").lower() in ("true", "1")
+        )
         if (
-            general_settings is not None
-            and general_settings.get("use_x_forwarded_for") is True
+            is_xff_enabled
             and request is not None
             and hasattr(request, "headers")
-            and "x-forwarded-for" in request.headers
         ):
-            requester_ip_address = request.headers["x-forwarded-for"]
+            if "x-client-ip" in request.headers:
+                requester_ip_address = request.headers["x-client-ip"].split(",")[0].strip()
+            elif "x-real-ip" in request.headers:
+                requester_ip_address = request.headers["x-real-ip"].split(",")[0].strip()
+            elif "x-forwarded-for" in request.headers:
+                requester_ip_address = request.headers["x-forwarded-for"].split(",")[0].strip()
         elif (
             request is not None
             and hasattr(request, "client")

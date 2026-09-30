@@ -76,13 +76,25 @@ def mark_invalid_virtual_key_error(exception: ProxyException, is_invalid_virtual
 
 
 def _get_request_ip_address(request: Request, use_x_forwarded_for: bool | None = False) -> str | None:
+    is_xff_enabled = (
+        use_x_forwarded_for is True
+        or os.getenv("USE_X_FORWARDED_FOR", "").lower() in ("true", "1")
+        or os.getenv("LITELLM_USE_X_FORWARDED_FOR", "").lower() in ("true", "1")
+    )
     client_ip = None
-    if use_x_forwarded_for is True and "x-forwarded-for" in request.headers:
-        client_ip = request.headers["x-forwarded-for"]
-    elif request.client is not None:
-        client_ip = request.client.host
-    else:
-        client_ip = ""
+    if is_xff_enabled and hasattr(request, "headers"):
+        if "x-client-ip" in request.headers:
+            client_ip = request.headers["x-client-ip"].split(",")[0].strip()
+        elif "x-real-ip" in request.headers:
+            client_ip = request.headers["x-real-ip"].split(",")[0].strip()
+        elif "x-forwarded-for" in request.headers:
+            client_ip = request.headers["x-forwarded-for"].split(",")[0].strip()
+
+    if not client_ip:
+        if request.client is not None:
+            client_ip = request.client.host
+        else:
+            client_ip = ""
 
     return client_ip
 
