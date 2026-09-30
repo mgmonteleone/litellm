@@ -1,0 +1,876 @@
+litellm/constants.py
+  h_69b863911ebf05 2113-2147
+litellm/llms/base_llm/vector_store/transformation.py
+  h_69b863911ebf05 7,12,16,24,81-101,118-130,132,134-141,145,148,152,155-184,266-346,474-514,525,540
+litellm/llms/custom_httpx/llm_http_handler.py
+  h_69b863911ebf05 10204,10236,10239-10240,10269,10283,10312,10315-10316
+litellm/llms/mongodb/vector_stores/diagnostics.py
+  h_69b863911ebf05 1-363
+litellm/llms/mongodb/vector_stores/filters.py
+  h_69b863911ebf05 1-119
+litellm/llms/mongodb/vector_stores/transformation.py
+  h_69b863911ebf05 2,5,7,20,23,25-26,29-30,34,42,50-52,54-56,59-62,68-125,133,138,148-161,173-180,190-216,245,247-250,252-274,276-399,412-414,417,456,464-465,467-468,470-473,483,493,496-498,502-512,520,526,528-557,616-629,640,644-645,654-707,711-761,763-790
+litellm/proxy/_experimental/out/404.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/404/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/__next.!KGRhc2hib2FyZCk.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,14-19,21,28
+litellm/proxy/_experimental/out/__next._full.txt
+  h_69b863911ebf05 2-11,13,15-18,20-22,25,30
+litellm/proxy/_experimental/out/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/_next/static/chunks/00y2t_v5hbf58.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/00yj3erhq3g-u.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/01qlz-gzv5ig5.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/031i5neh21gr5.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/041rcqtaey2au.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/052r5_i38y2wl.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/080ujl9-xx4n9.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/09_bkcnzyxlzg.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/0a8ehb_sejid5.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/0azacx_rn4q6g.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/0b8_ly00etlnt.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/0dx9y3pohl8_v.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/0gs2d8vwy50op.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/0i28_dqtvlsyv.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/0p981dqr_njsu.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/0uwmozwrsq0mp.js
+  h_69b863911ebf05 1-2,6-7,12-14,25,54,65,88,219,378,386,398,403,420-421
+litellm/proxy/_experimental/out/_next/static/chunks/0w1r-1_s9obpt.js
+  h_69b863911ebf05 3
+litellm/proxy/_experimental/out/_next/static/chunks/0wyst_gdttdbn.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/0zmxy84a3eu_4.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/11s43551dp792.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/12t2v0xxg1ezx.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/14zet8umjdhl-.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/15rdy9g39q5_g.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/196nejee1fuyd.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/198750c51q-z3.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/19tsgai61rjer.js
+  h_69b863911ebf05 1-38
+litellm/proxy/_experimental/out/_next/static/chunks/1_xsztuftjio3.js
+  h_69b863911ebf05 1,16
+litellm/proxy/_experimental/out/_next/static/chunks/1btgxggbl5mx2.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1db6bdzd71l7l.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1ddasb5xqiya6.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1eu7by2shc3d5.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1ffj-r4edy2bi.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1fuc0rvq8ylls.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1fuvyn6q6r_c7.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1npkw4k5hmatd.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1pjx4i-yye1gu.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1pxvq9q9agnt3.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1r3r4q5ji9p6r.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1u491btklcnuv.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/1zhtx005bx6fz.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/20z_-od6dk4xy.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/25h42-yojgvha.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/29tj90fb6v6bl.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2akt9ny0h9335.js
+  h_69b863911ebf05 1-11
+litellm/proxy/_experimental/out/_next/static/chunks/2c2v_1kozooej.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2c5_kfmkhv--g.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2dse4f869do4s.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2fflam6axsab2.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2kqpmfevvz1x3.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2nyw_kc00skkn.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2pmpg8fi18n51.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2ps_ddavuvwjz.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2rllv-x7s1bt3.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2s-pmzfo54euj.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2t8u_11qcbsv9.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2uzu2mjy48a47.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/2zjgm4v027x12.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3-kvo2muiflui.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/30usaj-vjdsdp.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/31oofl0qsvocx.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/33k6yr4pb6q8q.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/34iim4l18g5gb.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/34yvcsjx31lzt.css
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/367p9vvde63jh.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3_8qs1a4r3e_1.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3avqcnbprl60e.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3bu7e8aoapxsb.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3ek06g_ie6-ko.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3f3osuz9fs8rg.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3gat5b2grzatp.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3gg7ps8sea9-a.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3m2kjmsuzx3t_.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3v_hfp7w3vw7l.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/3zi_g95oauojg.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_next/static/chunks/41dr5zz1thosa.js
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_not-found/__next._full.txt
+  h_69b863911ebf05 2-9,11-13,15,17,20
+litellm/proxy/_experimental/out/_not-found/__next._not-found.__PAGE__.txt
+  h_69b863911ebf05 2,4-13,15,19
+litellm/proxy/_experimental/out/_not-found/__next._tree.txt
+  h_69b863911ebf05 2-3
+litellm/proxy/_experimental/out/_not-found/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/_not-found/index.txt
+  h_69b863911ebf05 2-9,11-13,15,17,20
+litellm/proxy/_experimental/out/access-groups/__next.!KGRhc2hib2FyZCk.access-groups.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,17-23,28,30
+litellm/proxy/_experimental/out/access-groups/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/access-groups/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/access-groups/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/access-groups/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/admin-panel/__next.!KGRhc2hib2FyZCk.admin-panel.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,17-23,28,30
+litellm/proxy/_experimental/out/admin-panel/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/admin-panel/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/admin-panel/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/admin-panel/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/agents/__next.!KGRhc2hib2FyZCk.agents.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,29
+litellm/proxy/_experimental/out/agents/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/agents/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/agents/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/agents/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/api-keys/__next.!KGRhc2hib2FyZCk.api-keys.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,27-30,32,34,37,39
+litellm/proxy/_experimental/out/api-keys/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/api-keys/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/api-keys/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/api-keys/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/api-reference/__next.!KGRhc2hib2FyZCk.api-reference.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,14,18-23
+litellm/proxy/_experimental/out/api-reference/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/api-reference/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/api-reference/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/api-reference/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/budgets/__next.!KGRhc2hib2FyZCk.budgets.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,17-23,28,30
+litellm/proxy/_experimental/out/budgets/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/budgets/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/budgets/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/budgets/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/caching/__next.!KGRhc2hib2FyZCk.caching.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,14,18-23
+litellm/proxy/_experimental/out/caching/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/caching/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/caching/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/caching/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/chat/__next._full.txt
+  h_69b863911ebf05 2-13,15-16,18,20-21,25,30
+litellm/proxy/_experimental/out/chat/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/chat/__next.chat.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-16,18,20-21
+litellm/proxy/_experimental/out/chat/api-keys/__next._full.txt
+  h_69b863911ebf05 2-13,15-17,19,22,28
+litellm/proxy/_experimental/out/chat/api-keys/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/chat/api-keys/__next.chat.api-keys.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-17,19,23
+litellm/proxy/_experimental/out/chat/api-keys/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/chat/api-keys/index.txt
+  h_69b863911ebf05 2-13,15-17,19,22,28
+litellm/proxy/_experimental/out/chat/credentials/__next._full.txt
+  h_69b863911ebf05 2-13,15-17,19,22,28
+litellm/proxy/_experimental/out/chat/credentials/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/chat/credentials/__next.chat.credentials.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-17,19,23
+litellm/proxy/_experimental/out/chat/credentials/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/chat/credentials/index.txt
+  h_69b863911ebf05 2-13,15-17,19,22,28
+litellm/proxy/_experimental/out/chat/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/chat/index.txt
+  h_69b863911ebf05 2-13,15-16,18,20-21,25,30
+litellm/proxy/_experimental/out/chat/integrations/__next._full.txt
+  h_69b863911ebf05 2-13,15-17,19,22,24,29
+litellm/proxy/_experimental/out/chat/integrations/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/chat/integrations/__next.chat.integrations.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-17,19,23
+litellm/proxy/_experimental/out/chat/integrations/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/chat/integrations/index.txt
+  h_69b863911ebf05 2-13,15-17,19,22,24,29
+litellm/proxy/_experimental/out/chat/logs/__next._full.txt
+  h_69b863911ebf05 2-13,15-17,19,22,24,29
+litellm/proxy/_experimental/out/chat/logs/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/chat/logs/__next.chat.logs.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-17,19,23
+litellm/proxy/_experimental/out/chat/logs/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/chat/logs/index.txt
+  h_69b863911ebf05 2-13,15-17,19,22,24,29
+litellm/proxy/_experimental/out/chat/usage/__next._full.txt
+  h_69b863911ebf05 2-13,15-17,19,22,28
+litellm/proxy/_experimental/out/chat/usage/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/chat/usage/__next.chat.usage.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-17,19,23
+litellm/proxy/_experimental/out/chat/usage/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/chat/usage/index.txt
+  h_69b863911ebf05 2-13,15-17,19,22,28
+litellm/proxy/_experimental/out/connect/__next._full.txt
+  h_69b863911ebf05 2-13,15-17,19,21,26
+litellm/proxy/_experimental/out/connect/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/connect/__next.connect.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-17,19,21
+litellm/proxy/_experimental/out/connect/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/connect/index.txt
+  h_69b863911ebf05 2-13,15-17,19,21,26
+litellm/proxy/_experimental/out/cost-optimization/__next.!KGRhc2hib2FyZCk.cost-optimization.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,27-30,32,34,37,39
+litellm/proxy/_experimental/out/cost-optimization/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/cost-optimization/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/cost-optimization/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/cost-optimization/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/cost-tracking/__next.!KGRhc2hib2FyZCk.cost-tracking.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,14,18-23
+litellm/proxy/_experimental/out/cost-tracking/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/cost-tracking/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/cost-tracking/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/cost-tracking/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/guardrails-monitor/__next.!KGRhc2hib2FyZCk.guardrails-monitor.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,17-22,24,30
+litellm/proxy/_experimental/out/guardrails-monitor/__next._full.txt
+  h_69b863911ebf05 2-11,13,17-20,22-23,25,28,34
+litellm/proxy/_experimental/out/guardrails-monitor/__next._tree.txt
+  h_69b863911ebf05 2,5
+litellm/proxy/_experimental/out/guardrails-monitor/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/guardrails-monitor/index.txt
+  h_69b863911ebf05 2-11,13,17-20,22-23,25,28,34
+litellm/proxy/_experimental/out/guardrails/__next.!KGRhc2hib2FyZCk.guardrails.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,28
+litellm/proxy/_experimental/out/guardrails/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/guardrails/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/guardrails/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/guardrails/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/index.txt
+  h_69b863911ebf05 2-11,13,15-18,20-22,25,30
+litellm/proxy/_experimental/out/logging-and-alerts/__next.!KGRhc2hib2FyZCk.logging-and-alerts.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,17-23,28,30
+litellm/proxy/_experimental/out/logging-and-alerts/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/logging-and-alerts/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/logging-and-alerts/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/logging-and-alerts/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/login/__next._full.txt
+  h_69b863911ebf05 2-11,13-15,17,20,25
+litellm/proxy/_experimental/out/login/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/login/__next.login.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-15,17,21
+litellm/proxy/_experimental/out/login/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/login/index.txt
+  h_69b863911ebf05 2-11,13-15,17,20,25
+litellm/proxy/_experimental/out/logs/__next.!KGRhc2hib2FyZCk.logs.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,17-22,24,28-30,32,34,38-39
+litellm/proxy/_experimental/out/logs/__next._full.txt
+  h_69b863911ebf05 2-11,13,17-20,22-23,25,28,34
+litellm/proxy/_experimental/out/logs/__next._tree.txt
+  h_69b863911ebf05 2,5
+litellm/proxy/_experimental/out/logs/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/logs/index.txt
+  h_69b863911ebf05 2-11,13,17-20,22-23,25,28,34
+litellm/proxy/_experimental/out/mcp-servers/__next.!KGRhc2hib2FyZCk.mcp-servers.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,28
+litellm/proxy/_experimental/out/mcp-servers/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/mcp-servers/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/mcp-servers/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/mcp-servers/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/mcp/oauth/callback/__next._full.txt
+  h_69b863911ebf05 2-11,13-15,17,20,25
+litellm/proxy/_experimental/out/mcp/oauth/callback/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/mcp/oauth/callback/__next.mcp.oauth.callback.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-15,17,21
+litellm/proxy/_experimental/out/mcp/oauth/callback/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/mcp/oauth/callback/index.txt
+  h_69b863911ebf05 2-11,13-15,17,20,25
+litellm/proxy/_experimental/out/memory/__next.!KGRhc2hib2FyZCk.memory.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,14,18-23,28
+litellm/proxy/_experimental/out/memory/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/memory/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/memory/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/memory/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/model-hub-table/__next.!KGRhc2hib2FyZCk.model-hub-table.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,28
+litellm/proxy/_experimental/out/model-hub-table/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/model-hub-table/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/model-hub-table/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/model-hub-table/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/model_hub/__next._full.txt
+  h_69b863911ebf05 2-11,13,15,18-20,24,28
+litellm/proxy/_experimental/out/model_hub/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/model_hub/__next.model_hub.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-14,16,20-21
+litellm/proxy/_experimental/out/model_hub/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/model_hub/index.txt
+  h_69b863911ebf05 2-11,13,15,18-20,24,28
+litellm/proxy/_experimental/out/model_hub_table/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-17,19-20,25,30
+litellm/proxy/_experimental/out/model_hub_table/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/model_hub_table/__next.model_hub_table.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-14,16,20-21
+litellm/proxy/_experimental/out/model_hub_table/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/model_hub_table/index.txt
+  h_69b863911ebf05 2-11,13,16-17,19-20,25,30
+litellm/proxy/_experimental/out/models-and-endpoints/__next.!KGRhc2hib2FyZCk.models-and-endpoints.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,27-29,31,33,37-38
+litellm/proxy/_experimental/out/models-and-endpoints/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/models-and-endpoints/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/models-and-endpoints/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/models-and-endpoints/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/old-usage/__next.!KGRhc2hib2FyZCk.old-usage.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,27-30,32,34,37,39
+litellm/proxy/_experimental/out/old-usage/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/old-usage/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/old-usage/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/old-usage/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/onboarding/__next._full.txt
+  h_69b863911ebf05 2-11,13-15,17,20,25
+litellm/proxy/_experimental/out/onboarding/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/onboarding/__next.onboarding.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-15,17,21
+litellm/proxy/_experimental/out/onboarding/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/onboarding/index.txt
+  h_69b863911ebf05 2-11,13-15,17,20,25
+litellm/proxy/_experimental/out/organizations/__next.!KGRhc2hib2FyZCk.organizations.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,28
+litellm/proxy/_experimental/out/organizations/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/organizations/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/organizations/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/organizations/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/playground/__next.!KGRhc2hib2FyZCk.playground.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,28
+litellm/proxy/_experimental/out/playground/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/playground/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/playground/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/playground/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/policies/__next.!KGRhc2hib2FyZCk.policies.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,28
+litellm/proxy/_experimental/out/policies/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/policies/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/policies/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/policies/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/projects/__next.!KGRhc2hib2FyZCk.projects.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,27-30,32,34,37,39
+litellm/proxy/_experimental/out/projects/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/projects/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/projects/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/projects/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/prompts/__next.!KGRhc2hib2FyZCk.prompts.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,28
+litellm/proxy/_experimental/out/prompts/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/prompts/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/prompts/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/prompts/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/router-settings/__next.!KGRhc2hib2FyZCk.router-settings.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,29
+litellm/proxy/_experimental/out/router-settings/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/router-settings/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/router-settings/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/router-settings/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/search-tools/__next.!KGRhc2hib2FyZCk.search-tools.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,14,18-23,29
+litellm/proxy/_experimental/out/search-tools/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/search-tools/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/search-tools/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/search-tools/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/skills/__next.!KGRhc2hib2FyZCk.skills.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,14,18-23,28
+litellm/proxy/_experimental/out/skills/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,27,33
+litellm/proxy/_experimental/out/skills/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/skills/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/skills/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,27,33
+litellm/proxy/_experimental/out/tag-management/__next.!KGRhc2hib2FyZCk.tag-management.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,28
+litellm/proxy/_experimental/out/tag-management/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/tag-management/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/tag-management/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/tag-management/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/teams/__next.!KGRhc2hib2FyZCk.teams.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,27-29,31,33,37-38
+litellm/proxy/_experimental/out/teams/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/teams/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/teams/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/teams/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/tool-policies/__next.!KGRhc2hib2FyZCk.tool-policies.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,17-22,24,29
+litellm/proxy/_experimental/out/tool-policies/__next._full.txt
+  h_69b863911ebf05 2-11,13,17-20,22-23,25,28,34
+litellm/proxy/_experimental/out/tool-policies/__next._tree.txt
+  h_69b863911ebf05 2,5
+litellm/proxy/_experimental/out/tool-policies/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/tool-policies/index.txt
+  h_69b863911ebf05 2-11,13,17-20,22-23,25,28,34
+litellm/proxy/_experimental/out/transform-request/__next.!KGRhc2hib2FyZCk.transform-request.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-13,15,19-23
+litellm/proxy/_experimental/out/transform-request/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,27,33
+litellm/proxy/_experimental/out/transform-request/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/transform-request/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/transform-request/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,27,33
+litellm/proxy/_experimental/out/ui-theme/__next.!KGRhc2hib2FyZCk.ui-theme.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-13,15,19-23
+litellm/proxy/_experimental/out/ui-theme/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,27,33
+litellm/proxy/_experimental/out/ui-theme/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/ui-theme/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/ui-theme/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,27,33
+litellm/proxy/_experimental/out/usage/__next.!KGRhc2hib2FyZCk.usage.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,29
+litellm/proxy/_experimental/out/usage/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/usage/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/usage/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/usage/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/users/__next.!KGRhc2hib2FyZCk.users.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-21,23,28
+litellm/proxy/_experimental/out/users/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/users/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/users/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/users/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/vector-stores/__next.!KGRhc2hib2FyZCk.vector-stores.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,16-23,28,30,32,35
+litellm/proxy/_experimental/out/vector-stores/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/vector-stores/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/vector-stores/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/vector-stores/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,24,27,33
+litellm/proxy/_experimental/out/workflows/__next.!KGRhc2hib2FyZCk.workflows.__PAGE__.txt
+  h_69b863911ebf05 2-4,6-12,14,18-23
+litellm/proxy/_experimental/out/workflows/__next._full.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,27,33
+litellm/proxy/_experimental/out/workflows/__next._tree.txt
+  h_69b863911ebf05 2,4
+litellm/proxy/_experimental/out/workflows/index.html
+  h_69b863911ebf05 1
+litellm/proxy/_experimental/out/workflows/index.txt
+  h_69b863911ebf05 2-11,13,16-19,21-22,27,33
+litellm/proxy/_types.py
+  h_69b863911ebf05 3971
+litellm/proxy/db/db_spend_update_writer.py
+  h_69b863911ebf05 2475-2484
+litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py
+  h_69b863911ebf05 165-170
+litellm/proxy/management_endpoints/common_daily_activity.py
+  h_69b863911ebf05 12-16,721,730-734,764-773,776-812,814-875,879,883-888,1228-1232
+litellm/proxy/management_endpoints/model_management_endpoints.py
+  h_69b863911ebf05 316-331,1106-1107,2321-2322,2527-2528
+litellm/proxy/rag_endpoints/endpoints.py
+  h_69b863911ebf05 26,52-55,57,62,183-196,200-202,206-207,212,221,230-231,251,279,308,311,317-322,336,346,417-419,425,431,442-443,446,505-507,515,578,609,612-623,625,663,684,814
+litellm/proxy/rag_endpoints/upload_security.py
+  h_69b863911ebf05 8-9,18,25-27,134,215-231,272,296
+litellm/proxy/spend_tracking/spend_tracking_utils.py
+  h_69b863911ebf05 199
+litellm/proxy/utils.py
+  h_69b863911ebf05 5918-5945,6059-6062
+litellm/proxy/vector_store_endpoints/endpoints.py
+  h_69b863911ebf05 20-21,23,26,30-35,76-85,154,234-238,472
+litellm/proxy/vector_store_endpoints/management_endpoints.py
+  h_69b863911ebf05 12-14,22-25,34,41-44,47-48,56,58-60,63-66,80-85,134-175,333-352,435-445,569-575,577-587,609-612,616,629,639-654,656-669,701-703,717-1039
+litellm/proxy/vector_store_endpoints/utils.py
+  h_69b863911ebf05 5,11-15,23,27-32,34-37,55,68,76-209,315,321,371,399,402
+litellm/proxy/vector_store_files_endpoints/endpoints.py
+  h_69b863911ebf05 23,490,912
+litellm/rag/ingestion/__init__.py
+  h_69b863911ebf05 8,17
+litellm/rag/ingestion/base_ingestion.py
+  h_69b863911ebf05 17-18,33,39-44,83-85,94-96,280,289,294-295,306,315-316,362
+litellm/rag/ingestion/mongodb_ingestion.py
+  h_69b863911ebf05 1-219
+litellm/rag/main.py
+  h_69b863911ebf05 29,51,102,113-114,137,152,191,269,462,510,520
+litellm/router.py
+  h_69b863911ebf05 409-410,6651,6656,6839,6909-6912
+litellm/router_strategy/complexity_router/config.py
+  h_69b863911ebf05 685-690,721-729
+litellm/types/vector_stores.py
+  h_69b863911ebf05 5,7,10-11,61-63,69,116-190,396-472
+litellm/vector_stores/main.py
+  h_69b863911ebf05 123,129-134,155-156,195,211-216,281,420
+litellm/vector_stores/vector_store_registry.py
+  h_69b863911ebf05 3,5-6,21,23,107-211,216,542,597-615,638-640,642-650
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_create_and_ingest.py
+  h_69b863911ebf05 1-492
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_diagnostics.py
+  h_69b863911ebf05 1-474
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_filters_and_ranking.py
+  h_69b863911ebf05 1-205
+tests/test_litellm/llms/mongodb/vector_stores/test_mongodb_transformation.py
+  h_69b863911ebf05 10,12,80,103-111,165,168,233-566
+tests/test_litellm/proxy/guardrails/guardrail_hooks/test_typesafe.py
+  h_69b863911ebf05 410-423
+tests/test_litellm/proxy/rag_endpoints/test_rag_endpoints.py
+  h_69b863911ebf05 51-61,72,78,105,121,126,131,133-139,142,174-177,179-181,198,218,231,234,279,310-325,420,430,438-504,672,679-715,819-826,860-862,899-906,949-951,975,997-999,1051-1061,1082-1101,1120-1130,1132,1317,1327-1574
+tests/test_litellm/proxy/rag_endpoints/test_upload_security.py
+  h_69b863911ebf05 15,26,59-61,103,112,137,144,150,162,165,181-209
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_endpoints.py
+  h_69b863911ebf05 19,41-52,107-111,116-119,169,2092-2449,2469,2497,2546,2968-3130,3312-3324,3326-3331,3333-3336,3338-3343,3345-4016,4204-4560
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_provider_defaults.py
+  h_69b863911ebf05 1-100
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_tenant_guard.py
+  h_69b863911ebf05 281
+tests/test_litellm/proxy/vector_store_endpoints/test_vector_store_test_connection.py
+  h_69b863911ebf05 1-244
+tests/test_litellm/proxy/vector_store_files_endpoints/test_endpoints.py
+  h_69b863911ebf05 144-170
+tests/test_litellm/router_strategy/complexity_router/test_jev_classifier.py
+  h_69b863911ebf05 40,45-77,199-208
+tests/test_litellm/vector_stores/test_main.py
+  h_69b863911ebf05 94-124,126,128-151
+tests/test_litellm/vector_stores/test_vector_store_registry.py
+  h_69b863911ebf05 1-2,178-285
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.characterization.test.tsx
+  h_69b863911ebf05 114,139,163,235-290
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.mongodb.test.tsx
+  h_69b863911ebf05 1-154
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.test.tsx
+  h_69b863911ebf05 6,11-17,28,36,44,79-87,141,156,163,192,199,205,268,298-472
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.tsx
+  h_69b863911ebf05 1,3-4,17,19,22,28-30,32-39,64-82,89-90,98,101,103-107,132-133,136-138,146-148,150-169,214,217,223-234,249-254,280-281,451-459,462-505,508-513,515,517-518,535-544
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/IngestedFilesCard.tsx
+  h_69b863911ebf05 1-62
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/TestVectorStoreTab.integration.test.tsx
+  h_69b863911ebf05 1-77
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/TestVectorStoreTab.tsx
+  h_69b863911ebf05 17-18,23-32,68,92-99
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreForm.integration.test.tsx
+  h_69b863911ebf05 12-14
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreForm.test.tsx
+  h_69b863911ebf05 137
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreForm.tsx
+  h_69b863911ebf05 1-2,12,14,19,34,37-51,89-90,101-106,109,128-131,144,147-154,166-170,178,183,195,199-200,234,248,277-278,385-393,395-417
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTable.test.tsx
+  h_69b863911ebf05 17-19
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTableColumns.tsx
+  h_69b863911ebf05 8-14,30-51,190
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTester.test.tsx
+  h_69b863911ebf05 1,12,29,34-37,40-41,44-45,66,69-70,73,77-78,80-81,84,88-104,106,108-110,112,114,118,120-123,126,128-132,135,139,141-143,146-159,165,168,172,177,179,186-187,191,195-303
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/VectorStoreTester.tsx
+  h_69b863911ebf05 1-7,14-18,20-23,26-30,33,36-37,41-88,91-100,108,110-111,114-116,125,137-145,148-156,162-169,172,190,196
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionChecklist.test.tsx
+  h_69b863911ebf05 1-158
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionChecklist.tsx
+  h_69b863911ebf05 1-111
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionEditForm.test.tsx
+  h_69b863911ebf05 1-170
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/ConnectionEditForm.tsx
+  h_69b863911ebf05 1-163
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/VectorStoreConnectionCard.tsx
+  h_69b863911ebf05 1-134
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionCurl.test.ts
+  h_69b863911ebf05 1-81
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionCurl.ts
+  h_69b863911ebf05 1-59
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionEditPayload.test.ts
+  h_69b863911ebf05 1-126
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionEditPayload.ts
+  h_69b863911ebf05 1-71
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionStatus.test.ts
+  h_69b863911ebf05 1-56
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/connectionStatus.ts
+  h_69b863911ebf05 1-43
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/litellmParamsDisplay.test.ts
+  h_69b863911ebf05 1-109
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/litellmParamsDisplay.ts
+  h_69b863911ebf05 1-85
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/connection/useVectorStoreConnectionTest.ts
+  h_69b863911ebf05 1-67
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/fields/VectorStoreField.tsx
+  h_69b863911ebf05 1-296
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/index.test.tsx
+  h_69b863911ebf05 48,62,91,99,128,138,152
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/index.tsx
+  h_69b863911ebf05 29,40-52,71,168,170-172,186-192,195-197,211-216
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/ingestPayload.test.ts
+  h_69b863911ebf05 1-120
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/ingestPayload.ts
+  h_69b863911ebf05 1-107
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBSetupAlert.tsx
+  h_69b863911ebf05 1-47
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBSidecarConnectionFields.tsx
+  h_69b863911ebf05 1-95
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBStoreFields.integration.test.tsx
+  h_69b863911ebf05 1-579
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/MongoDBStoreFields.tsx
+  h_69b863911ebf05 1-263
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/mongodbConnection.test.ts
+  h_69b863911ebf05 1-75
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/mongodbConnection.ts
+  h_69b863911ebf05 1-56
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/mongodbDiscovery.test.ts
+  h_69b863911ebf05 1-108
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/mongodbDiscovery.ts
+  h_69b863911ebf05 1-123
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/useMongoDBProviderDefaults.test.ts
+  h_69b863911ebf05 1-88
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/useMongoDBProviderDefaults.ts
+  h_69b863911ebf05 1-54
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/useMongoDiscovery.test.ts
+  h_69b863911ebf05 1-101
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/mongodb/useMongoDiscovery.ts
+  h_69b863911ebf05 1-100
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchFilterBuilder.test.tsx
+  h_69b863911ebf05 1-52
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchFilterBuilder.tsx
+  h_69b863911ebf05 1-190
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchOptionsBar.tsx
+  h_69b863911ebf05 1-109
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchResultCard.test.tsx
+  h_69b863911ebf05 1-79
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/SearchResultCard.tsx
+  h_69b863911ebf05 1-130
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/searchFilters.test.ts
+  h_69b863911ebf05 1-180
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/searchFilters.ts
+  h_69b863911ebf05 1-135
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/searchRequest.test.ts
+  h_69b863911ebf05 1-99
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/search/searchRequest.ts
+  h_69b863911ebf05 1-86
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vectorStoreFormSchema.test.ts
+  h_69b863911ebf05 1-161
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vectorStoreFormSchema.ts
+  h_69b863911ebf05 1-239
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.integration.test.tsx
+  h_69b863911ebf05 5-12,21-28,37-82,106-116,125-129,238-377
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.test.tsx
+  h_69b863911ebf05 13-14
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/vector_store_info.tsx
+  h_69b863911ebf05 1,11-18,21-23,83-85,109-113,301-310,392,397-410,437,469-475
+ui/litellm-dashboard/src/app/(dashboard)/vector-stores/page.tsx
+  h_69b863911ebf05 7-8
+ui/litellm-dashboard/src/components/networking.tsx
+  h_69b863911ebf05 5720-5746,5780-5781,5796-5798,6943-6944,6956
+ui/litellm-dashboard/src/components/vector_store_management/types.tsx
+  h_69b863911ebf05 21-26
+ui/litellm-dashboard/src/components/vector_store_providers.test.tsx
+  h_69b863911ebf05 5-6,46-49,51-55,59,62-68,144-178
+ui/litellm-dashboard/src/components/vector_store_providers.tsx
+  h_69b863911ebf05 17,21-25,52-92,100,103-107,231-233,235,237,242,244,246,255-256,265-266,277-278,289-335,344-363,365-395
+ui/litellm-dashboard/src/lib/http/schema.d.ts
+  h_69b863911ebf05 23244-23358
+ui/litellm-dashboard/src/lib/logoTreatments.ts
+  h_69b863911ebf05 39
+ui/litellm-dashboard/vitest.config.ts
+  h_69b863911ebf05 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "baf0ab33cb0b6ead120bd9653ec0ef34219c9beb",
+  "prompts": {},
+  "humans": {
+    "h_69b863911ebf05": {
+      "author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
