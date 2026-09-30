@@ -26,6 +26,7 @@ from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLogging
 from litellm.rag.ingestion.base_ingestion import BaseRAGIngestion
 from litellm.rag.ingestion.bedrock_ingestion import BedrockRAGIngestion
 from litellm.rag.ingestion.gemini_ingestion import GeminiRAGIngestion
+from litellm.rag.ingestion.mongodb_ingestion import MongoDBRAGIngestion
 from litellm.rag.ingestion.openai_ingestion import OpenAIRAGIngestion
 from litellm.rag.ingestion.s3_vectors_ingestion import S3VectorsRAGIngestion
 from litellm.rag.ingestion.vertex_ai_ingestion import VertexAIRAGIngestion
@@ -47,6 +48,7 @@ INGESTION_REGISTRY: Final[dict[str, type[BaseRAGIngestion]]] = {
     "openai": OpenAIRAGIngestion,
     "bedrock": BedrockRAGIngestion,
     "gemini": GeminiRAGIngestion,
+    "mongodb": MongoDBRAGIngestion,
     "s3_vectors": S3VectorsRAGIngestion,
     "vertex_ai": VertexAIRAGIngestion,
 }
@@ -97,6 +99,7 @@ async def _execute_ingest_pipeline(
     file_url: str | None = None,
     file_id: str | None = None,
     router: Router | None = None,
+    display_filename: str | None = None,
 ) -> RAGIngestResponse:
     """
     Execute the RAG ingest pipeline using provider-specific implementation.
@@ -107,6 +110,8 @@ async def _execute_ingest_pipeline(
         file_url: URL to fetch file from
         file_id: Existing file ID to use
         router: Optional LiteLLM router for load balancing
+        display_filename: Name to record and show the document under, when it differs
+            from the storage name in ``file_data``
 
     Returns:
         RAGIngestResponse with status and IDs
@@ -129,6 +134,7 @@ async def _execute_ingest_pipeline(
         file_data=file_data,
         file_url=file_url,
         file_id=file_id,
+        display_filename=display_filename,
     )
 
 
@@ -143,6 +149,7 @@ async def aingest(
     file_url: str | None = None,
     file_id: str | None = None,
     timeout: float | httpx.Timeout | None = None,
+    display_filename: str | None = None,
     **kwargs,
 ) -> RAGIngestResponse:
     """
@@ -181,6 +188,7 @@ async def aingest(
             file_url=file_url,
             file_id=file_id,
             timeout=timeout,
+            display_filename=display_filename,
             **kwargs,
         )
 
@@ -245,9 +253,6 @@ async def _execute_query_pipeline(
         raise ValueError("No query found in messages for RAG query")
 
     # 2. Search vector store
-    top_level_filters: Final = kwargs.pop("filters", None)
-    filters: Final = retrieval_config.get("retrieval_filter") or retrieval_config.get("filters") or top_level_filters
-    filter_search_params: Final = MappingProxyType({"filters": filters} if filters else {})
     # Forward allowlisted provider retrieval_config extras (region, embedding
     # model, bucket, credential refs) to the search call; the managed store's
     # params win on conflict.
@@ -261,9 +266,7 @@ async def _execute_query_pipeline(
             if k not in _SEARCH_ARGS_SET_BY_PIPELINE
         }
     )
-    forwarded_search_params: Final = MappingProxyType(
-        {**provider_search_params, **kwargs, **filter_search_params, **store_search_params}
-    )
+    forwarded_search_params: Final = MappingProxyType({**provider_search_params, **kwargs, **store_search_params})
     with _suppressed_sub_call_billing():
         search_response: Final = await litellm.vector_stores.asearch(
             vector_store_id=retrieval_config["vector_store_id"],
@@ -456,6 +459,7 @@ def ingest(
     file_url: str | None = None,
     file_id: str | None = None,
     timeout: float | httpx.Timeout | None = None,
+    display_filename: str | None = None,
     **kwargs,
 ) -> RAGIngestResponse | Coroutine[None, None, RAGIngestResponse]:
     """
@@ -503,6 +507,7 @@ def ingest(
                 file_url=file_url,
                 file_id=file_id,
                 router=router,
+                display_filename=display_filename,
             )
         else:
             return asyncio.get_event_loop().run_until_complete(
@@ -512,6 +517,7 @@ def ingest(
                     file_url=file_url,
                     file_id=file_id,
                     router=router,
+                    display_filename=display_filename,
                 )
             )
     except Exception as e:

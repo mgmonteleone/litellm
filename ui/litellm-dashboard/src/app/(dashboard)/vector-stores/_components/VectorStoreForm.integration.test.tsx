@@ -9,6 +9,9 @@ import VectorStoreForm from "./VectorStoreForm";
 
 vi.mock("@/components/networking", () => ({
   vectorStoreCreateCall: vi.fn(),
+  vectorStoreTestConnectionCall: vi.fn(),
+  vectorStoreDiscoverCall: vi.fn().mockRejectedValue(new Error("discovery not stubbed")),
+  getProxyBaseUrl: () => "http://localhost:4000",
 }));
 
 vi.mock("@/components/llm_calls/fetch_models", () => ({
@@ -143,8 +146,6 @@ describe("VectorStoreForm submit payload", () => {
     expect(createdPayload().litellm_params).toStrictEqual({
       vertex_project: "gcp-proj",
       vertex_location: "global",
-      vertex_collection_id: undefined,
-      vertex_engine_id: undefined,
     });
   });
 

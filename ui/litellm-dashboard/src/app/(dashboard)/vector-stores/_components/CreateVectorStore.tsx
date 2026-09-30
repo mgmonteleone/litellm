@@ -1,6 +1,7 @@
-import React, { useId, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { toast } from "@/lib/toast";
-import { CircleCheck, CircleHelp, Inbox, X } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleHelp, Inbox, X } from "lucide-react";
+import { useForm } from "react-hook-form";
 import { v4 as uuidv4 } from "uuid";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/shared/Alert";
 import { ragIngestCall } from "@/components/networking";
@@ -13,16 +14,29 @@ import {
   getProviderSpecificFields,
   VectorStoreFieldConfig,
 } from "@/components/vector_store_providers";
+import { fetchAvailableModels, ModelGroup } from "@/components/llm_calls/fetch_models";
 import { Logo } from "@/components/molecules/logo/Logo";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
+import VectorStoreField, { type SelectOption } from "./fields/VectorStoreField";
+import MongoDBSidecarConnectionFields from "./mongodb/MongoDBSidecarConnectionFields";
+import { hasDeploymentDefaults, useMongoDBProviderDefaults } from "./mongodb/useMongoDBProviderDefaults";
 import S3VectorsConfig from "./S3VectorsConfig";
+import {
+  buildChunkingStrategy,
+  buildIngestProviderParams,
+  chunkingError,
+  describeIngestTotals,
+  ingestTotals,
+  type ChunkingInput,
+} from "./ingestPayload";
 
 const ACCEPTED_DOCUMENT_EXTENSIONS = ".pdf,.txt,.docx,.md,.doc";
 
@@ -47,12 +61,32 @@ const providerItems = Object.entries(VectorStoreProviders)
 
 const asText = (value: unknown): string => (typeof value === "string" ? value : "");
 
-const IngestSuccessAlert: React.FC<{ ingestResults: RAGIngestResponse[] }> = ({ ingestResults }) => {
+/**
+ * MongoDB's sidecar URL/API key are the only way to reach it when the deployment has no default
+ * sidecar configured; with a default, either field may still be overridden, but only together,
+ * since the backend only ever sends the deployment's sidecar key to the deployment's own sidecar
+ * (see vectorStoreFormSchema's same rule for the add dialog).
+ */
+const mongoDBConnectionWarning = (hasDefaults: boolean, apiBase: string, apiKey: string): string | null => {
+  if (!hasDefaults) {
+    return !apiBase || !apiKey ? "Please provide the MongoDB sidecar URL and API key" : null;
+  }
+  return Boolean(apiBase) !== Boolean(apiKey)
+    ? "A custom MongoDB sidecar connection needs both a URL and an API key"
+    : null;
+};
+
+const IngestSuccessAlert: React.FC<{ ingestResults: RAGIngestResponse[]; onTestIt?: () => void }> = ({
+  ingestResults,
+  onTestIt,
+}) => {
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed) {
     return null;
   }
+
+  const vectorStoreId = ingestResults[0]?.vector_store_id;
 
   return (
     <Alert variant="success">
@@ -61,11 +95,16 @@ const IngestSuccessAlert: React.FC<{ ingestResults: RAGIngestResponse[] }> = ({ 
       <AlertDescription>
         <div>
           <p>
-            <strong>Vector Store ID:</strong> {ingestResults[0]?.vector_store_id}
+            <strong>Vector Store ID:</strong> {vectorStoreId}
           </p>
           <p>
-            <strong>Documents Ingested:</strong> {ingestResults.length}
+            <strong>Ingested:</strong> {describeIngestTotals(ingestTotals(ingestResults))}
           </p>
+          {onTestIt && (
+            <Button variant="link" size="sm" className="h-auto p-0" onClick={onTestIt}>
+              Test it
+            </Button>
+          )}
         </div>
       </AlertDescription>
       <AlertAction>
@@ -90,9 +129,13 @@ const labelWithHint = (label: string, hint: string): React.ReactNode => (
 interface CreateVectorStoreProps {
   accessToken: string | null;
   onSuccess?: (vectorStoreId: string) => void;
+  /** Opens the test tab with the freshly created store selected. */
+  onTestVectorStore?: (vectorStoreId: string) => void;
 }
 
-const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSuccess }) => {
+const EMPTY_CHUNKING: ChunkingInput = { chunkSize: "", chunkOverlap: "" };
+
+const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSuccess, onTestVectorStore }) => {
   const [documents, setDocuments] = useState<DocumentUpload[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string>("bedrock");
@@ -100,7 +143,30 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
   const [vectorStoreDescription, setVectorStoreDescription] = useState<string>("");
   const [ingestResults, setIngestResults] = useState<RAGIngestResponse[]>([]);
   const [providerParams, setProviderParams] = useState<Record<string, unknown>>({});
+  const providerForm = useForm<Record<string, string>>({ defaultValues: {} });
+  const [chunking, setChunking] = useState<ChunkingInput>(EMPTY_CHUNKING);
+  const [modelInfo, setModelInfo] = useState<ModelGroup[]>([]);
   const documentsInputId = useId();
+  const mongoDBProviderDefaults = useMongoDBProviderDefaults(selectedProvider === "mongodb" ? accessToken : null);
+
+  /**
+   * S3 Vectors keeps its own params in state through its dedicated config component; every other
+   * provider's fields are rendered with the same react-hook-form-backed VectorStoreField the add
+   * dialog uses, so a boolean, list or weight field behaves the same in both places.
+   */
+  const currentProviderValues = (): Record<string, unknown> =>
+    selectedProvider === "s3_vectors" ? providerParams : providerForm.getValues();
+
+  useEffect(() => {
+    if (!accessToken) return;
+    fetchAvailableModels(accessToken)
+      .then((models) => models.length > 0 && setModelInfo(models))
+      .catch((error) => console.error("Error fetching model info:", error));
+  }, [accessToken]);
+
+  const embeddingModelOptions: SelectOption[] = modelInfo
+    .filter((option) => option.mode === "embedding" || option.mode === null)
+    .map((option) => ({ value: option.model_group, label: option.model_group }));
 
   const isSupportedDocument = (file: File): boolean => {
     if (!ACCEPTED_DOCUMENT_TYPES.includes(file.type)) {
@@ -145,10 +211,23 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
     }
 
     // Validate provider-specific required fields
+    const providerValues = currentProviderValues();
     const requiredFields = getProviderSpecificFields(selectedProvider).filter((field) => field.required);
     for (const field of requiredFields) {
-      if (!providerParams[field.name]) {
+      if (!providerValues[field.name]) {
         toast.warning(`Please provide ${field.label}`);
+        return;
+      }
+    }
+
+    if (selectedProvider === "mongodb") {
+      const connectionWarning = mongoDBConnectionWarning(
+        hasDeploymentDefaults(mongoDBProviderDefaults),
+        asText(providerValues.api_base),
+        asText(providerValues.api_key),
+      );
+      if (connectionWarning) {
+        toast.warning(connectionWarning);
         return;
       }
     }
@@ -165,6 +244,12 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
         toast.warning("Index name must be at least 3 characters if provided");
         return;
       }
+    }
+
+    const chunkingProblem = chunkingError(chunking);
+    if (chunkingProblem) {
+      toast.warning(chunkingProblem);
+      return;
     }
 
     if (!accessToken) {
@@ -192,7 +277,8 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
             vectorStoreId, // Use the same vector store ID for subsequent uploads
             vectorStoreName || undefined,
             vectorStoreDescription || undefined,
-            providerParams,
+            buildIngestProviderParams(selectedProvider, providerValues),
+            buildChunkingStrategy(chunking),
           );
 
           // Store the vector store ID from the first successful ingest
@@ -362,22 +448,74 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
                 />
               )}
 
+              {/* MongoDB Sidecar Connection */}
+              {selectedProvider === "mongodb" && (
+                <MongoDBSidecarConnectionFields
+                  control={providerForm.control}
+                  setValue={providerForm.setValue}
+                  providerDefaults={mongoDBProviderDefaults}
+                />
+              )}
+
               {/* Other Provider-specific fields */}
               {selectedProvider !== "s3_vectors" &&
-                getProviderSpecificFields(selectedProvider).map((field: VectorStoreFieldConfig) => (
-                  <Field key={field.name}>
-                    <FieldLabel htmlFor={`vector-store-${field.name}`}>
-                      {labelWithHint(field.label, field.tooltip)}
+                getProviderSpecificFields(selectedProvider)
+                  .filter((field) => !(selectedProvider === "mongodb" && field.group === "connection"))
+                  .map((field: VectorStoreFieldConfig) => (
+                    <VectorStoreField
+                      key={field.name}
+                      field={field}
+                      control={providerForm.control}
+                      name={field.name}
+                      fallbackOptions={embeddingModelOptions}
+                    />
+                  ))}
+
+              <Collapsible>
+                <CollapsibleTrigger
+                  render={
+                    <Button type="button" variant="ghost" size="sm" className="gap-1.5 px-0">
+                      <ChevronDown className="size-4" />
+                      Chunking
+                    </Button>
+                  }
+                />
+                <CollapsibleContent className="flex flex-col gap-3 pt-2">
+                  <Field>
+                    <FieldLabel htmlFor="chunk-size">
+                      {labelWithHint(
+                        "Chunk size",
+                        "Characters per chunk before a document is embedded. Leave blank to use the backend default",
+                      )}
                     </FieldLabel>
                     <Input
-                      id={`vector-store-${field.name}`}
-                      type={field.type === "password" ? "password" : "text"}
-                      value={asText(providerParams[field.name])}
-                      onChange={(e) => setProviderParams((prev) => ({ ...prev, [field.name]: e.target.value }))}
-                      placeholder={field.placeholder}
+                      id="chunk-size"
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="1000"
+                      value={chunking.chunkSize}
+                      onChange={(e) => setChunking((prev) => ({ ...prev, chunkSize: e.target.value }))}
                     />
                   </Field>
-                ))}
+                  <Field>
+                    <FieldLabel htmlFor="chunk-overlap">
+                      {labelWithHint(
+                        "Chunk overlap",
+                        "Characters each chunk repeats from the one before, so a sentence split across a boundary is still findable",
+                      )}
+                    </FieldLabel>
+                    <Input
+                      id="chunk-overlap"
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="200"
+                      value={chunking.chunkOverlap}
+                      onChange={(e) => setChunking((prev) => ({ ...prev, chunkOverlap: e.target.value }))}
+                    />
+                    <FieldDescription>Must be smaller than the chunk size.</FieldDescription>
+                  </Field>
+                </CollapsibleContent>
+              </Collapsible>
             </FieldGroup>
 
             <div className="flex justify-end">
@@ -394,7 +532,16 @@ const CreateVectorStore: React.FC<CreateVectorStoreProps> = ({ accessToken, onSu
         </Card>
 
         {/* Success Message */}
-        {ingestResults.length > 0 && <IngestSuccessAlert ingestResults={ingestResults} />}
+        {ingestResults.length > 0 && (
+          <IngestSuccessAlert
+            ingestResults={ingestResults}
+            onTestIt={
+              onTestVectorStore && ingestResults[0]?.vector_store_id
+                ? () => onTestVectorStore(ingestResults[0].vector_store_id)
+                : undefined
+            }
+          />
+        )}
       </div>
     </TooltipProvider>
   );

@@ -682,7 +682,12 @@ class JevClassifierConfig(BaseModel):
         default=None,
         description="TypeSafe API base, falling back to TYPESAFE_API_BASE and then https://api.typesafe.ai",
     )
-    timeout_ms: int = Field(default=3000, ge=1)
+    timeout_ms: int = Field(
+        default=3000,
+        ge=1,
+        le=30_000,
+        description="Jev call timeout; capped so a slow api_base cannot hold shared pass-through connections",
+    )
     instructions: str | None = Field(
         default=None,
         description="Replaces the built-in Jev question instructions",
@@ -711,6 +716,15 @@ class JevClassifierConfig(BaseModel):
                 "jev_classifier_config.api_base requires jev_classifier_config.api_key: TYPESAFE_API_KEY is only sent "
                 "to TYPESAFE_API_BASE or https://api.typesafe.ai"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _require_api_key(self) -> "JevClassifierConfig":
+        from litellm.secret_managers.main import get_secret_str
+
+        api_key: Final = self.api_key or get_secret_str("TYPESAFE_API_KEY")
+        if not api_key:
+            raise ValueError("jev_classifier_config.api_key or TYPESAFE_API_KEY is required for classifier_type 'jev'")
         return self
 
 

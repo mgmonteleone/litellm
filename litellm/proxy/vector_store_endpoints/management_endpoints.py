@@ -8,8 +8,10 @@ All /vector_store management endpoints
 /vector_store/list
 """
 
-import copy
 import json
+import re
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,6 +19,10 @@ from fastapi import APIRouter, Depends, HTTPException
 if TYPE_CHECKING:
     from prisma.models import LiteLLM_ManagedVectorStoresTable as _VectorStoreRow
 
+    from litellm.llms.base_llm.vector_store.transformation import (
+        BaseVectorStoreConfig,
+        RouterVectorStoreEmbeddingExecutor,
+    )
     from litellm.proxy.utils import PrismaClient
 import litellm
 from litellm._logging import verbose_proxy_logger
@@ -25,14 +31,21 @@ from litellm.litellm_core_utils.safe_json_dumps import safe_dumps
 from litellm.litellm_core_utils.sensitive_data_masker import SensitiveDataMasker
 from litellm.proxy._types import (
     LiteLLM_ManagedVectorStoresTable,
+    LitellmUserRoles,
     ResponseLiteLLM_ManagedVectorStore,
     UserAPIKeyAuth,
 )
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.common_utils.rbac_utils import check_feature_access_for_user
 from litellm.proxy.vector_store_endpoints.utils import (
+    CREDENTIAL_NAME_KEY,
+    assert_caller_can_use_models,
+    assert_proxy_admin_for_env_references,
+    assert_proxy_admin_for_vector_store_params,
     can_user_access_vector_store,
     filter_listable_vector_stores,
+    is_proxy_admin,
+    store_embedding_models,
 )
 from litellm.repositories.prisma_protocols import TableActions
 from litellm.repositories.table_repositories import ManagedVectorStoresRepository
@@ -40,10 +53,17 @@ from litellm.types.vector_stores import (
     LiteLLM_ManagedVectorStore,
     LiteLLM_ManagedVectorStoreListResponse,
     VectorStoreDeleteRequest,
+    VectorStoreDiscoverRequest,
     VectorStoreInfoRequest,
+    VectorStoreProviderDefaultsResponse,
+    VectorStoreTestConnectionRequest,
+    VectorStoreTestConnectionResponse,
     VectorStoreUpdateRequest,
 )
-from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+from litellm.vector_stores.vector_store_registry import (
+    VectorStoreRegistry,
+    resolve_litellm_params_references,
+)
 
 router: Final = APIRouter()
 
@@ -57,6 +77,12 @@ def _row_to_vector_store(row: "_VectorStoreRow") -> LiteLLM_ManagedVectorStore:
 
 
 _LITELLM_PARAMS_MASKER: Final = SensitiveDataMasker(extra_sensitive_patterns=frozenset(("connection",)))
+_EMPTY_PARAMS: Final[Mapping[str, object]] = MappingProxyType({})
+
+# The redaction placeholder every read path echoes back for a saved secret, and the only string an update
+# request can send to mean "keep the saved value" (see ``update_vector_store``). It is REDACTED_BY_LITELM,
+# with a single L, not REDACTED_BY_LITELLM.
+_REDACTION_SENTINEL_TYPO_PATTERN: Final = re.compile(r"^REDACTED_BY_LITEL+M+$", re.IGNORECASE)
 
 
 _REDACT_LITELLM_PARAMS_MAX_DEPTH: Final = 10
@@ -103,6 +129,48 @@ def _redact_sensitive_litellm_params(litellm_params: object, _depth: int = 0) ->
         else:
             out[k] = v
     return out
+
+
+def _registry_vector_store(vector_store_id: str) -> LiteLLM_ManagedVectorStore | None:
+    if litellm.vector_store_registry is None:
+        return None
+    return litellm.vector_store_registry.get_litellm_managed_vector_store_from_registry(vector_store_id=vector_store_id)
+
+
+def _parse_stored_json_field(raw: object, field_name: str) -> object:
+    """The database (and config-registered stores) may hold this field as a JSON string; parse it before it
+    reaches response validation, which requires a mapping and would otherwise fail as an unhandled 500."""
+    if not isinstance(raw, str):
+        return raw
+    try:
+        return json.loads(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"The saved vector store has malformed {field_name}.") from None
+
+
+def _vector_store_info(vector_store: LiteLLM_ManagedVectorStore) -> LiteLLM_ManagedVectorStoresTable:
+    """Build the info response, parsing fields the database may hold as JSON strings."""
+    metadata: Final = _parse_stored_json_field(vector_store.get("vector_store_metadata"), "vector_store_metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        verbose_proxy_logger.warning(
+            "Vector store %s has a non-dict vector_store_metadata (%s); reporting it as None.",
+            vector_store.get("vector_store_id"),
+            type(metadata).__name__,
+        )
+    litellm_params: Final = _parse_stored_json_field(vector_store.get("litellm_params"), "litellm_params")
+    return LiteLLM_ManagedVectorStoresTable(
+        vector_store_id=vector_store.get("vector_store_id") or "",
+        custom_llm_provider=vector_store.get("custom_llm_provider") or "",
+        vector_store_name=vector_store.get("vector_store_name") or None,
+        vector_store_description=vector_store.get("vector_store_description") or None,
+        vector_store_metadata=metadata if isinstance(metadata, dict) else None,
+        created_at=vector_store.get("created_at") or None,
+        updated_at=vector_store.get("updated_at") or None,
+        litellm_credential_name=vector_store.get("litellm_credential_name"),
+        litellm_params=_redact_sensitive_litellm_params(litellm_params),
+        team_id=vector_store.get("team_id") or None,
+        user_id=vector_store.get("user_id") or None,
+    )
 
 
 async def _fetch_and_authorize_vector_store(
@@ -262,6 +330,26 @@ async def new_vector_store(
     - vector_store_metadata: Optional[Dict] - Additional metadata for the vector store
     """
     await check_feature_access_for_user(user_api_key_dict, "vector_stores")
+    assert_proxy_admin_for_env_references(vector_store.get("litellm_params"), user_api_key_dict)
+    assert_proxy_admin_for_vector_store_params(vector_store.get("litellm_params"), user_api_key_dict)
+    assert_proxy_admin_for_vector_store_params(
+        MappingProxyType({CREDENTIAL_NAME_KEY: vector_store.get(CREDENTIAL_NAME_KEY)}), user_api_key_dict
+    )
+    from litellm.proxy.proxy_server import llm_router
+
+    await assert_caller_can_use_models(
+        store_embedding_models(vector_store.get("litellm_params")), user_api_key_dict, llm_router
+    )
+    if (
+        not is_proxy_admin(user_api_key_dict)
+        and litellm.vector_store_registry is not None
+        and vector_store.get("vector_store_id") in litellm.vector_store_registry.config_vector_store_ids
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="A vector store from the proxy config already uses this vector_store_id. Only proxy admins can "
+            "save a database store under it, since that store would take its place for every caller.",
+        )
 
     from litellm.proxy.proxy_server import prisma_client
 
@@ -341,55 +429,20 @@ async def list_vector_stores(
 
     from litellm.proxy.proxy_server import prisma_client
 
-    vector_store_map: Final[dict[str, LiteLLM_ManagedVectorStore]] = {}
-    db_vector_store_ids: Final[set] = set()
-
     try:
-        # Get vector stores from database first (source of truth)
         vector_stores_from_db: Final = await VectorStoreRegistry._get_vector_stores_from_db(prisma_client=prisma_client)
-
-        # Build map from database vector stores
-        for vector_store in vector_stores_from_db:
-            vector_store_id = vector_store.get("vector_store_id", None)
-            if vector_store_id:
-                vector_store_map[vector_store_id] = vector_store
-                db_vector_store_ids.add(vector_store_id)
-
-        # Process in-memory vector stores
         if litellm.vector_store_registry is not None:
-            in_memory_vector_stores: Final = copy.deepcopy(litellm.vector_store_registry.vector_stores)
-
-            vector_stores_to_delete_from_memory: Final[list[str]] = []
-
-            for vector_store in in_memory_vector_stores:
-                vector_store_id = vector_store.get("vector_store_id", None)
-                if not vector_store_id:
-                    continue
-
-                # If vector store is in memory but NOT in database, it was deleted
-                if vector_store_id not in db_vector_store_ids:
-                    verbose_proxy_logger.info(
-                        "Vector store %s exists in memory but not in database - marking for deletion from cache",
-                        vector_store_id,
-                    )
-                    vector_stores_to_delete_from_memory.append(vector_store_id)
-                # If not in our map yet, add it (only in-memory, not in DB)
-                elif vector_store_id not in vector_store_map:
-                    vector_store_map[vector_store_id] = vector_store
-
-            # Synchronize in-memory registry with database
-            # 1. Remove deleted vector stores from memory
-            for vs_id in vector_stores_to_delete_from_memory:
-                litellm.vector_store_registry.delete_vector_store_from_registry(vector_store_id=vs_id)
-                verbose_proxy_logger.debug("Removed deleted vector store %s from in-memory registry", vs_id)
-
-            # 2. Update in-memory registry with database versions (for updates)
-            for vector_store in vector_stores_from_db:
-                vector_store_id = vector_store.get("vector_store_id", None)
-                if vector_store_id:
-                    litellm.vector_store_registry.update_vector_store_in_registry(
-                        vector_store_id=vector_store_id, updated_data=vector_store
-                    )
+            litellm.vector_store_registry.sync_with_db(vector_stores_from_db)
+        # Config-registered stores exist only in memory; database rows win for any id in both.
+        vector_store_map: Final = {
+            store_id: store
+            for source in (
+                litellm.vector_store_registry.vector_stores if litellm.vector_store_registry is not None else (),
+                vector_stores_from_db,
+            )
+            for store in source
+            if (store_id := store.get("vector_store_id"))
+        }
 
         # Filter vector stores based on access control
         accessible_vector_stores: Final = []
@@ -513,50 +566,25 @@ async def get_vector_store_info(
         raise HTTPException(status_code=500, detail="Database not connected")
 
     try:
-        if litellm.vector_store_registry is not None:
-            vector_store: Final = litellm.vector_store_registry.get_litellm_managed_vector_store_from_registry(
-                vector_store_id=data.vector_store_id
-            )
-            if vector_store is not None:
-                # Check access control
-                if not await _check_vector_store_access(vector_store, user_api_key_dict):
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Access denied: You do not have permission to access this vector store",
-                    )
-
-                vector_store_metadata: Final = vector_store.get("vector_store_metadata")
-                # Parse metadata if it's a JSON string
-                parsed_metadata: dict | None = None
-                if isinstance(vector_store_metadata, str):
-                    parsed_metadata = json.loads(vector_store_metadata)
-                elif isinstance(vector_store_metadata, dict):
-                    parsed_metadata = vector_store_metadata
-
-                vector_store_pydantic_obj: Final = LiteLLM_ManagedVectorStoresTable(
-                    vector_store_id=vector_store.get("vector_store_id") or "",
-                    custom_llm_provider=vector_store.get("custom_llm_provider") or "",
-                    vector_store_name=vector_store.get("vector_store_name") or None,
-                    vector_store_description=vector_store.get("vector_store_description") or None,
-                    vector_store_metadata=parsed_metadata,
-                    created_at=vector_store.get("created_at") or None,
-                    updated_at=vector_store.get("updated_at") or None,
-                    litellm_credential_name=vector_store.get("litellm_credential_name"),
-                    litellm_params=_redact_sensitive_litellm_params(vector_store.get("litellm_params")),
-                    team_id=vector_store.get("team_id") or None,
-                    user_id=vector_store.get("user_id") or None,
-                )
-                return {"vector_store": vector_store_pydantic_obj}
-
-        vector_store_typed: Final = await _fetch_and_authorize_vector_store(
-            vector_store_id=data.vector_store_id,
-            user_api_key_dict=user_api_key_dict,
-            prisma_client=prisma_client,
+        # The database is the source of truth. Memory only answers for config-registered stores, which
+        # have no row, so info never serves a copy the ten-second registry sync has not caught up with.
+        row: Final = await _vector_store_table(prisma_client).find_unique(
+            where={"vector_store_id": data.vector_store_id}
         )
-        vector_store_dict: Final = dict(vector_store_typed)
-        if "litellm_params" in vector_store_dict:
-            vector_store_dict["litellm_params"] = _redact_sensitive_litellm_params(vector_store_dict["litellm_params"])
-        return {"vector_store": vector_store_dict}
+        vector_store: Final = (
+            _row_to_vector_store(row) if row is not None else _registry_vector_store(data.vector_store_id)
+        )
+        if vector_store is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Vector store with ID {data.vector_store_id} not found",
+            )
+        if not await _check_vector_store_access(vector_store, user_api_key_dict):
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: You do not have permission to access this vector store",
+            )
+        return {"vector_store": _vector_store_info(vector_store)}
     except HTTPException:
         # Preserve 403/404 from the access-control / not-found checks above;
         # the catch-all below would otherwise rewrite them as 500.
@@ -578,10 +606,14 @@ async def update_vector_store(
     """
     Update vector store details in both database and in-memory registry.
     The updated data is immediately synchronized to the in-memory registry.
+
+    A ``litellm_params`` value equal to the redaction sentinel ``REDACTED_BY_LITELM`` (single L) keeps the
+    saved secret instead of overwriting it; a near-miss like the double-L ``REDACTED_BY_LITELLM`` is rejected
+    with a 400 rather than persisted as the literal credential.
     """
     await check_feature_access_for_user(user_api_key_dict, "vector_stores")
 
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import llm_router, prisma_client
     from litellm.types.router import GenericLiteLLMParams
 
     if prisma_client is None:
@@ -594,7 +626,7 @@ async def update_vector_store(
         # Per-store access control: anyone authenticated who passes the
         # premium-feature gate could otherwise update *any* vector store —
         # including stores belonging to other teams.
-        await _fetch_and_authorize_vector_store(
+        saved_store: Final = await _fetch_and_authorize_vector_store(
             vector_store_id=vector_store_id,
             user_api_key_dict=user_api_key_dict,
             prisma_client=prisma_client,
@@ -604,14 +636,37 @@ async def update_vector_store(
         if update_data.get("vector_store_metadata") is not None:
             update_data["vector_store_metadata"] = safe_dumps(update_data["vector_store_metadata"])
 
-        # Handle litellm_params if provided. As with the create path, the
-        # embedding-config auto-resolve previously persisted cleartext
-        # credentials into the row; each search now embeds the query
-        # through the router at request time, so this row only ever stores
-        # the user-supplied ``litellm_embedding_model`` reference.
+        # Merge request litellm_params over the saved ones, the same way /vector_store/new persists them: request
+        # keys win, a value equal to the redaction sentinel keeps the saved secret instead of overwriting it, and
+        # an os.environ/ reference is stored as-is and resolved later, for allowlisted names only, by
+        # resolve_litellm_params_references. Only proxy admins may send a reference, or set, change or clear anything
+        # outside NON_ADMIN_VECTOR_STORE_PARAMS (or the provider). The ad hoc
+        # test_connection/discover path (_resolve_connection_target) rejects references outright. This stores the
+        # raw params (no credential resolution), since each search embeds the query through the router at request
+        # time.
+        if (
+            "custom_llm_provider" in update_data
+            and data.custom_llm_provider != saved_store.get("custom_llm_provider")
+            and not is_proxy_admin(user_api_key_dict)
+        ):
+            raise HTTPException(
+                status_code=403, detail="Only proxy admins can change a vector store's custom_llm_provider."
+            )
         if "litellm_params" in update_data:
-            _input_litellm_params: Final[dict] = update_data.get("litellm_params", {}) or {}
-            litellm_params_dict: Final = GenericLiteLLMParams(**_input_litellm_params).model_dump(exclude_none=True)
+            saved_litellm_params: Final = _saved_raw_litellm_params(saved_store)
+            merged_litellm_params: Final = _merge_update_litellm_params(
+                saved_litellm_params, data.litellm_params or _EMPTY_PARAMS
+            )
+            assert_proxy_admin_for_vector_store_params(
+                merged_litellm_params, user_api_key_dict, saved_params=saved_litellm_params
+            )
+            await assert_caller_can_use_models(
+                store_embedding_models(merged_litellm_params, saved_litellm_params), user_api_key_dict, llm_router
+            )
+            assert_proxy_admin_for_env_references(data.litellm_params, user_api_key_dict)
+            litellm_params_dict: Final = GenericLiteLLMParams.model_validate(merged_litellm_params).model_dump(
+                exclude_none=True
+            )
             update_data["litellm_params"] = safe_dumps(litellm_params_dict)
 
         # Update in database
@@ -643,7 +698,9 @@ async def update_vector_store(
         # credentials) back to the caller — even when the caller only
         # changed unrelated fields like ``vector_store_description``.
         response_vs: Final = LiteLLM_ManagedVectorStore(**updated_vs)
-        response_vs["litellm_params"] = _redact_sensitive_litellm_params(updated_vs.get("litellm_params"))
+        response_vs["litellm_params"] = _redact_sensitive_litellm_params(
+            _parse_stored_json_field(updated_vs.get("litellm_params"), "litellm_params")
+        )
         return {
             "status": "success",
             "message": f"Vector store {vector_store_id} updated successfully",
@@ -657,3 +714,326 @@ async def update_vector_store(
     except Exception as e:
         verbose_proxy_logger.exception("Error updating vector store: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Test connection and discovery
+# ---------------------------------------------------------------------------------------------------------------
+
+
+def _assert_proxy_admin(user_api_key_dict: UserAPIKeyAuth, action: str) -> None:
+    """These endpoints probe arbitrary hosts with caller-supplied credentials, so they are admin only."""
+    if user_api_key_dict.user_role in (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN.value):
+        return
+    raise HTTPException(status_code=403, detail=f"Only proxy admins can {action} vector store connections.")
+
+
+def _reject_environment_references(params: Mapping[str, object]) -> None:
+    """Request-supplied values must already be resolved; nested references are rejected like top-level ones."""
+    from litellm.proxy.health_endpoints._health_endpoints import (
+        _reject_os_environ_references,  # pyright: ignore[reportPrivateUsage]  # shared nested-walk guard
+    )
+
+    _reject_os_environ_references(dict(params))  # mutable-ok: the shared guard takes a dict
+
+
+def _looks_like_misspelled_sentinel(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(_REDACTION_SENTINEL_TYPO_PATTERN.match(value))
+        and value != REDACTED_BY_LITELM_STRING
+    )
+
+
+def _reject_misspelled_redaction_sentinel(params: Mapping[str, object]) -> None:
+    """update_vector_store persists an os.environ/ value as-is (unlike _resolve_connection_target above), so a
+    fat-fingered sentinel like ``REDACTED_BY_LITELLM`` no longer gets caught by the "reject env references" guard;
+    it would instead be saved verbatim as the literal secret value, silently clobbering the real one. Checks every
+    key the litellm_params masker treats as sensitive (``api_key``, ``valkey_password``, ...), not just api_key,
+    since any of them can carry a redacted secret the caller round-trips back unchanged."""
+    for key, value in params.items():
+        if not _LITELLM_PARAMS_MASKER.is_sensitive_key(key) or not _looks_like_misspelled_sentinel(value):
+            continue
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{key}' looks like a misspelled redaction sentinel. Use the exact string "
+            f"'{REDACTED_BY_LITELM_STRING}' to keep the saved secret.",
+        )
+
+
+def _merge_update_litellm_params(
+    saved_litellm_params: Mapping[str, object], request_litellm_params: Mapping[str, object]
+) -> dict[str, object]:  # mutable-ok: GenericLiteLLMParams.model_validate takes the merged dict
+    """A request value of None means "clear this field" (see connectionEditPayload.ts), so it overrides the saved
+    value and then drops the key rather than persisting the field as null."""
+    _reject_misspelled_redaction_sentinel(request_litellm_params)
+    kept_or_replaced: Final = {
+        **saved_litellm_params,
+        **{key: value for key, value in request_litellm_params.items() if value != REDACTED_BY_LITELM_STRING},
+    }
+    return {key: value for key, value in kept_or_replaced.items() if value is not None}
+
+
+def _saved_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str, object]:  # mutable-ok: merged copy
+    from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
+
+    raw: Final = vector_store.get("litellm_params")
+    try:
+        parsed: Final = json.loads(raw) if isinstance(raw, str) else (raw or _EMPTY_PARAMS)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="The saved vector store has malformed litellm_params.") from None
+    merged: Final = dict(  # mutable-ok: merged copy
+        resolve_litellm_params_references(
+            parsed if isinstance(parsed, Mapping) else None, vector_store.get("custom_llm_provider")
+        )
+    )
+    credential_name: Final = vector_store.get("litellm_credential_name")
+    if credential_name and litellm.credential_list:
+        merged.update(CredentialAccessor.get_credential_values(credential_name))
+    return merged
+
+
+def _saved_raw_litellm_params(vector_store: LiteLLM_ManagedVectorStore) -> dict[str, object]:  # mutable-ok: merged copy
+    """The saved litellm_params as persisted, with no environment/credential resolution: an update should
+    merge over what is actually stored (which may itself hold an os.environ/ reference), not a live-connection
+    value only meant for the test_connection and search paths."""
+    parsed: Final = _parse_stored_json_field(vector_store.get("litellm_params"), "litellm_params")
+    return dict(parsed) if isinstance(parsed, Mapping) else {}  # mutable-ok: merged copy
+
+
+async def _resolve_connection_target(
+    data: VectorStoreTestConnectionRequest, user_api_key_dict: UserAPIKeyAuth
+) -> tuple[str, dict[str, object], str | None]:  # mutable-ok: merged copy
+    """Merge a saved store (when vector_store_id is given) with request overrides.
+
+    A request value equal to the redaction sentinel keeps the saved secret, so the dashboard can re-test a
+    store without asking the admin to paste the key again.
+    """
+    from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
+    from litellm.proxy.proxy_server import prisma_client
+
+    request_params: Final = {  # mutable-ok: merged copy
+        key: value
+        for key, value in (data.litellm_params or _EMPTY_PARAMS).items()
+        if value != REDACTED_BY_LITELM_STRING
+    }
+    _reject_environment_references(request_params)
+    saved: dict[str, object] = {}  # mutable-ok: merged copy
+    provider: str | None = data.custom_llm_provider
+    if data.vector_store_id:
+        store: LiteLLM_ManagedVectorStore | None = None
+        if litellm.vector_store_registry is not None:
+            store = litellm.vector_store_registry.get_litellm_managed_vector_store_from_registry(
+                vector_store_id=data.vector_store_id
+            )
+        if store is None and prisma_client is not None:
+            store = await _fetch_and_authorize_vector_store(
+                vector_store_id=data.vector_store_id, user_api_key_dict=user_api_key_dict, prisma_client=prisma_client
+            )
+        if store is None:
+            raise HTTPException(status_code=404, detail=f"Vector store {data.vector_store_id} not found")
+        saved = _saved_litellm_params(store)
+        provider = provider or store.get("custom_llm_provider")
+    if data.litellm_credential_name and litellm.credential_list:
+        saved.update(CredentialAccessor.get_credential_values(data.litellm_credential_name))
+    if not provider:
+        raise HTTPException(status_code=400, detail="custom_llm_provider is required when no vector_store_id is given")
+    merged: Final = {  # mutable-ok: merged copy
+        key: value
+        for key, value in {**saved, **request_params}.items()  # mutable-ok: merged copy
+        if key not in ("vector_store_id", "custom_llm_provider")
+    }
+    requested_id: Final = request_params.get("vector_store_id")
+    vector_store_id: Final = data.vector_store_id or (requested_id if isinstance(requested_id, str) else None)
+    return provider, merged, vector_store_id
+
+
+def _router_embedding_executor(user_api_key_dict: UserAPIKeyAuth) -> "RouterVectorStoreEmbeddingExecutor | None":
+    """Embed through the proxy's router so model aliases from config or the DB resolve like a real search would."""
+    from litellm.llms.base_llm.vector_store.transformation import RouterVectorStoreEmbeddingExecutor
+    from litellm.proxy.proxy_server import llm_router
+
+    if llm_router is None:
+        return None
+    metadata: Final = (
+        MappingProxyType({"user_api_key_team_id": user_api_key_dict.team_id})
+        if user_api_key_dict.team_id
+        else _EMPTY_PARAMS
+    )
+    return RouterVectorStoreEmbeddingExecutor(router=llm_router, metadata=metadata)
+
+
+def _lookup_provider_config(provider: str) -> "BaseVectorStoreConfig | None":
+    from litellm.types.utils import LlmProviders
+    from litellm.utils import ProviderConfigManager
+
+    try:
+        return ProviderConfigManager.get_provider_vector_stores_config(provider=LlmProviders(provider))
+    except ValueError:
+        return None
+
+
+def _provider_config(provider: str) -> "BaseVectorStoreConfig":
+    config: Final = _lookup_provider_config(provider)
+    if config is None:
+        raise HTTPException(status_code=400, detail=f"Vector store provider '{provider}' is not supported")
+    return config
+
+
+@router.post(
+    "/vector_store/test_connection",
+    tags=["vector store management"],  # mutable-ok: FastAPI route metadata
+    dependencies=[Depends(user_api_key_auth)],  # mutable-ok: FastAPI route metadata
+    response_model=VectorStoreTestConnectionResponse,
+)
+@router.post(
+    "/v1/vector_store/test_connection",
+    tags=["vector store management"],  # mutable-ok: FastAPI route metadata
+    dependencies=[Depends(user_api_key_auth)],  # mutable-ok: FastAPI route metadata
+    response_model=VectorStoreTestConnectionResponse,
+)
+async def vector_store_test_connection(
+    data: VectorStoreTestConnectionRequest,
+    user_api_key_dict: UserAPIKeyAuth = Depends(user_api_key_auth),  # noqa: B008  # FastAPI dependency injection
+) -> VectorStoreTestConnectionResponse:
+    """
+    Run the provider's connection checklist for a saved store or an unsaved configuration.
+
+    Each check reports pass, warn, fail, or skip with a message that names the fix. Proxy admins only.
+
+    Example request (unsaved configuration):
+    ```json
+    {"custom_llm_provider": "mongodb", "vector_store_id": "policy_index",
+     "litellm_params": {"api_base": "http://127.0.0.1:8080", "api_key": "...", "mongodb_database": "knowledge",
+                        "mongodb_collection": "policies", "litellm_embedding_model": "text-embedding-3-small"}}
+    ```
+    Example request (saved store, keep the saved secret): `{"vector_store_id": "policy_index"}`
+    """
+    await check_feature_access_for_user(user_api_key_dict, "vector_stores")
+    _assert_proxy_admin(user_api_key_dict, "test")
+    provider, litellm_params, vector_store_id = await _resolve_connection_target(data, user_api_key_dict)
+    config: Final = _provider_config(provider)
+    try:
+        return await config.atest_connection(
+            litellm_params=litellm_params,
+            vector_store_id=vector_store_id,
+            embedding_executor=_router_embedding_executor(user_api_key_dict),
+            is_saved_store=bool(data.vector_store_id),
+        )
+    except HTTPException:
+        raise
+    except Exception as error:  # noqa: BLE001  # a diagnostic endpoint reports failures instead of raising
+        verbose_proxy_logger.exception("Vector store test connection failed: %s", error)
+        return VectorStoreTestConnectionResponse(
+            ok=False,
+            supported=True,
+            custom_llm_provider=provider,
+            summary=f"Test connection failed unexpectedly ({type(error).__name__}); see the proxy logs.",
+            checks=[],  # mutable-ok: the TypedDict declares a list field
+            details=None,
+        )
+
+
+@router.post(
+    "/vector_store/discover",
+    tags=["vector store management"],  # mutable-ok: FastAPI route metadata
+    dependencies=[Depends(user_api_key_auth)],  # mutable-ok: FastAPI route metadata
+)
+@router.post(
+    "/v1/vector_store/discover",
+    tags=["vector store management"],  # mutable-ok: FastAPI route metadata
+    dependencies=[Depends(user_api_key_auth)],  # mutable-ok: FastAPI route metadata
+)
+async def discover_vector_store_resources(
+    data: VectorStoreDiscoverRequest,
+    user_api_key_dict: UserAPIKeyAuth = Depends(user_api_key_auth),  # noqa: B008  # FastAPI dependency injection
+) -> Mapping[str, object]:
+    """
+    List databases, collections, indexes, or suggested fields for a provider so the dashboard can offer
+    dropdowns instead of free-text inputs. Proxy admins only.
+
+    Example: `{"custom_llm_provider": "mongodb", "kind": "collections",
+               "litellm_params": {"api_base": "http://127.0.0.1:8080", "api_key": "..."},
+               "options": {"mongodb_database": "knowledge"}}`
+    """
+    await check_feature_access_for_user(user_api_key_dict, "vector_stores")
+    _assert_proxy_admin(user_api_key_dict, "discover")
+    provider, litellm_params, _ = await _resolve_connection_target(data, user_api_key_dict)
+    config: Final = _provider_config(provider)
+    try:
+        return await config.adiscover(kind=data.kind, litellm_params=litellm_params, options=data.options)
+    except HTTPException:
+        raise
+    except litellm.BadRequestError as error:
+        raise HTTPException(status_code=400, detail=str(error.message))
+    except litellm.AuthenticationError as error:
+        raise HTTPException(status_code=401, detail=str(error.message))
+    except Exception as error:  # noqa: BLE001  # surface provider failures as a clean 502
+        verbose_proxy_logger.exception("Vector store discovery failed: %s", error)
+        raise HTTPException(status_code=502, detail=str(error)[:500])
+
+
+def _mongodb_provider_default_api_base() -> str | None:
+    """The deployment's MONGODB_SIDECAR_API_BASE, or None if unset or not a usable sidecar URL.
+
+    Applies the same scheme/credentials/loopback guard ``MongoDBVectorStoreConfig.get_complete_url``
+    enforces per-request, so a misconfigured env var (userinfo, a bare HTTP host, ...) is never handed
+    to the dashboard as a default to pre-fill instead of being caught at request time.
+    """
+    from litellm.llms.mongodb.vector_stores.transformation import sidecar_api_base_error
+    from litellm.secret_managers.main import get_secret_str
+
+    api_base: Final = get_secret_str("MONGODB_SIDECAR_API_BASE")
+    if api_base is None:
+        return None
+    error: Final = sidecar_api_base_error(api_base)
+    if error is not None:
+        verbose_proxy_logger.warning("MONGODB_SIDECAR_API_BASE is not a usable sidecar URL: %s", error)
+        return None
+    return api_base
+
+
+def _provider_defaults(custom_llm_provider: str) -> VectorStoreProviderDefaultsResponse:
+    """The deployment-configured connection defaults for a provider. Never includes the secret itself."""
+    from litellm.secret_managers.main import get_secret_str
+
+    match custom_llm_provider:
+        case "mongodb":
+            return VectorStoreProviderDefaultsResponse(
+                custom_llm_provider=custom_llm_provider,
+                api_base=_mongodb_provider_default_api_base(),
+                api_key_configured=bool(get_secret_str("MONGODB_SIDECAR_API_KEY")),
+            )
+        case _:
+            return VectorStoreProviderDefaultsResponse(
+                custom_llm_provider=custom_llm_provider, api_base=None, api_key_configured=False
+            )
+
+
+@router.get(
+    "/vector_store/provider_defaults",
+    tags=["vector store management"],  # mutable-ok: FastAPI route metadata
+    dependencies=[Depends(user_api_key_auth)],  # mutable-ok: FastAPI route metadata
+    response_model=VectorStoreProviderDefaultsResponse,
+)
+@router.get(
+    "/v1/vector_store/provider_defaults",
+    tags=["vector store management"],  # mutable-ok: FastAPI route metadata
+    dependencies=[Depends(user_api_key_auth)],  # mutable-ok: FastAPI route metadata
+    response_model=VectorStoreProviderDefaultsResponse,
+)
+async def vector_store_provider_defaults(
+    custom_llm_provider: str,
+    user_api_key_dict: UserAPIKeyAuth = Depends(user_api_key_auth),  # noqa: B008  # FastAPI dependency injection
+) -> VectorStoreProviderDefaultsResponse:
+    """
+    Report the deployment's configured defaults for a vector store provider (for example, the MongoDB
+    sidecar's api_base and whether an api_key is configured) so the dashboard can offer them instead of
+    asking the admin to re-enter values the deployment already sets. Never returns the key itself.
+    Proxy admins only.
+
+    Example: `GET /vector_store/provider_defaults?custom_llm_provider=mongodb`
+    """
+    await check_feature_access_for_user(user_api_key_dict, "vector_stores")
+    _assert_proxy_admin(user_api_key_dict, "read provider defaults for")
+    return _provider_defaults(custom_llm_provider)

@@ -5915,6 +5915,34 @@ class PrismaClient:
         self._cleanup_engine_watcher()
         asyncio.create_task(self._start_engine_watcher())
 
+    async def _read_target_answers(self) -> bool:
+        """Whether the engine reads are actually routed to can answer `SELECT 1`.
+
+        The writer probe in the direct reconnect path says nothing about the
+        reader, and a dead reader engine is invisible to every other gate in
+        the cycle: `_engine_confirmed_dead` and `_engine_pid` track the WRITER
+        process, so a poisoned reader routes to the direct path, finds the
+        writer healthy, and returns success without touching the engine that
+        actually failed. Nothing then clears `_reader_unavailable` either, so
+        reads keep going to the dead engine while the watchdog reports a repair
+        every 30s and its consecutive-failure count resets, which keeps the
+        escalation to a heavy reconnect permanently out of reach.
+
+        A reader already marked unavailable needs no probe: reads are being
+        served by the writer the caller just proved healthy.
+        """
+        if not isinstance(self.db, RoutingPrismaWrapper) or self.db.reader_unavailable:
+            return True
+        try:
+            await self.db.reader.query_raw("SELECT 1")
+        except Exception as reader_probe_err:
+            verbose_proxy_logger.warning(
+                "Read-replica probe failed (%s); recreating Prisma client.",
+                reader_probe_err,
+            )
+            return False
+        return True
+
     async def _run_reconnect_cycle(
         self,
         timeout_seconds: float | None = None,
@@ -6027,6 +6055,10 @@ class PrismaClient:
                             verbose_proxy_logger.warning(
                                 "Writer answers the probe but its session is read-only "
                                 "(writes fail with SQLSTATE 25006); recreating Prisma client."
+                            )
+                        elif not await self._read_target_answers():
+                            verbose_proxy_logger.warning(
+                                "Read target probe failed; recreating Prisma client."
                             )
                         else:
                             verbose_proxy_logger.info(

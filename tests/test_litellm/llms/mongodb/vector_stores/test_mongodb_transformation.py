@@ -7,8 +7,9 @@ import httpx
 import pytest
 
 import litellm
+from litellm.llms.base_llm.vector_store.transformation import RouterVectorStoreEmbeddingExecutor
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
-from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig
+from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig, resolve_sidecar_api_key
 from litellm.types.utils import EmbeddingResponse
 from litellm.types.vector_stores import VectorStoreSearchOptionalRequestParams, VectorStoreSearchResponse
 
@@ -76,6 +77,7 @@ async def test_search_preserves_embedding_and_http_contract(
         "mongodb_embedding_field": "stored_vector",
         "mongodb_num_candidates": candidates,
         "max_num_results": limit or 10,
+        "include_metadata": True,
         "timeout_ms": 750,
     }
     executor.call.assert_called_once_with("embedding-alias", "travel policy", {"dimensions": 3})
@@ -98,7 +100,15 @@ async def test_search_preserves_embedding_and_http_contract(
         ("travel", {}, {"max_num_results": 0}),
         ("travel", {}, {"max_num_results": 51}),
         ("travel", {}, {"filters": {}}),
-        ("travel", {}, {"ranking_options": {}}),
+        ("travel", {}, {"filters": {"type": "regex", "key": "a", "value": "b"}}),
+        ("travel", {}, {"ranking_options": {"ranker": "bm25"}}),
+        ("travel", {}, {"ranking_options": {"score_threshold": 2}}),
+        ("travel", {"mongodb_hybrid_search": True}, {}),
+        (
+            "travel",
+            {"mongodb_hybrid_search": True, "mongodb_text_index": "t"},
+            {"ranking_options": {"score_threshold": 0.5}},
+        ),
         ("travel", {}, {"rewrite_query": False}),
     ],
 )
@@ -152,10 +162,10 @@ async def test_public_sdk_preserves_http_errors_response_and_timeout(
     executor: Final = RecordingEmbeddingExecutor()
     if status == -1:
         if asynchronous:
-            with pytest.raises(litellm.BadRequestError, match="search-only"):
+            with pytest.raises(litellm.BadRequestError, match=r"api_(key|base) is required"):
                 await litellm.vector_stores.acreate(custom_llm_provider="mongodb")
         else:
-            with pytest.raises(litellm.BadRequestError, match="search-only"):
+            with pytest.raises(litellm.BadRequestError, match=r"api_(key|base) is required"):
                 litellm.vector_stores.create(custom_llm_provider="mongodb")
         return
     if status == -2:
@@ -220,3 +230,337 @@ async def test_public_sdk_preserves_http_errors_response_and_timeout(
             else:
                 assert await search() == RESULT
     executor.call.assert_called_once_with("embedding-alias", "travel policy", {})
+
+
+@pytest.mark.parametrize(
+    ("typo", "suggestion"),
+    [
+        ("embedding_model", "litellm_embedding_model"),
+        ("mongodb_databse", "mongodb_database"),
+        ("mongodb_collections", "mongodb_collection"),
+        ("hybrid_search", "mongodb_hybrid_search"),
+        ("filter_fields", "mongodb_filter_fields"),
+    ],
+)
+def test_unknown_store_params_are_named_with_the_closest_supported_key(typo: str, suggestion: str) -> None:
+    """These used to be dropped silently and resurfaced later as 'litellm_embedding_model is required'."""
+    from litellm.llms.mongodb.vector_stores.transformation import validated_params
+
+    with pytest.raises(litellm.BadRequestError) as error:
+        validated_params({**BASE_PARAMS, typo: "value"})
+
+    assert f"'{typo}'" in str(error.value)
+    assert f"did you mean '{suggestion}'" in str(error.value)
+
+
+def test_unknown_store_param_without_a_close_match_is_still_named() -> None:
+    """A garbled mongodb_ field is always a typo in this store's own namespace, close match or not."""
+    from litellm.llms.mongodb.vector_stores.transformation import validated_params
+
+    with pytest.raises(litellm.BadRequestError, match=r"'mongodb_zzzzzzzz'"):
+        validated_params({**BASE_PARAMS, "mongodb_zzzzzzzz": 1})
+
+
+@pytest.mark.parametrize(
+    ("typo", "suggestion"),
+    [
+        ("embedding_model", "litellm_embedding_model"),
+        ("dimensions", "mongodb_dimensions"),
+    ],
+)
+def test_proxy_plumbing_does_not_mask_real_typos(typo: str, suggestion: str) -> None:
+    """The plumbing tolerance below must not swallow a genuine typo made alongside it."""
+    from litellm.types.router import GenericLiteLLMParams
+
+    litellm_params: Final = GenericLiteLLMParams(
+        **{**BASE_PARAMS, "model": None, "user": "some-user", "disable_fallbacks": True, typo: "x"}
+    )
+
+    with pytest.raises(litellm.BadRequestError, match=rf"did you mean '{suggestion}'"):
+        MongoDBVectorStoreConfig().validate_environment(headers={}, litellm_params=litellm_params)
+
+
+def test_proxy_plumbing_params_are_not_mistaken_for_typos() -> None:
+    """common_request_processing.py writes model=None into every vector store search's litellm_params, and
+    litellm_pre_call_utils.py merges in user and disable_fallbacks from the virtual key. None of the three
+    are MongoDB parameters, and a MongoDB store search must not 400 because of them."""
+    from litellm.types.router import GenericLiteLLMParams
+
+    litellm_params: Final = GenericLiteLLMParams(
+        **{**BASE_PARAMS, "model": None, "user": "some-user", "disable_fallbacks": True}
+    )
+
+    result: Final = MongoDBVectorStoreConfig().validate_environment(headers={}, litellm_params=litellm_params)
+
+    assert result["Authorization"] == "Bearer test-sidecar-key"
+
+
+def test_validate_environment_rejects_unknown_params_too() -> None:
+    """test_connection and ingest reach the provider through validate_environment."""
+    from litellm.types.router import GenericLiteLLMParams
+
+    with pytest.raises(litellm.BadRequestError, match=r"'embeddding_model'"):
+        MongoDBVectorStoreConfig().validate_environment(
+            headers={},
+            litellm_params=GenericLiteLLMParams(**{**BASE_PARAMS, "embeddding_model": "x"}),
+        )
+
+
+@pytest.mark.asyncio
+async def test_search_rejects_an_unknown_param_before_embedding_or_any_request() -> None:
+    executor: Final = RecordingEmbeddingExecutor()
+    client: Final = MagicMock()
+
+    with pytest.raises(litellm.BadRequestError, match=r"'dimensions'"):
+        await litellm.vector_stores.asearch(
+            **BASE_PARAMS,
+            dimensions=1536,
+            vector_store_id="policy_index",
+            query="travel policy",
+            custom_llm_provider="mongodb",
+            _direct_vector_store_embedding_executor=executor,
+            client=client,
+        )
+
+    executor.call.assert_not_called()
+
+
+def test_get_complete_url_falls_back_to_the_deployment_sidecar_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example/")
+
+    assert MongoDBVectorStoreConfig().get_complete_url(api_base=None, litellm_params={}) == (
+        "https://deployment-sidecar.example"
+    )
+
+
+def test_get_complete_url_prefers_a_store_specific_override_over_the_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+
+    assert (
+        MongoDBVectorStoreConfig().get_complete_url(api_base="https://per-store-override.example", litellm_params={})
+        == "https://per-store-override.example"
+    )
+
+
+def test_get_complete_url_without_either_source_names_both_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MONGODB_SIDECAR_API_BASE", raising=False)
+
+    with pytest.raises(litellm.BadRequestError, match="api_base or MONGODB_SIDECAR_API_BASE"):
+        MongoDBVectorStoreConfig().get_complete_url(api_base=None, litellm_params={})
+
+
+def test_get_complete_url_rejects_a_deployment_env_var_that_carries_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://user:pass@sidecar.internal")
+
+    with pytest.raises(litellm.BadRequestError, match="without credentials, query, or fragment"):
+        MongoDBVectorStoreConfig().get_complete_url(api_base=None, litellm_params={})
+
+
+def test_get_complete_url_rejects_a_deployment_env_var_that_is_non_loopback_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "http://evil.example")
+
+    with pytest.raises(litellm.BadRequestError, match="requires HTTPS"):
+        MongoDBVectorStoreConfig().get_complete_url(api_base=None, litellm_params={})
+
+
+@pytest.mark.asyncio
+async def test_search_resolves_api_base_from_the_deployment_sidecar_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An admin should not need to know the sidecar's address: the deployment configures it once."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    executor: Final = RecordingEmbeddingExecutor()
+    params_without_api_base: Final = {key: value for key, value in BASE_PARAMS.items() if key != "api_base"}
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://deployment-sidecar.example/v1/vector_stores/policy_index/search"
+        return httpx.Response(200, json=RESULT)
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        client: Final = HTTPHandler(client=transport)
+        response: Final = litellm.vector_stores.search(
+            vector_store_id="policy_index",
+            query="travel policy",
+            custom_llm_provider="mongodb",
+            _direct_vector_store_embedding_executor=executor,
+            client=client,
+            **params_without_api_base,
+        )
+    assert response == RESULT
+
+
+def test_resolve_sidecar_api_key_rejects_a_custom_api_base_without_its_own_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The deployment's sidecar key must never be sent to a host the deployment did not configure."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    with pytest.raises(litellm.BadRequestError, match="needs its own api_key"):
+        resolve_sidecar_api_key("https://tenant-sidecar.example", None)
+
+
+def test_resolve_sidecar_api_key_uses_the_stores_own_key_for_a_custom_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    assert resolve_sidecar_api_key("https://tenant-sidecar.example", "tenant-key") == "tenant-key"
+
+
+def test_resolve_sidecar_api_key_falls_back_to_the_env_key_with_no_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    assert resolve_sidecar_api_key(None, None) == "deployment-key"
+
+
+def test_resolve_sidecar_api_key_falls_back_to_the_env_key_when_api_base_matches_the_env_base(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A trailing slash on either side must not be mistaken for a different host."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    assert resolve_sidecar_api_key("https://deployment-sidecar.example/", None) == "deployment-key"
+
+
+def test_search_with_a_custom_api_base_and_no_own_key_never_reaches_the_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for sending MONGODB_SIDECAR_API_KEY to an arbitrary api_base: search, test_connection,
+    discovery, create, and ingest all resolve credentials through validate_environment, so this one path
+    covers every operation."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+    executor: Final = RecordingEmbeddingExecutor()
+    params: Final = {**BASE_PARAMS, "api_base": "https://attacker-controlled.example"}
+    del params["api_key"]
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("the sidecar must not be called without a matching api_key")
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        client: Final = HTTPHandler(client=transport)
+        with pytest.raises(litellm.BadRequestError, match="needs its own api_key"):
+            litellm.vector_stores.search(
+                vector_store_id="policy_index",
+                query="travel policy",
+                custom_llm_provider="mongodb",
+                _direct_vector_store_embedding_executor=executor,
+                client=client,
+                **params,
+            )
+    executor.call.assert_not_called()
+
+
+def test_resolve_sidecar_api_key_rejects_the_deployment_key_supplied_explicitly_for_a_custom_api_base(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A store that names the deployment's key itself (an os.environ/ reference, a credential, or the pasted
+    value) gets the same host check as the env fallback."""
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+
+    with pytest.raises(litellm.BadRequestError, match="needs its own api_key"):
+        resolve_sidecar_api_key("https://tenant-sidecar.example", "deployment-key")
+    assert resolve_sidecar_api_key("https://deployment-sidecar.example/", "deployment-key") == "deployment-key"
+    assert resolve_sidecar_api_key(None, "deployment-key") == "deployment-key"
+
+
+def test_search_with_an_env_reference_to_the_deployment_key_and_a_custom_api_base_never_reaches_the_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+    executor: Final = RecordingEmbeddingExecutor()
+    store: Final = LiteLLM_ManagedVectorStore(
+        vector_store_id="policy_index",
+        custom_llm_provider="mongodb",
+        litellm_params={
+            **BASE_PARAMS,
+            "api_base": "https://attacker-controlled.example",
+            "api_key": "os.environ/MONGODB_SIDECAR_API_KEY",
+        },
+    )
+    request_data: Final = build_request_data_from_managed_vector_store(store)
+    assert request_data["api_key"] == "deployment-key"
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("the deployment's sidecar key must not reach another host")
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
+        client: Final = HTTPHandler(client=transport)
+        with pytest.raises(litellm.BadRequestError, match="needs its own api_key"):
+            litellm.vector_stores.search(
+                vector_store_id="policy_index",
+                query="travel policy",
+                _direct_vector_store_embedding_executor=executor,
+                client=client,
+                **request_data,
+            )
+    executor.call.assert_not_called()
+
+
+def _handbook_router() -> litellm.Router:
+    return litellm.Router(
+        model_list=[
+            {
+                "model_name": "text-embedding-3-small",
+                "litellm_params": {
+                    "model": "openai/text-embedding-3-small",
+                    "api_key": "deployment-key",
+                    "mock_response": [0.4, 0.5, 0.6],
+                },
+            }
+        ]
+    )
+
+
+def _search_kwargs(embedding_model: str) -> Mapping[str, object]:
+    return {
+        "vector_store_id": "handbook_index",
+        "query": "travel policy",
+        "vector_store_search_optional_params": {},
+        "api_base": BASE_PARAMS["api_base"],
+        "litellm_logging_obj": MagicMock(),
+        "litellm_params": {
+            **BASE_PARAMS,
+            "mongodb_database": "knowledge",
+            "mongodb_collection": "company_handbook",
+            "litellm_embedding_model": embedding_model,
+        },
+        "embedding_executor": RouterVectorStoreEmbeddingExecutor(router=_handbook_router(), metadata={}),
+    }
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.asyncio
+async def test_proxy_search_embeds_the_company_handbook_query_through_the_router(asynchronous: bool) -> None:
+    config: Final = MongoDBVectorStoreConfig()
+    kwargs: Final = _search_kwargs("text-embedding-3-small")
+    _, body = (
+        await config.atransform_search_vector_store_request(**kwargs)
+        if asynchronous
+        else config.transform_search_vector_store_request(**kwargs)
+    )
+    assert body["query_vector"] == (0.4, 0.5, 0.6)
+
+
+def test_proxy_search_rejects_a_store_embedding_model_the_router_does_not_serve() -> None:
+    kwargs: Final = _search_kwargs("huggingface/https://attacker.example/steal")
+    with pytest.raises(litellm.BadRequestError, match="is not configured on this proxy"):
+        MongoDBVectorStoreConfig().transform_search_vector_store_request(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_async_proxy_search_rejects_a_store_embedding_model_the_router_does_not_serve() -> None:
+    kwargs: Final = _search_kwargs("huggingface/https://attacker.example/steal")
+    with pytest.raises(litellm.BadRequestError, match="is not configured on this proxy"):
+        await MongoDBVectorStoreConfig().atransform_search_vector_store_request(**kwargs)

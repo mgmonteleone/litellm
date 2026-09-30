@@ -2110,3 +2110,38 @@ BATCH_ENQUEUED_TOKEN_LIMIT_METADATA_KEY: Final = "batch_enqueued_token_limit"
 # Shared read-only empty mapping, for defaulting optional Mapping parameters without
 # constructing a fresh mutable dict at each call site.
 EMPTY_MAPPING: Final = MappingProxyType({})
+
+# Aggregated daily-activity rollups fan out across api_key, and that column is a hash of
+# whatever credential the caller presented. A key-scanning sweep therefore drives its
+# cardinality without bound, and the resulting result set is large enough to kill the
+# Prisma query engine mid-request. Keep only the top N keys per rollup bucket by spend and
+# fold the tail into TRUNCATED_BREAKDOWN_API_KEY. Day totals are unaffected: they come from
+# the grouping sets that do not include api_key.
+DAILY_ACTIVITY_MAX_BREAKDOWN_KEYS: Final[int] = 100
+TRUNCATED_BREAKDOWN_API_KEY: Final[str] = "__other__"
+
+CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS: Final = frozenset(
+    {
+        "api_base",
+        "base_url",
+        "azure_endpoint",
+        "azure_search_service_name",
+        "azure_ad_token",
+        "aws_bedrock_runtime_endpoint",
+        "aws_bedrock_project_id",
+        "aws_sts_endpoint",
+        "aws_web_identity_token",
+        "aws_role_name",
+        "aws_profile_name",
+        "aws_session_name",
+        "aws_external_id",
+        "aws_session_tags",
+        "s3_endpoint_url",
+        "sagemaker_base_url",
+        "deployment_url",
+        "vertex_credentials",
+        "vertex_ai_credentials",
+    }
+)
+"""Request params that pick the host a provider call goes to, or the identity or token that signs it. Banned from
+request bodies proxy-wide, and pinned to a managed vector store's saved values."""

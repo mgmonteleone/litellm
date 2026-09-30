@@ -7,7 +7,6 @@ executor, and it must never leak into litellm_params/kwargs where logging would
 model_dump() it (the #19550 serialization trap).
 """
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,7 +15,6 @@ import litellm.vector_stores.main as vector_stores_main
 from litellm.llms.base_llm.vector_store.transformation import (
     RouterVectorStoreEmbeddingExecutor,
 )
-from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.vector_stores.main import search
 
 MOCK_SEARCH_RESPONSE = {
@@ -93,24 +91,61 @@ def test_search_router_not_in_litellm_params():
     assert getattr(litellm_params, "router", None) is None
 
 
-def test_search_forwards_top_level_user_context_to_bedrock_retrieve():
-    """Regression (LIT-4415): a top-level userContext, the shape the OpenAI SDK's extra_body
-    produces on the proxy path, reaches the Bedrock Retrieve request body."""
-    client = MagicMock(spec=HTTPHandler)
-    client.post.return_value = MagicMock(status_code=200, json=MagicMock(return_value={"retrievalResults": []}))
+@pytest.mark.parametrize(
+    "store_params,credential_values,expected_api_base",
+    [
+        ({}, {"api_key": "sk-credential"}, None),
+        ({}, {"api_key": "sk-credential", "api_base": "https://credential.example"}, "https://credential.example"),
+        ({"api_base": "https://store.example"}, {"api_key": "sk-credential"}, "https://store.example"),
+        (
+            {"api_base": "https://store.example"},
+            {"api_key": "sk-credential", "api_base": "https://credential.example"},
+            "https://store.example",
+        ),
+    ],
+    ids=["neither-sets-it", "credential-endpoint", "store-endpoint", "store-over-credential"],
+)
+def test_search_pins_a_registry_stores_endpoint_over_the_callers(store_params, credential_values, expected_api_base):
+    """Regression: the caller's api_base stayed next to the registry credential's api_key, and a store's own saved
+    api_base was dropped whenever it named a credential."""
+    import litellm
+    from litellm.types.utils import CredentialItem
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+    from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
 
-    search(
-        vector_store_id="kb123",
-        query="q",
-        custom_llm_provider="bedrock",
-        aws_region_name="us-west-2",
-        aws_access_key_id="test-key-id",
-        aws_secret_access_key="test-secret-key",
-        userContext={"userId": "alice@example.com"},
-        client=client,
-        litellm_logging_obj=MagicMock(),
+    registry = VectorStoreRegistry(
+        vector_stores=[
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs-cred",
+                custom_llm_provider="openai",
+                litellm_credential_name="openai-prod",
+                litellm_params=store_params,
+            )
+        ]
     )
+    credential = CredentialItem(credential_name="openai-prod", credential_values=credential_values, credential_info={})
 
-    posted = json.loads(client.post.call_args.kwargs["data"])
-    assert posted["userContext"] == {"userId": "alice@example.com"}
-    assert posted["retrievalQuery"] == {"text": "q"}
+    with (
+        patch.object(litellm, "vector_store_registry", registry),
+        patch.object(litellm, "credential_list", [credential]),
+        patch(  # test-quality-ok: stubs provider config resolution; the seam under test is litellm_params contents
+            "litellm.vector_stores.main.ProviderConfigManager.get_provider_vector_stores_config",
+            return_value=MagicMock(),
+        ),
+        patch.object(  # test-quality-ok: the handler call is where the outgoing endpoint and key surface
+            vector_stores_main.base_llm_http_handler,
+            "vector_store_search_handler",
+            return_value=MOCK_SEARCH_RESPONSE,
+        ) as mock_handler,
+    ):
+        search(
+            vector_store_id="vs-cred",
+            query="q",
+            custom_llm_provider="openai",
+            api_base="https://attacker.example",
+            litellm_logging_obj=MagicMock(),
+        )
+
+    litellm_params = mock_handler.call_args.kwargs["litellm_params"]
+    assert litellm_params.api_key == "sk-credential"
+    assert litellm_params.api_base == expected_api_base

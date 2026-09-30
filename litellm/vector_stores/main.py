@@ -120,12 +120,18 @@ async def acreate(
     timeout: float | httpx.Timeout | None = None,
     # LiteLLM specific params,
     custom_llm_provider: str | None = None,
+    router: "Router | None" = None,
     **kwargs,
 ) -> VectorStoreCreateResponse:
     """
     Async: Create a vector store.
     """
-    local_vars: Final = locals()
+    embedding_executor: Final = _direct_vector_store_embedding_executor(
+        kwargs.pop("_direct_vector_store_embedding_executor", None), router, kwargs
+    )
+    local_vars: Final = {  # mutable-ok: exception logging requires a sanitized mutable snapshot
+        key: value for key, value in locals().items() if key != "embedding_executor"
+    }
     try:
         loop: Final = asyncio.get_event_loop()
         kwargs["acreate"] = True
@@ -146,6 +152,8 @@ async def acreate(
             extra_body=extra_body,
             timeout=timeout,
             custom_llm_provider=custom_llm_provider,
+            _direct_vector_store_embedding_executor=embedding_executor,
+            router=router,
             **kwargs,
         )
 
@@ -184,6 +192,7 @@ def create(
     timeout: float | httpx.Timeout | None = None,
     # LiteLLM specific params,
     custom_llm_provider: str | None = None,
+    router: "Router | None" = None,
     **kwargs,
 ) -> VectorStoreCreateResponse | Coroutine[object, object, VectorStoreCreateResponse]:
     """
@@ -199,7 +208,12 @@ def create(
     Returns:
         VectorStoreCreateResponse containing the created vector store details.
     """
-    local_vars: Final = locals()
+    embedding_executor: Final = _direct_vector_store_embedding_executor(
+        kwargs.pop("_direct_vector_store_embedding_executor", None), router, kwargs
+    )
+    local_vars: Final = {  # mutable-ok: exception logging requires a sanitized mutable snapshot
+        key: value for key, value in locals().items() if key != "embedding_executor"
+    }
     try:
         litellm_logging_obj: Final[LiteLLMLoggingObj] = kwargs.get("litellm_logging_obj")
         litellm_call_id: Final[str | None] = kwargs.get("litellm_call_id", None)
@@ -264,6 +278,7 @@ def create(
             custom_llm_provider=custom_llm_provider,
             litellm_params=litellm_params,
             logging_obj=litellm_logging_obj,
+            embedding_executor=embedding_executor,
             extra_headers=extra_headers,
             extra_body=extra_body,
             timeout=timeout or request_timeout,
@@ -402,11 +417,7 @@ def search(
         _is_async: Final = kwargs.pop("asearch", False) is True
         # pull credentials from registry if available
         if litellm.vector_store_registry is not None and vector_store_id is not None:
-            try:
-                registry_credentials = litellm.vector_store_registry.get_credentials_for_vector_store(vector_store_id)
-                kwargs.update(registry_credentials)
-            except Exception:
-                pass
+            kwargs.update(litellm.vector_store_registry.get_request_params_for_vector_store(vector_store_id))
 
         # get llm provider logic
         litellm_params: Final = GenericLiteLLMParams(vector_store_id=vector_store_id, **kwargs)

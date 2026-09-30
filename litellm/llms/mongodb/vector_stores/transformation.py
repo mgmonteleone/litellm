@@ -1,8 +1,10 @@
 from collections.abc import Mapping, Sequence
+from difflib import get_close_matches
 from ipaddress import ip_address
 from math import isfinite
+from time import time
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Final, Literal, NoReturn
+from typing import TYPE_CHECKING, Final, Literal
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -15,15 +17,21 @@ from litellm.llms.base_llm.vector_store.transformation import (
     LiteLLMVectorStoreEmbeddingExecutor,
     VectorStoreEmbeddingExecutor,
 )
+from litellm.llms.mongodb.vector_stores.filters import translate_filters
 from litellm.secret_managers.main import get_secret_str
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.utils import EmbeddingResponse
+from litellm.types.utils import EmbeddingResponse, all_litellm_params
 from litellm.types.vector_stores import (
+    MANAGED_STORE_CALLER_OPTIONS,
+    VECTOR_STORE_OPENAI_PARAMS,
     BaseVectorStoreAuthCredentials,
     VectorStoreCreateOptionalRequestParams,
+    VectorStoreCreateResponse,
+    VectorStoreFileCounts,
     VectorStoreIndexEndpoints,
     VectorStoreSearchOptionalRequestParams,
     VectorStoreSearchResponse,
+    VectorStoreTestConnectionResponse,
 )
 
 if TYPE_CHECKING:
@@ -31,6 +39,7 @@ if TYPE_CHECKING:
 
 DEFAULT_EMBEDDING_FIELD_NAME: Final = "embedding"
 DEFAULT_TEXT_FIELD_NAME: Final = "text"
+DEFAULT_SIMILARITY: Final = "cosine"
 DEFAULT_MAX_NUM_RESULTS: Final = 10
 MIN_MAX_NUM_RESULTS: Final = 1
 MAX_MAX_NUM_RESULTS: Final = 50
@@ -38,15 +47,80 @@ NUM_CANDIDATES_MULTIPLIER: Final = 10
 MIN_NUM_CANDIDATES: Final = 100
 MAX_NUM_CANDIDATES: Final = 10_000
 MAX_QUERY_CHARACTERS: Final = 32_000
+MAX_DIMENSIONS: Final = 8192
+MAX_SIDECAR_TIMEOUT_MS: Final = 600_000  # the sidecar rejects longer deadlines; LiteLLM's SDK default is far above it
+DIMENSION_PROBE_TEXT: Final = "LiteLLM embedding dimension probe"
 _EMPTY_EMBEDDING_CONFIG: Final = MappingProxyType({})
-_SEARCH_ONLY_MESSAGE: Final = (
-    "MongoDB vector store is search-only. Create the collection and its MongoDB Vector Search "
-    "index in MongoDB directly, then register it here by index name."
+_SIDECAR_TOO_OLD_MESSAGE: Final = (
+    "The MongoDB sidecar does not support this operation. Creating and ingesting vector stores "
+    "requires litellm-mongodb v0.2 or later; upgrade the sidecar image."
 )
+
+Similarity = Literal["cosine", "euclidean", "dotProduct"]
+HYBRID_RANKER: Final = "hybrid"
+_SUPPORTED_OPENAI_PARAMS: Final = ("filters", "max_num_results", "ranking_options")
 
 
 def config_error(message: str) -> BadRequestError:
     return BadRequestError(message=message, model=None, llm_provider="mongodb")
+
+
+_NO_CREDENTIALS_QUERY_OR_FRAGMENT: Final = (
+    "MongoDB sidecar api_base must be an HTTP or HTTPS URL without credentials, query, or fragment."
+)
+_HTTPS_REQUIRED: Final = "MongoDB sidecar requires HTTPS. HTTP is supported only for a loopback IP such as 127.0.0.1."
+_CUSTOM_API_BASE_NEEDS_OWN_KEY: Final = (
+    "A custom MongoDB sidecar api_base needs its own api_key; the deployment's sidecar key is only sent "
+    "to the deployment's sidecar."
+)
+
+
+def _uses_env_api_base(api_base: str | None, env_api_base: str | None) -> bool:
+    if api_base is None:
+        return True
+    return env_api_base is not None and api_base.rstrip("/") == env_api_base.rstrip("/")
+
+
+def resolve_sidecar_api_key(api_base: str | None, api_key: str | None) -> str:
+    """The single place that decides which api_key goes with which sidecar host.
+
+    MONGODB_SIDECAR_API_KEY may only be sent to MONGODB_SIDECAR_API_BASE (or when the store sets no
+    api_base at all, which resolves to that same env base in ``get_complete_url``). A store that points
+    api_base at a different host must supply its own api_key, or the deployment's key would be handed
+    to an arbitrary host as a Bearer token. That holds however the key arrived: the env fallback, an
+    explicit value, a resolved ``os.environ/`` reference, or a credential.
+    """
+    env_key: Final = get_secret_str("MONGODB_SIDECAR_API_KEY")
+    key: Final = api_key or env_key
+    if not key:
+        raise config_error("MongoDB sidecar api_key is required. Set api_key or MONGODB_SIDECAR_API_KEY.")
+    if key == env_key and not _uses_env_api_base(api_base, get_secret_str("MONGODB_SIDECAR_API_BASE")):
+        raise config_error(_CUSTOM_API_BASE_NEEDS_OWN_KEY)
+    return key
+
+
+def sidecar_api_base_error(value: str) -> str | None:
+    """None if ``value`` is a usable MongoDB sidecar api_base; otherwise why it is not.
+
+    Shared by ``MongoDBVectorStoreConfig.get_complete_url`` (which validates a per-request api_base)
+    and the proxy's ``/vector_store/provider_defaults`` endpoint (which validates the deployment's
+    ``MONGODB_SIDECAR_API_BASE`` before ever reporting it to the dashboard), so both apply the same
+    scheme, credentials, and loopback rules.
+    """
+    try:
+        parsed: Final = urlsplit(value)
+        valid: Final = parsed.scheme in ("http", "https") and bool(parsed.hostname) and parsed.port != 0
+    except ValueError:
+        return "MongoDB sidecar api_base must be a valid HTTP or HTTPS URL."
+    if not valid or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return _NO_CREDENTIALS_QUERY_OR_FRAGMENT
+    if parsed.scheme != "http":
+        return None
+    try:
+        loopback: Final = ip_address(parsed.hostname or "").is_loopback
+    except ValueError:
+        return _HTTPS_REQUIRED
+    return None if loopback else _HTTPS_REQUIRED
 
 
 class _Content(BaseModel):
@@ -56,11 +130,12 @@ class _Content(BaseModel):
 
 
 class _Result(BaseModel):
-    model_config = ConfigDict(frozen=True, strict=True, allow_inf_nan=False)
+    model_config = ConfigDict(frozen=True, strict=True, allow_inf_nan=False, extra="ignore")
     score: float | None
     content: Sequence[_Content]
     file_id: str | None
     filename: str | None
+    attributes: Mapping[str, str | int | float | bool | None] | None = None
 
 
 class _SearchResponse(BaseModel):
@@ -70,7 +145,20 @@ class _SearchResponse(BaseModel):
     data: Sequence[_Result]
 
 
-class _MongoDBSearchParams(BaseModel):
+class _CreateResponse(BaseModel):
+    """The sidecar's index status document, validated strictly before it becomes an OpenAI-shaped response."""
+
+    model_config = ConfigDict(frozen=True, strict=True, extra="ignore")
+    index_name: str
+    mongodb_database: str
+    mongodb_collection: str
+    status: Literal["ready", "building", "failed", "missing"]
+    queryable: bool
+    document_count: int | None
+    created: bool
+
+
+class MongoDBVectorStoreParams(BaseModel):
     """Typed view over the vector store's litellm_params; unrelated keys are ignored."""
 
     model_config = ConfigDict(frozen=True, extra="ignore")
@@ -82,6 +170,14 @@ class _MongoDBSearchParams(BaseModel):
     mongodb_text_field: str | None = None
     mongodb_embedding_field: str | None = None
     mongodb_num_candidates: int | None = None
+    mongodb_dimensions: int | None = None
+    mongodb_similarity: Similarity | None = None
+    mongodb_filter_fields: Sequence[str] | None = None
+    mongodb_text_index: str | None = None
+    mongodb_hybrid_search: bool | None = None
+    mongodb_hybrid_weights: Mapping[str, float] | None = None
+    mongodb_exact_search: bool | None = None
+    mongodb_score_threshold: float | None = None
 
     @property
     def text_field(self) -> str:
@@ -90,6 +186,33 @@ class _MongoDBSearchParams(BaseModel):
     @property
     def embedding_field(self) -> str:
         return self.mongodb_embedding_field or DEFAULT_EMBEDDING_FIELD_NAME
+
+    @property
+    def similarity(self) -> Similarity:
+        return self.mongodb_similarity or DEFAULT_SIMILARITY
+
+    @property
+    def filter_fields(self) -> tuple[str, ...]:
+        return tuple(self.mongodb_filter_fields or ())
+
+    def require_text_index(self) -> str:
+        if not self.mongodb_text_index:
+            raise config_error(
+                "Hybrid search needs an Atlas Search text index. Set mongodb_text_index in litellm_params "
+                "(it is created automatically alongside the vector index when the store is created through LiteLLM)."
+            )
+        return self.mongodb_text_index
+
+    def hybrid_weights(self) -> tuple[float, float]:
+        weights: Final = self.mongodb_hybrid_weights or _EMPTY_EMBEDDING_CONFIG
+        vector: Final = weights.get("vector", 1.0)
+        text: Final = weights.get("text", 1.0)
+        for name, value in (("vector", vector), ("text", text)):
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not isfinite(value) or value < 0:
+                raise config_error(f"mongodb_hybrid_weights.{name} must be a non-negative number")
+        if vector == 0 and text == 0:
+            raise config_error("mongodb_hybrid_weights must give vector or text a positive weight")
+        return float(vector), float(text)
 
     def require_embedding_model(self) -> str:
         if not self.litellm_embedding_model:
@@ -119,10 +242,161 @@ class _MongoDBSearchParams(BaseModel):
 
 
 _MONGODB_PARAM_PREFIX: Final = "mongodb_"
+_EMBEDDING_PARAM_PREFIX: Final = "litellm_embedding_"
 _KNOWN_MONGODB_PARAMS: Final = frozenset(
-    name for name in _MongoDBSearchParams.model_fields if name.startswith(_MONGODB_PARAM_PREFIX)
+    name for name in MongoDBVectorStoreParams.model_fields if name.startswith(_MONGODB_PARAM_PREFIX)
 )
+_KNOWN_EMBEDDING_PARAMS: Final = frozenset(
+    name for name in MongoDBVectorStoreParams.model_fields if name.startswith(_EMBEDDING_PARAM_PREFIX)
+)
+_MONGODB_NAMESPACE_FIELDS: Final = _KNOWN_MONGODB_PARAMS | _KNOWN_EMBEDDING_PARAMS
+_GENERIC_STORE_PARAMS: Final = frozenset(
+    {
+        "custom_llm_provider",
+        "vector_store_name",
+        "vector_store_description",
+        "vector_store_metadata",
+        "litellm_credential_name",
+        *MANAGED_STORE_CALLER_OPTIONS,
+    }
+)
+# The registry merges every GenericLiteLLMParams field into litellm_params, and the SDK and proxy
+# thread all_litellm_params through the same mapping, so those names reach the provider whether or
+# not the operator wrote them. Anything else is a key the operator meant for this store.
+_SUPPORTED_PARAMS: Final = frozenset(
+    {
+        *MongoDBVectorStoreParams.model_fields,
+        *GenericLiteLLMParams.model_fields,
+        *_GENERIC_STORE_PARAMS,
+        *all_litellm_params,
+    }
+)
+_SUGGESTION_CANDIDATES: Final = tuple(sorted(_MONGODB_NAMESPACE_FIELDS | _GENERIC_STORE_PARAMS))
 _RESPONSE_ADAPTER: Final = TypeAdapter(VectorStoreSearchResponse)
+_MAX_RENDERED_KEY_LENGTH: Final = 64
+# 0.7 catches a dropped/garbled "mongodb_"/"litellm_embedding_" prefix (e.g. "dimensions", "hybrid_search")
+# while staying well clear of proxy plumbing keys like "user" or "litellm_call_id", which score under 0.65.
+_TYPO_MATCH_CUTOFF: Final = 0.7
+
+
+def _is_mongodb_namespaced(key: str) -> bool:
+    return key.startswith(_MONGODB_PARAM_PREFIX) or key.startswith(_EMBEDDING_PARAM_PREFIX)
+
+
+def _typo_hint(key: str) -> str | None:
+    matches: Final = get_close_matches(key, _SUGGESTION_CANDIDATES, n=1, cutoff=_TYPO_MATCH_CUTOFF)
+    return matches[0] if matches else None
+
+
+def _rejected_param(key: str) -> tuple[str, str | None] | None:
+    """A key the operator meant for this store: either a garbled mongodb_/litellm_embedding_ field, or an
+    unrecognised key close enough to a real one to be a typo. Everything else is plumbing and passes through."""
+    if _is_mongodb_namespaced(key):
+        return None if key in _MONGODB_NAMESPACE_FIELDS else (key, _typo_hint(key))
+    if key in _SUPPORTED_PARAMS:
+        return None
+    hint: Final = _typo_hint(key)
+    return (key, hint) if hint is not None else None
+
+
+def _render_rejection(key: str, hint: str | None) -> str:
+    rendered: Final = repr(key)[:_MAX_RENDERED_KEY_LENGTH]
+    return f"{rendered} (did you mean '{hint}'?)" if hint else rendered
+
+
+def reject_unknown_params(litellm_params: Mapping[str, object]) -> None:
+    """Without this a mistyped mongodb_collection reads as 'mongodb_collection is required',
+    naming a key the reader can see they have set, and a mistyped embedding_model is dropped silently."""
+    if litellm_params.get("mongodb_connection_string") is not None:
+        raise config_error(
+            "MongoDB vector stores now use the BETA sidecar. Move mongodb_connection_string to "
+            "MONGODB_CONNECTION_STRING in the sidecar, remove it from LiteLLM, and configure api_base and api_key."
+        )
+    rejected: Final = sorted(pair for key in litellm_params if (pair := _rejected_param(key)) is not None)
+    if rejected:
+        raise config_error(
+            "Unrecognised MongoDB vector store parameter(s): "
+            f"{', '.join(_render_rejection(key, hint) for key, hint in rejected)}. "
+            f"Supported MongoDB parameters: {', '.join(sorted(_KNOWN_MONGODB_PARAMS))}, "
+            "litellm_embedding_model, litellm_embedding_config."
+        )
+
+
+def _parsed_params(litellm_params: Mapping[str, object]) -> MongoDBVectorStoreParams:
+    reject_unknown_params(litellm_params)
+    try:
+        return MongoDBVectorStoreParams.model_validate(litellm_params)
+    except ValidationError:
+        raise config_error(
+            "Invalid MongoDB vector-store configuration. Check the database, collection, fields, "
+            "similarity, filter fields, and candidate count."
+        ) from None
+
+
+def _check_shared_constraints(params: MongoDBVectorStoreParams) -> None:
+    if params.mongodb_dimensions is not None and not 1 <= params.mongodb_dimensions <= MAX_DIMENSIONS:
+        raise config_error(
+            f"mongodb_dimensions must be between 1 and {MAX_DIMENSIONS}, got {params.mongodb_dimensions}"
+        )
+    for field in params.filter_fields:
+        if not field.strip() or field.startswith("$"):
+            raise config_error("mongodb_filter_fields entries must be nonblank field paths that do not start with $")
+    if params.mongodb_score_threshold is not None and not 0.0 <= params.mongodb_score_threshold <= 1.0:
+        raise config_error("mongodb_score_threshold must be between 0 and 1")
+
+
+def validated_params(litellm_params: Mapping[str, object]) -> MongoDBVectorStoreParams:
+    """Validate litellm_params for any MongoDB operation; search, create, and ingest share these rules."""
+    params: Final = _parsed_params(litellm_params)
+    params.require_database()
+    params.require_collection()
+    _check_shared_constraints(params)
+    return params
+
+
+def validated_test_connection_params(litellm_params: Mapping[str, object]) -> MongoDBVectorStoreParams:
+    """Validate litellm_params for test_connection, where an admin may not have chosen a database and
+    collection yet. Every other rule (unknown keys, dimensions, filter fields, score threshold) still applies."""
+    params: Final = _parsed_params(litellm_params)
+    _check_shared_constraints(params)
+    return params
+
+
+def score_threshold(params: MongoDBVectorStoreParams, ranking_options: Mapping[str, object] | None) -> float | None:
+    requested: Final = ranking_options.get("score_threshold") if ranking_options else None
+    if requested is None:
+        return params.mongodb_score_threshold
+    if isinstance(requested, bool) or not isinstance(requested, (int, float)) or not 0.0 <= requested <= 1.0:
+        raise config_error("ranking_options.score_threshold must be a number between 0 and 1")
+    return float(requested)
+
+
+def hybrid_requested(params: MongoDBVectorStoreParams, ranking_options: Mapping[str, object] | None) -> bool:
+    ranker: Final = ranking_options.get("ranker") if ranking_options else None
+    if ranker is not None and ranker not in ("auto", "default-2024-11-15", HYBRID_RANKER):
+        raise config_error(f"ranking_options.ranker {ranker!r} is not supported; use 'auto' or 'hybrid'")
+    return ranker == HYBRID_RANKER or bool(params.mongodb_hybrid_search)
+
+
+def embedding_vector(embedding_response: EmbeddingResponse) -> tuple[float, ...]:
+    if not embedding_response.data:
+        raise config_error("The embedding model returned no embedding. Check litellm_embedding_model.")
+    vector: Final = embedding_response.data[0]["embedding"]
+    if not vector or any(not isinstance(value, (float, int)) or not isfinite(value) for value in vector):
+        raise config_error("The embedding model must return a non-empty, finite vector.")
+    return tuple(float(value) for value in vector)
+
+
+def sidecar_error_message(response: httpx.Response) -> str:
+    """The message from the sidecar's error envelope, or a bounded slice of the body."""
+    try:
+        payload: Final = response.json()
+    except ValueError:
+        return response.text[:300]
+    error: Final = payload.get("error") if isinstance(payload, Mapping) else None
+    if isinstance(error, Mapping) and isinstance(error.get("message"), str):
+        return str(error["message"])
+    return response.text[:300]
 
 
 class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
@@ -135,23 +409,12 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
     def get_vector_store_endpoints_by_type(self) -> VectorStoreIndexEndpoints:
         return VectorStoreIndexEndpoints(read=[], write=[])  # mutable-ok: the TypedDict declares list fields
 
+    def get_supported_openai_params(self, model: str) -> list[VECTOR_STORE_OPENAI_PARAMS]:  # mutable-ok: base contract
+        return list(_SUPPORTED_OPENAI_PARAMS)  # mutable-ok: the base contract returns a list
+
     @staticmethod
     def _reject_unknown_params(litellm_params: Mapping[str, object]) -> None:
-        """Without this a mistyped mongodb_collection reads as 'mongodb_collection is required',
-        naming a key the reader can see they have set."""
-        if litellm_params.get("mongodb_connection_string") is not None:
-            raise config_error(
-                "MongoDB vector stores now use the BETA sidecar. Move mongodb_connection_string to "
-                "MONGODB_CONNECTION_STRING in the sidecar, remove it from LiteLLM, and configure api_base and api_key."
-            )
-        unknown: Final = sorted(
-            key for key in litellm_params if key.startswith(_MONGODB_PARAM_PREFIX) and key not in _KNOWN_MONGODB_PARAMS
-        )
-        if unknown:
-            raise config_error(
-                f"Unrecognised MongoDB vector store parameter(s): {', '.join(unknown)}. "
-                f"Supported: {', '.join(sorted(_KNOWN_MONGODB_PARAMS))}."
-            )
+        reject_unknown_params(litellm_params)
 
     @staticmethod
     def _query_text(query: str | Sequence[str]) -> str:
@@ -190,9 +453,7 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         if litellm_params is None:
             raise config_error("Configure api_base and api_key for the MongoDB BETA sidecar.")
         self._reject_unknown_params(MappingProxyType(dict(litellm_params)))
-        api_key: Final = litellm_params.api_key or get_secret_str("MONGODB_SIDECAR_API_KEY")
-        if not api_key:
-            raise config_error("MongoDB sidecar api_key is required. Set api_key or MONGODB_SIDECAR_API_KEY.")
+        api_key: Final = resolve_sidecar_api_key(litellm_params.api_base, litellm_params.api_key)
         return {
             **headers,
             "Authorization": f"Bearer {api_key}",
@@ -200,29 +461,16 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         }  # mutable-ok: writable HTTP headers
 
     def get_complete_url(self, api_base: str | None, litellm_params: Mapping[str, object]) -> str:
-        if not api_base:
-            raise config_error("MongoDB sidecar api_base is required, for example http://127.0.0.1:8080.")
-        try:
-            parsed: Final = urlsplit(api_base)
-            valid: Final = parsed.scheme in ("http", "https") and bool(parsed.hostname) and parsed.port != 0
-        except ValueError:
-            raise config_error("MongoDB sidecar api_base must be a valid HTTP or HTTPS URL.") from None
-        if not valid or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        resolved: Final = api_base or get_secret_str("MONGODB_SIDECAR_API_BASE")
+        if not resolved:
             raise config_error(
-                "MongoDB sidecar api_base must be an HTTP or HTTPS URL without credentials, query, or fragment."
+                "MongoDB sidecar api_base is required. Set api_base or MONGODB_SIDECAR_API_BASE, "
+                "for example http://127.0.0.1:8080."
             )
-        if parsed.scheme == "http":
-            try:
-                loopback: Final = ip_address(parsed.hostname or "").is_loopback
-            except ValueError:
-                raise config_error(
-                    "MongoDB sidecar requires HTTPS. HTTP is supported only for a loopback IP such as 127.0.0.1."
-                ) from None
-            if not loopback:
-                raise config_error(
-                    "MongoDB sidecar requires HTTPS. HTTP is supported only for a loopback IP such as 127.0.0.1."
-                )
-        return api_base.rstrip("/")
+        error: Final = sidecar_api_base_error(resolved)
+        if error is not None:
+            raise config_error(error)
+        return resolved.rstrip("/")
 
     @staticmethod
     def _timeout_ms(value: object) -> int:
@@ -232,7 +480,7 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         if not isinstance(seconds, (int, float)) or not isfinite(seconds) or seconds <= 0:
             raise config_error("MongoDB search timeout must be a positive finite number.")
         try:
-            return max(1, int(seconds * 1000))
+            return min(max(1, int(seconds * 1000)), MAX_SIDECAR_TIMEOUT_MS)
         except (ValueError, OverflowError):
             raise config_error("MongoDB search timeout must be a positive finite number.") from None
 
@@ -242,24 +490,26 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         litellm_params: Mapping[str, object],
         optional_params: VectorStoreSearchOptionalRequestParams,
         extra_body: Mapping[str, object] | None,
-    ) -> _MongoDBSearchParams:
-        cls._reject_unknown_params(litellm_params)
+    ) -> MongoDBVectorStoreParams:
         if extra_body:
             raise config_error("MongoDB vector store does not support extra_body overrides.")
-        for unsupported in ("filters", "ranking_options", "rewrite_query"):
-            if optional_params.get(unsupported) is not None:
-                raise config_error(f"MongoDB vector store does not support the {unsupported} parameter.")
-        try:
-            params: Final = _MongoDBSearchParams.model_validate(litellm_params)
-        except ValidationError:
-            raise config_error(
-                "Invalid MongoDB vector-store configuration. Check the database, collection, fields, and candidate count."
-            ) from None
-        params.require_database()
-        params.require_collection()
+        if optional_params.get("rewrite_query") is not None:
+            raise config_error("MongoDB vector store does not support the rewrite_query parameter.")
+        params: Final = validated_params(litellm_params)
         params.require_embedding_model()
         cls._num_candidates(cls._limit(optional_params), params.mongodb_num_candidates)
         cls._timeout_ms(litellm_params.get("timeout"))
+        translate_filters(optional_params.get("filters"))
+        ranking: Final = optional_params.get("ranking_options")
+        if hybrid_requested(params, ranking):
+            params.require_text_index()
+            params.hybrid_weights()
+            if score_threshold(params, ranking) is not None:
+                raise config_error(
+                    "score_threshold applies to vector similarity and cannot be combined with hybrid ranking"
+                )
+        else:
+            score_threshold(params, ranking)
         return params
 
     @classmethod
@@ -267,34 +517,44 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
         cls,
         vector_store_id: str,
         query_text: str,
-        params: _MongoDBSearchParams,
+        params: MongoDBVectorStoreParams,
         optional_params: VectorStoreSearchOptionalRequestParams,
         api_base: str,
         embedding_response: EmbeddingResponse,
         timeout: object,
     ) -> tuple[str, dict[str, object]]:  # mutable-ok: the provider contract returns a writable JSON request body
-        if not embedding_response.data:
-            raise config_error(
-                "The embedding model returned no embedding for the search query. Check litellm_embedding_model."
-            )
-        vector: Final = embedding_response.data[0]["embedding"]
-        if not vector or any(not isinstance(value, (float, int)) or not isfinite(value) for value in vector):
-            raise config_error("The embedding model must return a non-empty, finite query vector.")
+        vector: Final = embedding_vector(embedding_response)
         limit: Final = cls._limit(optional_params)
-        return (
-            f"{api_base}/v1/vector_stores/{quote(vector_store_id, safe='')}/search",
-            {  # mutable-ok: JSON transport requires a dict
-                "query": query_text,
-                "query_vector": tuple(vector),
-                "mongodb_database": params.require_database(),
-                "mongodb_collection": params.require_collection(),
-                "mongodb_embedding_field": params.embedding_field,
-                "mongodb_text_field": params.text_field,
-                "mongodb_num_candidates": cls._num_candidates(limit, params.mongodb_num_candidates),
-                "max_num_results": limit,
-                "timeout_ms": cls._timeout_ms(timeout),
-            },
-        )
+        ranking: Final = optional_params.get("ranking_options")
+        body: dict[str, object] = {  # mutable-ok: JSON transport requires a dict
+            "query": query_text,
+            "query_vector": vector,
+            "mongodb_database": params.require_database(),
+            "mongodb_collection": params.require_collection(),
+            "mongodb_embedding_field": params.embedding_field,
+            "mongodb_text_field": params.text_field,
+            "mongodb_num_candidates": cls._num_candidates(limit, params.mongodb_num_candidates),
+            "max_num_results": limit,
+            "include_metadata": True,
+            "timeout_ms": cls._timeout_ms(timeout),
+        }
+        mql: Final = translate_filters(optional_params.get("filters"))
+        if mql is not None:
+            body["filter"] = mql
+        if params.mongodb_exact_search:
+            body["exact"] = True
+        if hybrid_requested(params, ranking):
+            vector_weight, text_weight = params.hybrid_weights()
+            body["hybrid"] = {  # mutable-ok: JSON transport requires a dict
+                "text_index": params.require_text_index(),
+                "vector_weight": vector_weight,
+                "text_weight": text_weight,
+            }
+        else:
+            threshold: Final = score_threshold(params, ranking)
+            if threshold is not None:
+                body["score_threshold"] = threshold
+        return (f"{api_base}/v1/vector_stores/{quote(vector_store_id, safe='')}/search", body)
 
     def transform_search_vector_store_request(
         self,
@@ -353,7 +613,20 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
     ) -> VectorStoreSearchResponse:
         try:
             validated: Final = _SearchResponse.model_validate_json(response.content)
-            return _RESPONSE_ADAPTER.validate_python(validated.model_dump())
+            # Older sidecars send no attributes; keep their response shape unchanged by omitting the null key.
+            data: Final = tuple(
+                {  # mutable-ok: JSON transport
+                    key: value for key, value in row.model_dump().items() if key != "attributes" or value is not None
+                }
+                for row in validated.data
+            )
+            return _RESPONSE_ADAPTER.validate_python(
+                {  # mutable-ok: JSON transport
+                    "object": validated.object,
+                    "search_query": validated.search_query,
+                    "data": data,
+                }  # mutable-ok: JSON transport
+            )
         except ValidationError:
             raise ServiceUnavailableError(
                 message="MongoDB sidecar returned an invalid search response. Check the sidecar version and deployment.",
@@ -364,10 +637,12 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
     def get_error_class(
         self, error_message: str, status_code: int, headers: Mapping[str, object] | httpx.Headers
     ) -> BaseLLMException:
-        if status_code == 400:
+        if status_code in (400, 409):
             raise config_error(error_message)
         if status_code == 401:
             raise AuthenticationError(message="MongoDB sidecar rejected api_key.", model=None, llm_provider="mongodb")
+        if status_code in (404, 405):
+            raise config_error(_SIDECAR_TOO_OLD_MESSAGE)
         if status_code == 408:
             raise Timeout(message=error_message, model=None, llm_provider="mongodb")
         raise ServiceUnavailableError(
@@ -376,13 +651,140 @@ class MongoDBVectorStoreConfig(BaseQueryEmbeddingVectorStoreConfig):
             llm_provider="mongodb",
         )
 
-    def validate_create_vector_store(self) -> NoReturn:
-        raise config_error(_SEARCH_ONLY_MESSAGE)
+    # ---- diagnostics --------------------------------------------------------------------------------------------
+
+    async def atest_connection(
+        self,
+        litellm_params: Mapping[str, object],
+        vector_store_id: str | None,
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
+        *,
+        is_saved_store: bool = False,
+    ) -> VectorStoreTestConnectionResponse:
+        from litellm.llms.mongodb.vector_stores.diagnostics import run_test_connection
+
+        return await run_test_connection(
+            self, litellm_params, vector_store_id, embedding_executor, is_saved_store=is_saved_store
+        )
+
+    async def adiscover(
+        self, kind: str, litellm_params: Mapping[str, object], options: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        from litellm.llms.mongodb.vector_stores.diagnostics import run_discovery
+
+        return await run_discovery(self, kind, litellm_params, options)
+
+    # ---- create -------------------------------------------------------------------------------------------------
+
+    def validate_create_vector_store(self) -> None:
+        return None
+
+    @staticmethod
+    def _index_name(vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams) -> str:
+        name: Final = vector_store_create_optional_params.get("name")
+        if not name or not name.strip() or name.startswith("$"):
+            raise config_error(
+                "name is required when creating a MongoDB vector store: it becomes the MongoDB Vector Search index "
+                "name and the vector store ID. Example: name: policy_vector_index"
+            )
+        return name
+
+    @staticmethod
+    def _create_body(
+        index_name: str, params: MongoDBVectorStoreParams, dimensions: int, timeout: object
+    ) -> dict[str, object]:  # mutable-ok: the provider contract returns a writable JSON request body
+        return {  # mutable-ok: JSON transport requires a dict
+            "index_name": index_name,
+            "mongodb_database": params.require_database(),
+            "mongodb_collection": params.require_collection(),
+            "mongodb_embedding_field": params.embedding_field,
+            "mongodb_text_field": params.text_field,
+            "dimensions": dimensions,
+            "similarity": params.similarity,
+            "filter_fields": params.filter_fields,
+            "text_index_name": params.mongodb_text_index,
+            "timeout_ms": MongoDBVectorStoreConfig._timeout_ms(timeout),
+        }
 
     def transform_create_vector_store_request(
         self, vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams, api_base: str
-    ) -> NoReturn:
-        raise config_error(_SEARCH_ONLY_MESSAGE)
+    ) -> tuple[str, dict]:  # mutable-ok: the provider contract returns a writable JSON request body
+        raise config_error(
+            "Creating a MongoDB vector store needs litellm_params (database, collection, and embedding model). "
+            "Call litellm.vector_stores.create with custom_llm_provider='mongodb' and those parameters."
+        )
 
-    def transform_create_vector_store_response(self, response: httpx.Response) -> NoReturn:
-        raise config_error(_SEARCH_ONLY_MESSAGE)
+    def transform_create_vector_store_request_with_litellm_params(
+        self,
+        vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
+        api_base: str,
+        litellm_params: Mapping[str, object],
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
+    ) -> tuple[str, dict]:  # mutable-ok: the provider contract returns a writable JSON request body
+        params: Final = validated_params(litellm_params)
+        index_name: Final = self._index_name(vector_store_create_optional_params)
+        dimensions: Final = params.mongodb_dimensions or len(
+            embedding_vector(
+                (embedding_executor or self.embedding_executor).embed(
+                    params.require_embedding_model(),
+                    DIMENSION_PROBE_TEXT,
+                    params.litellm_embedding_config or _EMPTY_EMBEDDING_CONFIG,
+                )
+            )
+        )
+        return (
+            f"{api_base}/v1/vector_stores",
+            self._create_body(index_name, params, dimensions, litellm_params.get("timeout")),
+        )
+
+    async def atransform_create_vector_store_request_with_litellm_params(
+        self,
+        vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
+        api_base: str,
+        litellm_params: Mapping[str, object],
+        embedding_executor: VectorStoreEmbeddingExecutor | None = None,
+    ) -> tuple[str, dict]:  # mutable-ok: the provider contract returns a writable JSON request body
+        params: Final = validated_params(litellm_params)
+        index_name: Final = self._index_name(vector_store_create_optional_params)
+        dimensions: Final = params.mongodb_dimensions or len(
+            embedding_vector(
+                await (embedding_executor or self.embedding_executor).aembed(
+                    params.require_embedding_model(),
+                    DIMENSION_PROBE_TEXT,
+                    params.litellm_embedding_config or _EMPTY_EMBEDDING_CONFIG,
+                )
+            )
+        )
+        return (
+            f"{api_base}/v1/vector_stores",
+            self._create_body(index_name, params, dimensions, litellm_params.get("timeout")),
+        )
+
+    def transform_create_vector_store_response(self, response: httpx.Response) -> VectorStoreCreateResponse:
+        try:
+            status: Final = _CreateResponse.model_validate_json(response.content)
+        except ValidationError:
+            raise ServiceUnavailableError(
+                message="MongoDB sidecar returned an invalid create response. Check the sidecar version and deployment.",
+                model=None,
+                llm_provider="mongodb",
+            ) from None
+        return VectorStoreCreateResponse(
+            id=status.index_name,
+            object="vector_store",
+            created_at=int(time()),
+            name=status.index_name,
+            bytes=0,
+            file_counts=VectorStoreFileCounts(in_progress=0, completed=0, failed=0, cancelled=0, total=0),
+            status="completed" if status.queryable else "in_progress",
+            expires_after=None,
+            expires_at=None,
+            last_active_at=None,
+            metadata={  # mutable-ok: the TypedDict declares a dict field
+                "mongodb_database": status.mongodb_database,
+                "mongodb_collection": status.mongodb_collection,
+                "mongodb_index_status": status.status,
+                "mongodb_index_created": str(status.created).lower(),
+                "mongodb_document_count": str(status.document_count if status.document_count is not None else 0),
+            },
+        )

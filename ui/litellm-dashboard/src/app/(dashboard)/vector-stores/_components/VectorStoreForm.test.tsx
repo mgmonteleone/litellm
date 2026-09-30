@@ -134,7 +134,7 @@ describe("buildVectorStoreLitellmParams", () => {
       mongodb_collection: "embedded_movies",
       mongodb_embedding_field: "plot_embedding",
       mongodb_text_field: "plot",
-      mongodb_num_candidates: "200",
+      mongodb_num_candidates: 200,
       litellm_embedding_model: "text-embedding-ada-002",
     };
 

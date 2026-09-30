@@ -1,7 +1,9 @@
 # litellm/proxy/vector_stores/vector_store_registry.py
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from itertools import accumulate, chain
+from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
     Any,  # noqa: TID251  # untyped non_default_params dict is the only source of the unknown key type
@@ -16,7 +18,9 @@ from litellm.repositories.table_repositories import (
     ManagedVectorStoreIndexRepository,
     ManagedVectorStoresRepository,
 )
+from litellm.secret_managers.main import get_secret_str
 from litellm.types.vector_stores import (
+    VECTOR_STORE_ENDPOINT_KEYS,
     VECTOR_STORE_OPENAI_PARAMS,
     LiteLLM_ManagedVectorStore,
     LiteLLM_ManagedVectorStoreIndex,
@@ -100,10 +104,116 @@ class VectorStoreIndexRegistry:
         return vector_stores_from_db
 
 
+ENV_REFERENCE_PREFIX: Final = "os.environ/"
+ENV_REFERENCE_ALLOWLIST_VARIABLE: Final = "LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST"
+_BUILT_IN_ENV_REFERENCE_ALLOWLIST: Final = frozenset({("mongodb", "MONGODB_SIDECAR_API_KEY")})
+
+
+def _env_reference_allowlist() -> frozenset[tuple[str, str]]:
+    entries: Final = (
+        entry.partition(":") for entry in (get_secret_str(ENV_REFERENCE_ALLOWLIST_VARIABLE) or "").split(",")
+    )
+    return _BUILT_IN_ENV_REFERENCE_ALLOWLIST | frozenset(
+        (provider.strip(), name.strip()) for provider, separator, name in entries if separator and name.strip()
+    )
+
+
+NestedParamPath = tuple[object, ...]
+_NESTED_PARAMS_MAX_DEPTH: Final = 10
+
+
+def _as_mapping(value: object) -> Mapping[object, object] | None:
+    return value if isinstance(value, Mapping) else None  # pyright: ignore[reportUnknownVariableType]  # isinstance on object cannot recover item types
+
+
+def _as_sequence(value: object) -> Sequence[object] | None:
+    return value if isinstance(value, (list, tuple)) else None  # pyright: ignore[reportUnknownVariableType]  # isinstance on object cannot recover item types
+
+
+def _child_param_entries(path: NestedParamPath, value: object) -> tuple[tuple[NestedParamPath, object], ...]:
+    if (mapping := _as_mapping(value)) is not None:
+        return tuple(((*path, key), item) for key, item in mapping.items())
+    if (sequence := _as_sequence(value)) is not None:
+        return tuple(((*path, index), item) for index, item in enumerate(sequence))
+    return ()
+
+
+def nested_param_entries(value: object) -> tuple[tuple[NestedParamPath, object], ...] | None:
+    """Every (path, value) pair in ``value``, the root included, or None when it nests deeper than the walk goes,
+    so a security check can fail closed instead of missing what sits below the bound."""
+    levels: Final = tuple(
+        accumulate(
+            range(_NESTED_PARAMS_MAX_DEPTH),
+            lambda level, _: tuple(chain.from_iterable(_child_param_entries(path, item) for path, item in level)),
+            initial=(((), value),),
+        )
+    )
+    if levels[-1]:
+        return None
+    return tuple(chain.from_iterable(levels))
+
+
+def contains_env_reference(value: object) -> bool:
+    entries: Final = nested_param_entries(value)
+    return entries is None or any(
+        isinstance(item, str) and item.startswith(ENV_REFERENCE_PREFIX) for _, item in entries
+    )
+
+
+def resolve_litellm_params_references(
+    litellm_params: Mapping[str, object] | None, custom_llm_provider: object
+) -> Mapping[str, object]:
+    """Only allowlisted (provider, NAME) references resolve: a saved row may come from a non-admin, and resolving any
+    name would send that proxy secret to the row's api_base. Config stores arrive already resolved at config load.
+    The MongoDB sidecar key is built in because that provider only sends it to the deployment's own sidecar."""
+    if not litellm_params:
+        return MappingProxyType({})
+    allowlist: Final = _env_reference_allowlist()
+    return MappingProxyType(
+        {
+            key: (
+                get_secret_str(value)
+                if isinstance(value, str)
+                and value.startswith(ENV_REFERENCE_PREFIX)
+                and (custom_llm_provider, value.removeprefix(ENV_REFERENCE_PREFIX)) in allowlist
+                else value
+            )
+            for key, value in litellm_params.items()
+        }
+    )
+
+
+def store_credential_values(vector_store: LiteLLM_ManagedVectorStore) -> Mapping[str, object]:
+    from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
+
+    litellm_params: Final = vector_store.get("litellm_params")
+    credential_name: Final = vector_store.get("litellm_credential_name") or (
+        litellm_params.get("litellm_credential_name") if isinstance(litellm_params, Mapping) else None
+    )
+    if not isinstance(credential_name, str) or not credential_name:
+        return MappingProxyType({})
+    credential_values: Final[Mapping[object, object]] = CredentialAccessor.get_credential_values(credential_name)
+    return MappingProxyType({key: value for key, value in credential_values.items() if isinstance(key, str)})
+
+
+def managed_store_endpoint_params(
+    store_params: Mapping[str, object], credential_values: Mapping[str, object]
+) -> Mapping[str, object]:
+    """Every endpoint key a managed store's requests use: the store's saved value, else its credential's, else None
+    so the provider default applies and nothing a caller sends can fill it."""
+    return MappingProxyType(
+        {
+            key: store_params[key] if key in store_params else credential_values.get(key)
+            for key in VECTOR_STORE_ENDPOINT_KEYS
+        }
+    )
+
+
 class VectorStoreRegistry:
     def __init__(self, vector_stores: list[LiteLLM_ManagedVectorStore] = []):
         self.vector_stores: list[LiteLLM_ManagedVectorStore] = vector_stores
         self.vector_store_ids_to_vector_store_map: dict[str, LiteLLM_ManagedVectorStore] = {}
+        self.config_vector_store_ids: set[str] = set()
 
     def _extract_tool_params(self, tool: dict) -> VectorStoreToolParams:
         """
@@ -429,6 +539,7 @@ class VectorStoreRegistry:
                 updated_at=datetime.now(timezone.utc),
             )
             self.vector_stores.append(litellm_managed_vector_store)
+            self.config_vector_store_ids.add(vector_store_id)
 
         verbose_logger.debug(
             "all loaded vector stores = %s",
@@ -483,6 +594,25 @@ class VectorStoreRegistry:
                 return
         self.vector_stores.append(updated_data)
 
+    def sync_with_db(self, vector_stores_from_db: Sequence[LiteLLM_ManagedVectorStore]) -> None:
+        """Make the registry match the database rows.
+
+        Rows update or add entries; entries with no row were deleted on another instance and are removed,
+        except stores that came from the proxy config, which have no row by design.
+        """
+        db_ids: Final = frozenset(
+            store_id for store in vector_stores_from_db if (store_id := store.get("vector_store_id"))
+        )
+        self.vector_stores = [
+            store
+            for store in self.vector_stores
+            if store.get("vector_store_id") in db_ids or store.get("vector_store_id") in self.config_vector_store_ids
+        ]
+        for store in vector_stores_from_db:
+            store_id = store.get("vector_store_id")
+            if store_id:
+                self.update_vector_store_in_registry(vector_store_id=store_id, updated_data=store)
+
     #########################################################
     ########### DB management helpers for vector stores ###########
     #########################################################
@@ -505,17 +635,16 @@ class VectorStoreRegistry:
                 vector_stores_from_db.append(_litellm_managed_vector_store)
         return vector_stores_from_db
 
-    def get_credentials_for_vector_store(self, vector_store_id: str) -> dict[str, object]:
-        """
-        Get the credentials for a vector store
+    def get_credentials_for_vector_store(self, vector_store_id: str) -> Mapping[str, object]:
+        vector_store: Final = self.get_litellm_managed_vector_store_from_registry(vector_store_id)
+        return store_credential_values(vector_store) if vector_store is not None else MappingProxyType({})
 
-        Returns a dictionary of unpacked credentials for the vector store to use for the request
-        """
-        from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
-
-        for vector_store in self.vector_stores:
-            if vector_store.get("vector_store_id") == vector_store_id:
-                credentials = vector_store.get("litellm_credential_name")
-                if credentials:
-                    return CredentialAccessor.get_credential_values(credentials)
-        return {}
+    def get_request_params_for_vector_store(self, vector_store_id: str) -> Mapping[str, object]:
+        vector_store: Final = self.get_litellm_managed_vector_store_from_registry(vector_store_id)
+        if vector_store is None:
+            return MappingProxyType({})
+        credential_values: Final = self.get_credentials_for_vector_store(vector_store_id)
+        store_params: Final = resolve_litellm_params_references(
+            vector_store.get("litellm_params"), vector_store.get("custom_llm_provider")
+        )
+        return MappingProxyType({**credential_values, **managed_store_endpoint_params(store_params, credential_values)})

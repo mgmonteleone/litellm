@@ -12,6 +12,7 @@ import pytest
 
 from litellm.proxy.rag_endpoints.upload_security import (
     EICAR_TEST_SIGNATURE,
+    MAX_DISPLAY_FILENAME_LENGTH,
     DetectedFormat,
     EicarTestMalwareScanner,
     RejectedUpload,
@@ -22,6 +23,7 @@ from litellm.proxy.rag_endpoints.upload_security import (
     generate_safe_filename,
     inspect_content,
     safe_download_headers,
+    sanitize_display_filename,
     validate_upload,
 )
 
@@ -54,7 +56,9 @@ def _tar_bytes() -> bytes:
 
 
 def _expect_rejected(content: bytes, reason: RejectionReason, *, max_size_bytes: int = 512 * 1024 * 1024) -> None:
-    result = validate_upload(content=content, scanner=_CLEAN_SCANNER, max_size_bytes=max_size_bytes)
+    result = validate_upload(
+        filename="upload.txt", content=content, scanner=_CLEAN_SCANNER, max_size_bytes=max_size_bytes
+    )
     assert isinstance(result, RejectedUpload), f"expected rejection, got {result!r}"
     assert result.reason is reason, f"expected {reason}, got {result.reason}"
 
@@ -96,7 +100,7 @@ def test_unknown_binary_rejected():
 
 
 def test_pdf_accepted_with_server_filename_and_content_type():
-    result = validate_upload(content=_PDF_BYTES, scanner=_CLEAN_SCANNER)
+    result = validate_upload(filename="upload.txt", content=_PDF_BYTES, scanner=_CLEAN_SCANNER)
     assert isinstance(result, SecuredUpload)
     assert result.detected_format is DetectedFormat.PDF
     assert result.content_type == "application/pdf"
@@ -105,7 +109,7 @@ def test_pdf_accepted_with_server_filename_and_content_type():
 
 
 def test_utf8_text_accepted():
-    result = validate_upload(content=_TEXT_BYTES, scanner=_CLEAN_SCANNER)
+    result = validate_upload(filename="upload.txt", content=_TEXT_BYTES, scanner=_CLEAN_SCANNER)
     assert isinstance(result, SecuredUpload)
     assert result.detected_format is DetectedFormat.TEXT
     assert result.content_type == "text/plain"
@@ -130,20 +134,20 @@ def test_server_generated_filenames_are_unique_and_ignore_client_name():
 
 
 def test_malware_hook_blocks_infected_clean_format():
-    result = validate_upload(content=_TEXT_BYTES, scanner=_INFECTED_SCANNER)
+    result = validate_upload(filename="upload.txt", content=_TEXT_BYTES, scanner=_INFECTED_SCANNER)
     assert isinstance(result, RejectedUpload)
     assert result.reason is RejectionReason.MALWARE_DETECTED
     assert "Test.Sig" in result.message
 
 
 def test_malware_scan_error_fails_closed():
-    result = validate_upload(content=_TEXT_BYTES, scanner=_ERROR_SCANNER)
+    result = validate_upload(filename="upload.txt", content=_TEXT_BYTES, scanner=_ERROR_SCANNER)
     assert isinstance(result, RejectedUpload)
     assert result.reason is RejectionReason.MALWARE_SCAN_ERROR
 
 
 def test_injected_clean_scanner_allows_valid_file():
-    result = validate_upload(content=_TEXT_BYTES, scanner=_CLEAN_SCANNER)
+    result = validate_upload(filename="upload.txt", content=_TEXT_BYTES, scanner=_CLEAN_SCANNER)
     assert isinstance(result, SecuredUpload)
 
 
@@ -155,10 +159,10 @@ def test_eicar_default_scanner_flags_only_eicar():
 
 def test_eicar_upload_passes_format_but_blocked_by_scanner():
     """EICAR is valid ASCII text, so only the malware hook can stop it."""
-    format_only = validate_upload(content=EICAR_TEST_SIGNATURE, scanner=_CLEAN_SCANNER)
+    format_only = validate_upload(filename="upload.txt", content=EICAR_TEST_SIGNATURE, scanner=_CLEAN_SCANNER)
     assert isinstance(format_only, SecuredUpload)
 
-    scanned = validate_upload(content=EICAR_TEST_SIGNATURE, scanner=EicarTestMalwareScanner())
+    scanned = validate_upload(filename="upload.txt", content=EICAR_TEST_SIGNATURE, scanner=EicarTestMalwareScanner())
     assert isinstance(scanned, RejectedUpload)
     assert scanned.reason is RejectionReason.MALWARE_DETECTED
 
@@ -174,3 +178,32 @@ def test_safe_download_headers_sanitize_injection(hostile):
     disposition = safe_download_headers(hostile)["Content-Disposition"]
     assert "\r" not in disposition and "\n" not in disposition
     assert disposition.count('"') == 2
+
+
+@pytest.mark.parametrize(
+    "uploaded, expected",
+    [
+        ("travel.md", "travel.md"),
+        ("../../etc/passwd", "passwd"),
+        ("C:\\Users\\bob\\report.pdf", "report.pdf"),
+        ("notes\r\n\x00.txt", "notes.txt"),
+        ("..", "document"),
+        ("   ", "document"),
+        ("", "document"),
+    ],
+)
+def test_display_filename_keeps_the_readable_name_without_path_or_control_characters(uploaded, expected):
+    assert sanitize_display_filename(uploaded) == expected
+
+
+def test_display_filename_is_capped_but_keeps_the_extension():
+    capped = sanitize_display_filename("a" * 400 + ".md")
+    assert len(capped) == MAX_DISPLAY_FILENAME_LENGTH
+    assert capped.endswith(".md")
+
+
+def test_accepted_upload_carries_the_uploaded_name_alongside_the_storage_name():
+    result = validate_upload(filename="travel.md", content=_TEXT_BYTES, scanner=_CLEAN_SCANNER)
+    assert isinstance(result, SecuredUpload)
+    assert result.display_filename == "travel.md"
+    assert result.safe_filename != "travel.md" and result.safe_filename.endswith(".txt")

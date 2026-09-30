@@ -313,6 +313,22 @@ def _strategy_router_write_violation(
     )
 
 
+def _raise_if_typesafe_model(litellm_params: GenericLiteLLMParams | None) -> None:
+    if litellm_params is None:
+        return
+    model = getattr(litellm_params, "model", None)
+    if isinstance(model, str) and model.startswith("typesafe/"):
+        raise ProxyException(
+            message=(
+                f"Model '{model}' is a TypeSafe internal pricing identifier, not a deployable backend. "
+                "TypeSafe models are routed via the /typesafe/* passthrough or classifier configurations."
+            ),
+            type=ProxyErrorTypes.validation_error.value,
+            code=status.HTTP_400_BAD_REQUEST,
+            param="litellm_params.model",
+        )
+
+
 def _raise_on_strategy_router_write_violation(
     incoming_params: GenericLiteLLMParams | None,
     existing_params: GenericLiteLLMParams | None,
@@ -1086,6 +1102,8 @@ async def patch_model(
             user_api_key_dict=user_api_key_dict,
             existing_litellm_params=db_model.litellm_params,
         )
+
+        _raise_if_typesafe_model(patch_data.litellm_params)
 
         _raise_on_strategy_router_write_violation(
             incoming_params=patch_data.litellm_params,
@@ -2300,6 +2318,8 @@ async def add_new_model(
             user_api_key_dict=user_api_key_dict,
         )
 
+        _raise_if_typesafe_model(model_params.litellm_params)
+
         _raise_on_strategy_router_write_violation(
             incoming_params=model_params.litellm_params,
             existing_params=None,
@@ -2503,6 +2523,8 @@ async def update_model(
             user_api_key_dict=user_api_key_dict,
             existing_litellm_params=deployment.litellm_params,
         )
+
+        _raise_if_typesafe_model(model_params.litellm_params)
 
         _raise_on_strategy_router_write_violation(
             incoming_params=model_params.litellm_params,

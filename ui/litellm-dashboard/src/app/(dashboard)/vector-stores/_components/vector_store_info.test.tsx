@@ -10,6 +10,8 @@ vi.mock("@/components/networking", () => ({
   vectorStoreInfoCall: vi.fn(),
   vectorStoreUpdateCall: vi.fn(),
   credentialListCall: vi.fn(),
+  vectorStoreTestConnectionCall: vi.fn(),
+  getProxyBaseUrl: () => "http://localhost:4000",
 }));
 
 vi.mock("./VectorStoreTester", async () => {

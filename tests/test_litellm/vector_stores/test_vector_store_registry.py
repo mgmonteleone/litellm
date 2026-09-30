@@ -1,14 +1,7 @@
-import json
-from unittest.mock import patch
-
-import httpx
-import pytest
-import respx
-from fastapi.testclient import TestClient
-
-
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 import litellm
 from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
@@ -182,3 +175,111 @@ def test_search_uses_registry_credentials():
             assert getattr(called_params, "aws_region_name") == "us-east-1"
     finally:
         litellm.vector_store_registry = original_registry
+
+
+def _store(vector_store_id: str, name: str, **litellm_params: object) -> LiteLLM_ManagedVectorStore:
+    return LiteLLM_ManagedVectorStore(
+        vector_store_id=vector_store_id,
+        custom_llm_provider="mongodb",
+        vector_store_name=name,
+        litellm_params=dict(litellm_params),
+    )
+
+
+def test_sync_with_db_updates_changed_rows_removes_deleted_rows_and_keeps_config_stores():
+    """Another instance updated `policies` and deleted `stale`; `from_config` has no row by design."""
+    registry = VectorStoreRegistry([_store("policies", "old name", api_base="http://old"), _store("stale", "gone")])
+    registry.load_vector_stores_from_config(
+        [
+            {
+                "vector_store_name": "cfg",
+                "litellm_params": {"vector_store_id": "from_config", "custom_llm_provider": "openai"},
+            }
+        ]
+    )
+
+    registry.sync_with_db([_store("policies", "new name", api_base="http://new"), _store("fresh", "added elsewhere")])
+
+    by_id = {store["vector_store_id"]: store for store in registry.vector_stores}
+    assert set(by_id) == {"policies", "fresh", "from_config"}
+    assert by_id["policies"]["vector_store_name"] == "new name"
+    assert (by_id["policies"].get("litellm_params") or {})["api_base"] == "http://new"
+
+
+def test_sync_with_empty_db_removes_db_stores_but_keeps_config_stores():
+    registry = VectorStoreRegistry([_store("policies", "deleted on another instance")])
+    registry.load_vector_stores_from_config(
+        [
+            {
+                "vector_store_name": "cfg",
+                "litellm_params": {"vector_store_id": "from_config", "custom_llm_provider": "openai"},
+            }
+        ]
+    )
+
+    registry.sync_with_db([])
+
+    assert [store["vector_store_id"] for store in registry.vector_stores] == ["from_config"]
+
+
+def test_resolve_litellm_params_references_resolves_only_allowlisted_provider_and_name_pairs(monkeypatch):
+    from litellm.vector_stores.vector_store_registry import resolve_litellm_params_references
+
+    monkeypatch.setenv("SIDECAR_KEY_FOR_TEST", "resolved-secret")
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-master")
+    monkeypatch.delenv("MISSING_FOR_TEST", raising=False)
+    monkeypatch.setenv(
+        "LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", " mongodb:SIDECAR_KEY_FOR_TEST, mongodb:MISSING_FOR_TEST,bogus"
+    )
+    params = {
+        "api_key": "os.environ/SIDECAR_KEY_FOR_TEST",
+        "api_base": "https://sidecar.example",
+        "absent": "os.environ/MISSING_FOR_TEST",
+        "master": "os.environ/LITELLM_MASTER_KEY",
+        "mongodb_dimensions": 1536,
+    }
+
+    assert dict(resolve_litellm_params_references(params, "mongodb")) == {
+        "api_key": "resolved-secret",
+        "api_base": "https://sidecar.example",
+        "absent": None,
+        "master": "os.environ/LITELLM_MASTER_KEY",
+        "mongodb_dimensions": 1536,
+    }
+    assert dict(resolve_litellm_params_references(params, "openai")) == params
+    assert dict(resolve_litellm_params_references(None, "mongodb")) == {}
+
+
+def test_resolve_litellm_params_references_allows_the_mongodb_sidecar_key_for_mongodb_only(monkeypatch):
+    from litellm.vector_stores.vector_store_registry import resolve_litellm_params_references
+
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+    monkeypatch.delenv("LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", raising=False)
+    params = {"api_key": "os.environ/MONGODB_SIDECAR_API_KEY"}
+
+    assert resolve_litellm_params_references(params, "mongodb")["api_key"] == "deployment-key"
+    assert resolve_litellm_params_references(params, "openai")["api_key"] == "os.environ/MONGODB_SIDECAR_API_KEY"
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ({"a": [{"b": ("x", "os.environ/SECRET")}]}, True),
+        (["literal", {"nested": "os.environ/SECRET"}], True),
+        ({"a": ["literal", 1, None], "b": {"c": "prefix os.environ/SECRET"}}, False),
+    ],
+)
+def test_contains_env_reference_walks_nested_mappings_and_sequences(value, expected):
+    from litellm.vector_stores.vector_store_registry import contains_env_reference
+
+    assert contains_env_reference(value) is expected
+
+
+def test_contains_env_reference_fails_closed_past_the_walk_depth():
+    from functools import reduce
+
+    from litellm.vector_stores.vector_store_registry import contains_env_reference
+
+    deeply_nested = reduce(lambda inner, _: {"nested": inner}, range(12), "literal")
+
+    assert contains_env_reference(deeply_nested) is True

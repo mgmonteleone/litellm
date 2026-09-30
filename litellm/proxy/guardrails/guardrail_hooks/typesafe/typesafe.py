@@ -162,6 +162,12 @@ class TypeSafeGuardrail(CustomGuardrail):
         default_on: bool = False,
         async_handler: AsyncHTTPHandler | None = None,
     ) -> None:
+        if api_base is not None and api_key is None:
+            # Same rule as JevClassifierConfig: TYPESAFE_API_KEY only goes to TYPESAFE_API_BASE or the default host.
+            raise ValueError(
+                "TypeSafe guardrail api_base requires its own api_key: TYPESAFE_API_KEY is only sent "
+                "to TYPESAFE_API_BASE or https://api.typesafe.ai"
+            )
         raw_api_base: Final = (api_base or get_secret_str("TYPESAFE_API_BASE") or DEFAULT_API_BASE).rstrip("/")
         self.typesafe_api_base = raw_api_base
         self.typesafe_api_key = api_key or get_secret_str("TYPESAFE_API_KEY")

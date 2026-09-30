@@ -24,10 +24,9 @@ interface VectorStoreProps {
   accessToken: string | null;
   userID: string | null;
   userRole: string | null;
-  isViewOnly: boolean;
 }
 
-const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID, userRole, isViewOnly }) => {
+const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID, userRole }) => {
   const [vectorStores, setVectorStores] = useState<VectorStore[]>([]);
   const [isLoadingVectorStores, setIsLoadingVectorStores] = useState(true);
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
@@ -38,9 +37,19 @@ const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID
   const [selectedVectorStoreId, setSelectedVectorStoreId] = useState<string | null>(null);
   const [editVectorStore, setEditVectorStore] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const canCreateVectorStores = isProxyAdminRole(userRole || "") && !isViewOnly;
-  const defaultTab = canCreateVectorStores ? "create" : "manage";
-  const { onTabChange, hasVisited } = useVisitedTabs(defaultTab);
+  const { onTabChange, hasVisited } = useVisitedTabs("create");
+  const [activeTab, setActiveTab] = useState("create");
+  const [testVectorStoreId, setTestVectorStoreId] = useState<string | null>(null);
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    onTabChange(tab);
+  };
+
+  const openTestTab = (vectorStoreId: string) => {
+    setTestVectorStoreId(vectorStoreId);
+    handleTabChange("test");
+  };
 
   const fetchVectorStores = async () => {
     if (!accessToken) {
@@ -59,7 +68,7 @@ const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID
   };
 
   const fetchCredentials = async () => {
-    if (!accessToken || !canCreateVectorStores) return;
+    if (!accessToken) return;
     try {
       const response = await credentialListCall(accessToken);
       setCredentials(response.credentials || []);
@@ -156,13 +165,11 @@ const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID
           You can use vector stores to store and retrieve LLM embeddings.
         </p>
 
-        <Tabs defaultValue={defaultTab} onValueChange={onTabChange}>
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList variant="line" className="mb-6 h-auto w-full justify-start rounded-none p-0">
-            {canCreateVectorStores && (
-              <TabsTrigger value="create" className="flex-none rounded-none px-4 py-2">
-                Create Vector Store
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="create" className="flex-none rounded-none px-4 py-2">
+              Create Vector Store
+            </TabsTrigger>
             <TabsTrigger value="manage" className="flex-none rounded-none px-4 py-2">
               Manage Vector Stores
             </TabsTrigger>
@@ -176,18 +183,18 @@ const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID
             )}
           </TabsList>
 
-          {canCreateVectorStores && (
-            <TabsContent keepMounted={hasVisited("create")} value="create">
-              <CreateVectorStore accessToken={accessToken} onSuccess={handleVectorStoreCreated} />
-            </TabsContent>
-          )}
+          <TabsContent keepMounted={hasVisited("create")} value="create">
+            <CreateVectorStore
+              accessToken={accessToken}
+              onSuccess={handleVectorStoreCreated}
+              onTestVectorStore={openTestTab}
+            />
+          </TabsContent>
 
           <TabsContent keepMounted={hasVisited("manage")} value="manage">
-            {canCreateVectorStores && (
-              <Button className="mb-4" onClick={() => setIsCreateModalVisible(true)}>
-                + Add Vector Store
-              </Button>
-            )}
+            <Button className="mb-4" onClick={() => setIsCreateModalVisible(true)}>
+              + Add Vector Store
+            </Button>
 
             <div className="grid grid-cols-1 gap-2 pt-2 pb-2 w-full mt-2">
               <VectorStoreTable
@@ -201,7 +208,12 @@ const VectorStoreManagement: React.FC<VectorStoreProps> = ({ accessToken, userID
           </TabsContent>
 
           <TabsContent keepMounted={hasVisited("test")} value="test">
-            <TestVectorStoreTab accessToken={accessToken} vectorStores={vectorStores} />
+            <TestVectorStoreTab
+              key={testVectorStoreId ?? "default"}
+              accessToken={accessToken}
+              vectorStores={vectorStores}
+              preselectedVectorStoreId={testVectorStoreId}
+            />
           </TabsContent>
 
           {isProxyAdminRole(userRole || "") && (

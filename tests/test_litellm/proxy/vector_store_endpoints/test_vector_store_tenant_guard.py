@@ -278,6 +278,7 @@ async def test_rag_ingest_denies_nested_other_team_vector_store():
                     None,
                     "https://example.com/file.txt",
                     None,
+                    None,
                 )
             ),
         ),

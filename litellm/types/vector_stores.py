@@ -2,10 +2,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing_extensions import ReadOnly, TypedDict
+
+from litellm.constants import CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS
 
 
 class SupportedVectorStoreIntegrations(str, Enum):
@@ -56,11 +58,15 @@ class LiteLLM_ManagedVectorStoreListResponse(TypedDict, total=False):
 
 
 class VectorStoreUpdateRequest(BaseModel):
+    """Request litellm_params merge over the saved ones; a value equal to the redaction sentinel keeps the
+    saved secret, exactly as VectorStoreTestConnectionRequest.litellm_params does for test_connection."""
+
     vector_store_id: str
     custom_llm_provider: str | None = None
     vector_store_name: str | None = None
     vector_store_description: str | None = None
     vector_store_metadata: dict | None = None
+    litellm_params: Mapping[str, object] | None = None
 
 
 class VectorStoreDeleteRequest(BaseModel):
@@ -105,6 +111,81 @@ class VectorStoreSearchFailure(TypedDict):
     vector_store_id: ReadOnly[str]
     custom_llm_provider: ReadOnly[str | None]
     error: ReadOnly[str]
+
+
+class VectorStoreComparisonFilter(TypedDict, total=False):
+    """OpenAI vector store comparison filter: {"type": "eq", "key": "department", "value": "hr"}"""
+
+    type: ReadOnly[Literal["eq", "ne", "gt", "gte", "lt", "lte", "in", "nin"]]
+    key: ReadOnly[str]
+    value: ReadOnly[
+        str | int | float | bool | None | list[str | int | float | bool | None]
+    ]  # mutable-ok: OpenAI JSON schema
+
+
+class VectorStoreCompoundFilter(TypedDict, total=False):
+    """OpenAI vector store compound filter: {"type": "and", "filters": [...]}"""
+
+    type: ReadOnly[Literal["and", "or"]]
+    filters: ReadOnly[list["VectorStoreComparisonFilter | VectorStoreCompoundFilter"]]  # mutable-ok: OpenAI JSON schema
+
+
+class VectorStoreRankingOptions(TypedDict, total=False):
+    """OpenAI vector store ranking options; providers may accept additional ranker names (MongoDB: "hybrid")."""
+
+    ranker: ReadOnly[str | None]
+    score_threshold: ReadOnly[float | None]
+
+
+CheckStatus = Literal["pass", "warn", "fail", "skip"]
+
+
+class VectorStoreConnectionCheck(TypedDict, total=False):
+    """One step of a provider's connection checklist, with a message that names the fix when it fails."""
+
+    check: ReadOnly[str]
+    status: ReadOnly[CheckStatus]
+    message: ReadOnly[str]
+    details: ReadOnly[dict | None]  # mutable-ok: JSON response
+
+
+class VectorStoreTestConnectionResponse(TypedDict, total=False):
+    """Result of POST /vector_store/test_connection"""
+
+    ok: ReadOnly[bool]
+    supported: ReadOnly[bool]
+    custom_llm_provider: ReadOnly[str]
+    summary: ReadOnly[str]
+    checks: ReadOnly[list[VectorStoreConnectionCheck]]  # mutable-ok: JSON response
+    details: ReadOnly[dict | None]  # mutable-ok: JSON response
+
+
+class VectorStoreTestConnectionRequest(BaseModel):
+    """Test a saved store (vector_store_id) or an unsaved configuration (custom_llm_provider + litellm_params).
+
+    Request litellm_params override the saved ones; a value equal to the redaction sentinel keeps the saved secret.
+    """
+
+    vector_store_id: str | None = None
+    custom_llm_provider: str | None = None
+    litellm_params: dict[str, Any] | None = None  # mutable-ok: request body
+    litellm_credential_name: str | None = None
+
+
+class VectorStoreDiscoverRequest(VectorStoreTestConnectionRequest):
+    """Ask a provider to list databases, collections, indexes, or suggested fields for the dashboard."""
+
+    kind: Literal["databases", "collections", "indexes", "fields"]
+    options: dict[str, Any] = Field(default_factory=dict)  # mutable-ok: request body
+
+
+class VectorStoreProviderDefaultsResponse(TypedDict, total=False):
+    """Result of GET /vector_store/provider_defaults. The sidecar's own API key is never returned, only
+    whether the deployment has one configured, so the dashboard can offer to use it without displaying it."""
+
+    custom_llm_provider: ReadOnly[str]
+    api_base: ReadOnly[str | None]
+    api_key_configured: ReadOnly[bool]
 
 
 class VectorStoreSearchOptionalRequestParams(TypedDict, total=False):
@@ -310,6 +391,83 @@ class VectorStoreIndexEndpoints(TypedDict):
     write: list[
         tuple[Literal["GET", "POST", "PUT", "DELETE", "PATCH"], str]
     ]  # endpoints for writing a vector store index
+
+
+MANAGED_STORE_CALLER_OPTIONS: Final = frozenset(
+    {
+        "vector_store_id",
+        "data_source_id",
+        "wait_for_ingestion",
+        "ingestion_timeout",
+        "custom_metadata",
+        "file_description",
+        "max_embedding_requests_per_min",
+    }
+)
+"""Per-request ingest options a caller may send for a managed store, as opposed to the
+store's own configuration. Providers treat them as recognised keys rather than typos."""
+
+NON_ADMIN_VECTOR_STORE_PARAMS: Final = frozenset(
+    {
+        *MANAGED_STORE_CALLER_OPTIONS,
+        "litellm_embedding_model",
+        "embedding_model",
+        "ttl_days",
+        "wait_for_import",
+        "import_timeout",
+        "s3_prefix",
+        "vector_bucket_name",
+        "index_name",
+        "dimension",
+        "distance_metric",
+        "non_filterable_metadata_keys",
+        "vertex_collection_id",
+        "vertex_engine_id",
+        "azure_search_vector_field",
+        "milvus_db_name",
+        "milvus_partition_names",
+        "milvus_text_field",
+        "valkey_text_field",
+        "valkey_embedding_field",
+        "mongodb_database",
+        "mongodb_collection",
+        "mongodb_text_field",
+        "mongodb_embedding_field",
+        "mongodb_num_candidates",
+        "mongodb_dimensions",
+        "mongodb_similarity",
+        "mongodb_filter_fields",
+        "mongodb_text_index",
+        "mongodb_hybrid_search",
+        "mongodb_hybrid_weights",
+        "mongodb_exact_search",
+        "mongodb_score_threshold",
+    }
+)
+"""The only litellm_params a non-admin may set, change or clear on a vector store: what data to read and how to
+shape it, never where traffic goes or what signs it. Each one only reaches a request path or body. Values must be
+scalars or lists of scalars, except the keys in NON_ADMIN_VECTOR_STORE_MAPPING_PARAMS."""
+
+NON_ADMIN_VECTOR_STORE_MAPPING_PARAMS: Final = frozenset({"custom_metadata", "mongodb_hybrid_weights"})
+
+VECTOR_STORE_ENDPOINT_KEYS: Final = CLIENT_ENDPOINT_AND_CREDENTIAL_PARAMS | frozenset(
+    {
+        "endpoint",
+        "aws_region_name",
+        "azure_scope",
+        "tenant_id",
+        "client_id",
+        "vertex_project",
+        "vertex_ai_project",
+        "vertex_location",
+        "vertex_ai_location",
+        "valkey_host",
+        "valkey_port",
+        "valkey_ssl",
+    }
+)
+"""Params that decide where a vector store sends its traffic, or which cloud identity signs it. A search or query
+body may not carry them from a non-admin, and a managed store's saved values win over anything a request carries."""
 
 
 VECTOR_STORE_OPENAI_PARAMS = Literal[

@@ -23,6 +23,7 @@ from litellm.constants import DEFAULT_MAX_RECURSE_DEPTH
 from litellm.integrations.vector_store_integrations.vector_store_pre_call_hook import (
     LiteLLM_ManagedVectorStore,
 )
+from litellm.llms.base_llm.vector_store.transformation import ModelKind
 from litellm.proxy._types import *
 from litellm.proxy.auth.auth_utils import is_request_body_safe
 from litellm.proxy.auth.user_api_key_auth import UserAPIKeyAuth, user_api_key_auth
@@ -48,11 +49,17 @@ from litellm.proxy.vector_store_endpoints.endpoints import (
     reject_caller_embedding_selection_params,
 )
 from litellm.proxy.vector_store_endpoints.utils import (
+    assert_caller_can_use_models,
+    assert_proxy_admin_for_env_references,
+    assert_proxy_admin_for_request_endpoints,
+    assert_proxy_admin_for_vector_store_params,
     assert_user_can_access_vector_store_id,
+    store_embedding_models,
 )
 from litellm.rag.main import get_ingestion_class
 from litellm.repositories.table_repositories import ManagedVectorStoresRepository
 from litellm.types.utils import ModelResponse
+from litellm.types.vector_stores import MANAGED_STORE_CALLER_OPTIONS
 
 if TYPE_CHECKING:
     from litellm.proxy.utils import PrismaClient
@@ -166,19 +173,6 @@ def _ingest_provider_error(vector_store_config: Mapping[str, object]) -> str | N
     return None
 
 
-_MANAGED_STORE_CALLER_OPTIONS: Final = frozenset(
-    {
-        "vector_store_id",
-        "data_source_id",
-        "wait_for_ingestion",
-        "ingestion_timeout",
-        "custom_metadata",
-        "file_description",
-        "max_embedding_requests_per_min",
-    }
-)
-
-
 def _caller_vector_store_options(
     request_vector_store_config: Mapping[str, object],
     managed_store: LiteLLM_ManagedVectorStore | None,
@@ -186,18 +180,36 @@ def _caller_vector_store_options(
     if managed_store is None:
         return request_vector_store_config
     return MappingProxyType(
-        {key: value for key, value in request_vector_store_config.items() if key in _MANAGED_STORE_CALLER_OPTIONS}
+        {key: value for key, value in request_vector_store_config.items() if key in MANAGED_STORE_CALLER_OPTIONS}
     )
+
+
+_INGEST_MODEL_OPTIONS: Final[tuple[tuple[str, ModelKind], ...]] = (("embedding", "embedding"), ("ocr", "OCR"))
+
+
+def _ingest_option_models(ingest_options: Mapping[str, object]) -> tuple[tuple[str, ModelKind], ...]:
+    return tuple(
+        (model, kind)
+        for option, kind in _INGEST_MODEL_OPTIONS
+        if (section := _as_string_keyed_mapping(ingest_options.get(option))) is not None
+        and isinstance(model := section.get("model"), str)
+        and model
+    )
+
+
+_PER_REQUEST_CALLER_OPTIONS: Final = MANAGED_STORE_CALLER_OPTIONS - frozenset(("vector_store_id",))
 
 
 def _managed_store_overrides(managed_store: LiteLLM_ManagedVectorStore | None) -> Mapping[str, object]:
     if managed_store is None:
         return MappingProxyType({})
+    # Per-request caller options (custom_metadata, file_description, ...) never come from the store: a
+    # value persisted by an earlier ingest must not override what this request says about this file.
     return MappingProxyType(
         {
             key: value
             for key, value in build_request_data_from_managed_vector_store(managed_store).items()
-            if value is not None
+            if value is not None and key not in _PER_REQUEST_CALLER_OPTIONS
         }
     )
 
@@ -206,6 +218,7 @@ def _build_file_metadata_entry(
     response: object,
     file_data: tuple[str, bytes, str] | None = None,
     file_url: str | None = None,
+    display_filename: str | None = None,
 ) -> Mapping[str, str | int | None]:
     """
     Build a file metadata entry for storing in vector_store_metadata.
@@ -214,6 +227,8 @@ def _build_file_metadata_entry(
         response: The response from litellm.aingest containing file_id
         file_data: Optional tuple of (filename, content, content_type)
         file_url: Optional URL if file was ingested from URL
+        display_filename: Sanitized name the file was uploaded under, shown instead of
+            the server-generated storage name
 
     Returns:
         Dictionary with file metadata (file_id, filename, file_url, ingested_at, etc.)
@@ -233,7 +248,7 @@ def _build_file_metadata_entry(
     content_type = None
 
     if file_data:
-        filename = file_data[0]
+        filename = display_filename or file_data[0]
         file_size = len(file_data[1]) if len(file_data) > 1 else None
         content_type = file_data[2] if len(file_data) > 2 else None
 
@@ -261,6 +276,7 @@ async def _save_vector_store_to_db_from_rag_ingest(
     user_api_key_dict: UserAPIKeyAuth,
     file_data: tuple[str, bytes, str] | None = None,
     file_url: str | None = None,
+    display_filename: str | None = None,
     *,
     store_is_managed: bool = False,
 ) -> None:
@@ -289,15 +305,21 @@ async def _save_vector_store_to_db_from_rag_ingest(
     # Handle both dict and object responses
     mapping_response: Final = _as_string_keyed_mapping(response)
     if mapping_response is not None:
+        status = mapping_response.get("status")
         vector_store_id = mapping_response.get("vector_store_id")
     elif hasattr(response, "vector_store_id"):
+        status = _response_attr(response, "status")
         vector_store_id = _response_attr(response, "vector_store_id")
     else:
         verbose_proxy_logger.warning("Unable to extract vector_store_id from response type: %s", type(response))
         return
 
-    if vector_store_id is None or not isinstance(vector_store_id, str):
-        verbose_proxy_logger.warning("Vector store ID is None or not a string, skipping database save")
+    if status == "failed":
+        verbose_proxy_logger.warning("Ingestion failed, skipping database save")
+        return
+
+    if not vector_store_id or not isinstance(vector_store_id, str):
+        verbose_proxy_logger.warning("Vector store ID is missing or not a string, skipping database save")
         return
 
     vector_store_config: Final = ingest_options.get("vector_store", {})
@@ -311,7 +333,7 @@ async def _save_vector_store_to_db_from_rag_ingest(
     # Extract provider-specific params from vector_store_config to save as litellm_params
     # This ensures params like aws_region_name, embedding_model, etc. are available for search
     provider_specific_params: Final = {}
-    excluded_keys: Final = {"custom_llm_provider", "vector_store_id"}
+    excluded_keys: Final = {"custom_llm_provider", "vector_store_id", *_PER_REQUEST_CALLER_OPTIONS}
     for key, value in vector_store_config.items():
         if key not in excluded_keys and value is not None:
             provider_specific_params[key] = value
@@ -321,6 +343,7 @@ async def _save_vector_store_to_db_from_rag_ingest(
         response=response,
         file_data=file_data,
         file_url=file_url,
+        display_filename=display_filename,
     )
 
     try:
@@ -391,20 +414,21 @@ async def _save_vector_store_to_db_from_rag_ingest(
 def _secure_uploaded_file(
     file_data: tuple[str, bytes, str],
     scanner: MalwareScanner,
-) -> tuple[str, bytes, str]:
-    validation: Final = validate_upload(content=file_data[1], scanner=scanner)
+) -> tuple[tuple[str, bytes, str], str]:
+    """Return the storage-safe ``file_data`` plus the sanitized name to display it under."""
+    validation: Final = validate_upload(filename=file_data[0], content=file_data[1], scanner=scanner)
     if isinstance(validation, RejectedUpload):
         raise HTTPException(
             status_code=400,
             detail={"error": validation.message, "reason": validation.reason.value},
         )
-    return validation.safe_filename, file_data[1], validation.content_type
+    return (validation.safe_filename, file_data[1], validation.content_type), validation.display_filename
 
 
 async def parse_rag_ingest_request(
     request: Request,
     scanner: MalwareScanner,
-) -> tuple[dict[str, Any], tuple[str, bytes, str] | None, str | None, str | None]:
+) -> tuple[dict[str, Any], tuple[str, bytes, str] | None, str | None, str | None, str | None]:
     """
     Parse RAG ingest request.
 
@@ -415,10 +439,11 @@ async def parse_rag_ingest_request(
     Uploaded file bytes are validated against the vector-store upload controls
     (size limit, format allowlist with content inspection, archive rejection,
     and the injected malware scanner) and given a server-generated filename
-    before they are returned.
+    before they are returned. The name the caller uploaded under survives, in
+    sanitized form, as the separate display name.
 
     Returns:
-        Tuple of (ingest_options, file_data, file_url, file_id)
+        Tuple of (ingest_options, file_data, file_url, file_id, display_filename)
     """
     headers: Final = _safe_get_request_headers(request)
     content_type = headers.get("content-type", "")
@@ -477,9 +502,9 @@ async def parse_rag_ingest_request(
             detail={"error": "Must provide file, file_url, or file_id"},
         )
 
-    secured_file_data: Final[tuple[str, bytes, str] | None] = (
-        _secure_uploaded_file(file_data, scanner) if file_data is not None else None
-    )
+    secured_upload: Final = _secure_uploaded_file(file_data, scanner) if file_data is not None else None
+    secured_file_data: Final = secured_upload[0] if secured_upload is not None else None
+    display_filename: Final = secured_upload[1] if secured_upload is not None else None
 
     if "vector_store" not in ingest_options:
         raise HTTPException(
@@ -487,42 +512,7 @@ async def parse_rag_ingest_request(
             detail={"error": "ingest_options must contain 'vector_store' configuration"},
         )
 
-    # Credential fields must come from server configuration, not user requests.
-    # Accepting user-supplied credentials (e.g. vertex_credentials with
-    # type=external_account + credential_source.file=/proc/1/environ) allows
-    # any authenticated user to exfiltrate host secrets via SSRF through
-    # google-auth's identity_pool credential refresh.
-    # api_base is also blocked: a user-controlled base URL causes the server
-    # to send its configured provider credentials to an attacker endpoint.
-    _BLOCKED_VECTOR_STORE_CREDENTIAL_PARAMS: Final = {
-        "vertex_credentials",
-        "vertex_ai_credentials",
-        "aws_access_key_id",
-        "aws_secret_access_key",
-        "aws_session_token",
-        "aws_web_identity_token",
-        "aws_role_name",
-        "aws_session_name",
-        "aws_profile_name",
-        "aws_sts_endpoint",
-        "aws_external_id",
-        "azure_ad_token",
-        "api_key",
-        "api_base",
-    }
-    vector_store_opts: Final[object] = ingest_options.get("vector_store", {})
-    if isinstance(vector_store_opts, dict):
-        for field in _BLOCKED_VECTOR_STORE_CREDENTIAL_PARAMS:
-            if field in vector_store_opts:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": f"'{field}' cannot be set in ingest_options.vector_store. "
-                        "Credentials must be configured server-side."
-                    },
-                )
-
-    return ingest_options, secured_file_data, file_url, file_id
+    return ingest_options, secured_file_data, file_url, file_id, display_filename
 
 
 @router.post(
@@ -585,7 +575,7 @@ async def rag_ingest(
 
     try:
         # Parse request
-        ingest_options, file_data, file_url, file_id = await parse_rag_ingest_request(
+        ingest_options, file_data, file_url, file_id, display_filename = await parse_rag_ingest_request(
             request, scanner=EicarTestMalwareScanner()
         )
 
@@ -616,10 +606,23 @@ async def rag_ingest(
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail={"error": str(e)})
+        assert_proxy_admin_for_env_references(ingest_options, user_api_key_dict)
 
         managed_store: Final = resolved_stores.get(request_vector_store_config.get("vector_store_id"))
+        caller_vector_store_options: Final = _caller_vector_store_options(request_vector_store_config, managed_store)
+        assert_proxy_admin_for_vector_store_params(
+            MappingProxyType(
+                {key: value for key, value in caller_vector_store_options.items() if key != "custom_llm_provider"}
+            ),
+            user_api_key_dict,
+        )
+        await assert_caller_can_use_models(
+            (*store_embedding_models(caller_vector_store_options), *_ingest_option_models(ingest_options)),
+            user_api_key_dict,
+            llm_router,
+        )
         merged_vector_store_config: Final = {  # mutable-ok: ingestion classes mutate it when loading credentials
-            **_caller_vector_store_options(request_vector_store_config, managed_store),
+            **caller_vector_store_options,
             **_managed_store_overrides(managed_store),
         }
         merged_ingest_options: Final = {  # mutable-ok: litellm.aingest takes a plain dict payload
@@ -657,6 +660,7 @@ async def rag_ingest(
             file_data=file_data,
             file_url=file_url,
             file_id=file_id,
+            display_filename=display_filename,
             router=llm_router,
             **request_data,
         )
@@ -677,6 +681,7 @@ async def rag_ingest(
                 user_api_key_dict=user_api_key_dict,
                 file_data=file_data,
                 file_url=file_url,
+                display_filename=display_filename,
                 store_is_managed=managed_store is not None,
             )
         else:
@@ -806,6 +811,7 @@ async def rag_query(
                 detail={"error": "retrieval_config must contain 'vector_store_id'"},
             )
         reject_caller_embedding_selection_params(payload=retrieval_config, source="retrieval_config")
+        assert_proxy_admin_for_request_endpoints(retrieval_config, user_api_key_dict)
         resolved_stores: Final = await _authorize_nested_vector_store_ids(
             payload=retrieval_config,
             user_api_key_dict=user_api_key_dict,

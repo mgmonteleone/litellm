@@ -2,12 +2,17 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from types import MappingProxyType
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal, NoReturn
 
 from fastapi import HTTPException, Request
 
 import litellm
 from litellm._logging import verbose_proxy_logger
+from litellm.llms.base_llm.vector_store.transformation import (
+    ModelKind,
+    model_not_configured_message,
+    router_serves_model,
+)
 from litellm.proxy._experimental.mcp_server.ui_session_utils import (
     is_ui_session_credential,
     resolve_ui_session_team_ids,
@@ -15,11 +20,21 @@ from litellm.proxy._experimental.mcp_server.ui_session_utils import (
 from litellm.proxy._types import (
     LiteLLM_ObjectPermissionTable,
     LitellmUserRoles,
+    ProxyException,
     UserAPIKeyAuth,
 )
 from litellm.types.utils import LlmProviders
-from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+from litellm.types.vector_stores import (
+    NON_ADMIN_VECTOR_STORE_MAPPING_PARAMS,
+    NON_ADMIN_VECTOR_STORE_PARAMS,
+    VECTOR_STORE_ENDPOINT_KEYS,
+    LiteLLM_ManagedVectorStore,
+)
 from litellm.utils import ProviderConfigManager
+from litellm.vector_stores.vector_store_registry import contains_env_reference, nested_param_entries
+
+if TYPE_CHECKING:
+    from litellm.router import Router
 
 
 def _normalize_litellm_params(
@@ -37,7 +52,7 @@ def _normalize_litellm_params(
     return vector_store
 
 
-def _is_proxy_admin(user_api_key_dict: UserAPIKeyAuth) -> bool:
+def is_proxy_admin(user_api_key_dict: UserAPIKeyAuth) -> bool:
     return (
         user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN
         or user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN.value
@@ -50,12 +65,146 @@ def assert_proxy_admin_for_vector_store_index_management(
     operation: Literal["create", "delete", "update", "list"] = "create",
 ) -> None:
     """Raise 403 unless the caller is a proxy admin."""
-    if _is_proxy_admin(user_api_key_dict):
+    if is_proxy_admin(user_api_key_dict):
         return
     raise HTTPException(
         status_code=403,
         detail=(f"Only proxy admins can {operation} vector store indexes. Contact your LiteLLM administrator."),
     )
+
+
+def assert_proxy_admin_for_env_references(params: object, user_api_key_dict: UserAPIKeyAuth) -> None:
+    if is_proxy_admin(user_api_key_dict) or not contains_env_reference(params):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Only proxy admins can save or change vector store settings that contain os.environ/ references. "
+        "Enter the value itself, or ask a proxy admin to make this change.",
+    )
+
+
+CREDENTIAL_NAME_KEY: Final = "litellm_credential_name"
+_EMPTY_PARAMS: Final[Mapping[str, object]] = MappingProxyType({})
+
+
+def _raise_admin_only(keys: Iterable[str]) -> NoReturn:
+    raise HTTPException(
+        status_code=403,
+        detail="Only proxy admins can set, change or clear these vector store settings: "
+        f"{', '.join(sorted(keys))}. Leave these fields as they are, or ask a proxy admin to make this change.",
+    )
+
+
+def _non_admin_may_set(key: str, value: object) -> bool:
+    if key not in NON_ADMIN_VECTOR_STORE_PARAMS:
+        return False
+    if key in NON_ADMIN_VECTOR_STORE_MAPPING_PARAMS:
+        return True
+    entries: Final = nested_param_entries(value)
+    return (
+        entries is not None
+        and not isinstance(value, Mapping)
+        and all(len(path) <= 1 and not isinstance(item, Mapping) for path, item in entries)
+    )
+
+
+def _admin_only_params(params: Mapping[str, object]) -> Mapping[str, object]:
+    return MappingProxyType(
+        {key: value for key, value in params.items() if value is not None and not _non_admin_may_set(key, value)}
+    )
+
+
+def _changed_admin_only_keys(requested: Mapping[str, object], saved: Mapping[str, object]) -> frozenset[str]:
+    if nested_param_entries(requested) is None or nested_param_entries(saved) is None:
+        return frozenset({"litellm_params"})
+    requested_admin_only: Final = _admin_only_params(requested)
+    saved_admin_only: Final = _admin_only_params(saved)
+    return frozenset(
+        key
+        for key in requested_admin_only.keys() | saved_admin_only.keys()
+        if requested_admin_only.get(key) != saved_admin_only.get(key)
+    )
+
+
+def assert_proxy_admin_for_vector_store_params(
+    params: Mapping[str, object] | None,
+    user_api_key_dict: UserAPIKeyAuth,
+    *,
+    saved_params: Mapping[str, object] | None = None,
+) -> None:
+    """A non-admin may only set, change or clear NON_ADMIN_VECTOR_STORE_PARAMS. Keeping exactly what
+    ``saved_params`` holds is allowed, so an owner can edit their store without touching what an admin set."""
+    if is_proxy_admin(user_api_key_dict):
+        return
+    changed: Final = _changed_admin_only_keys(params or _EMPTY_PARAMS, saved_params or _EMPTY_PARAMS)
+    if changed:
+        _raise_admin_only(changed)
+
+
+_REQUEST_ADMIN_ONLY_KEYS: Final = VECTOR_STORE_ENDPOINT_KEYS | frozenset({CREDENTIAL_NAME_KEY})
+
+
+def assert_proxy_admin_for_request_endpoints(payload: Mapping[str, object], user_api_key_dict: UserAPIKeyAuth) -> None:
+    """A search or query body picks endpoints only at its top level; nested values such as filters are data."""
+    if is_proxy_admin(user_api_key_dict):
+        return
+    requested: Final = frozenset(
+        key for key, value in payload.items() if key in _REQUEST_ADMIN_ONLY_KEYS and value is not None
+    )
+    if requested:
+        _raise_admin_only(requested)
+
+
+STORE_EMBEDDING_MODEL_KEYS: Final = ("litellm_embedding_model", "embedding_model")
+
+_URL_OR_HOST_MODEL_SUFFIX: Final = re.compile(r"://|^//|^[^/\s]+:\d+(?:[/?]|$)|\s")
+
+
+def _model_suffix_looks_like_url_or_host(model: str) -> bool:
+    """True when the part of ``model`` after its provider prefix (e.g. ``http://host/x`` in
+    ``huggingface/http://host/x``) looks like a URL or a host, rather than a model name. A wildcard
+    deployment such as ``huggingface/*`` serves any suffix, so router_serves_model alone would let a
+    non-admin pick that suffix and have every search send the proxy's real provider key there."""
+    _, separator, suffix = model.partition("/")
+    return bool(separator) and bool(_URL_OR_HOST_MODEL_SUFFIX.search(suffix))
+
+
+def store_embedding_models(
+    params: Mapping[str, object] | None, saved_params: Mapping[str, object] | None = None
+) -> tuple[tuple[str, ModelKind], ...]:
+    """The embedding models ``params`` sets on a store, skipping any that ``saved_params`` already holds."""
+    requested: Final = params or _EMPTY_PARAMS
+    saved: Final = saved_params or _EMPTY_PARAMS
+    return tuple(
+        (model, "embedding")
+        for key in STORE_EMBEDDING_MODEL_KEYS
+        if isinstance(model := requested.get(key), str) and model and model != saved.get(key)
+    )
+
+
+async def assert_caller_can_use_models(
+    models: Iterable[tuple[str, ModelKind]],
+    user_api_key_dict: UserAPIKeyAuth,
+    llm_router: "Router | None",
+) -> None:
+    """A non-admin may only name models this proxy serves and their key and team may call."""
+    if is_proxy_admin(user_api_key_dict):
+        return
+    from litellm.proxy.auth.auth_checks import can_key_call_resolved_model
+
+    for model, kind in models:
+        if (
+            _model_suffix_looks_like_url_or_host(model)
+            or llm_router is None
+            or not router_serves_model(llm_router, model, user_api_key_dict.team_id)
+        ):
+            raise HTTPException(status_code=400, detail=model_not_configured_message(model, kind))
+        try:
+            await can_key_call_resolved_model(
+                model=model, llm_model_list=None, valid_token=user_api_key_dict, llm_router=llm_router
+            )
+        except ProxyException as denial:
+            raise HTTPException(status_code=403, detail=denial.message) from None
 
 
 def _suffix_after_index_name(request_path: str, index_name: str) -> str | None:
@@ -161,18 +310,15 @@ async def can_user_access_vector_store(
        this vector store id.
     5. The caller's team_id matches the vector store's team_id.
 
-    A dashboard session credential is evaluated against the same effective
-    contexts as listing (its own grants plus each real team of the user).
     Otherwise access is denied.
     """
-    if _is_proxy_admin(user_api_key_dict):
+    if is_proxy_admin(user_api_key_dict):
         return True
 
     if vector_store.get("team_id") is None:
         return True
 
-    auth_contexts: Final = await _vector_store_auth_contexts(user_api_key_dict)
-    return await _is_vector_store_granted_to_any(vector_store, auth_contexts)
+    return await _is_vector_store_granted(vector_store, user_api_key_dict)
 
 
 async def _is_vector_store_granted(
@@ -222,7 +368,7 @@ async def _team_auth_context(team_id: str, user_api_key_dict: UserAPIKeyAuth) ->
     )
 
 
-async def _vector_store_auth_contexts(
+async def _vector_store_listing_auth_contexts(
     user_api_key_dict: UserAPIKeyAuth,
 ) -> tuple[UserAPIKeyAuth, ...]:
     if not is_ui_session_credential(user_api_key_dict):
@@ -250,10 +396,10 @@ async def filter_listable_vector_stores(
     user_api_key_dict: UserAPIKeyAuth,
 ) -> tuple[LiteLLM_ManagedVectorStore, ...]:
     """Non-admins only see stores their key, one of their teams' object_permission, or team ownership grants."""
-    if _is_proxy_admin(user_api_key_dict):
+    if is_proxy_admin(user_api_key_dict):
         return tuple(vector_stores)
 
-    auth_contexts: Final = await _vector_store_auth_contexts(user_api_key_dict)
+    auth_contexts: Final = await _vector_store_listing_auth_contexts(user_api_key_dict)
     return tuple([vs for vs in vector_stores if await _is_vector_store_granted_to_any(vs, auth_contexts)])
 
 

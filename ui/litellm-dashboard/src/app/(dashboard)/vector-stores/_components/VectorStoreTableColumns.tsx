@@ -5,7 +5,13 @@ import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 import { DataTableSortHeader } from "@/components/shared/DataTable";
 import { CellTooltip, DateCell, IdentityCell } from "@/components/shared/table_cells";
-import { getVectorStoreProviderLogoAndName } from "@/components/vector_store_providers";
+import {
+  getVectorStoreProviderLogoAndName,
+  isBetaVectorStoreProvider,
+  vectorStoreCapabilities,
+} from "@/components/vector_store_providers";
+import BetaBadge from "@/components/BetaBadge";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,18 +27,28 @@ import { copyToClipboard } from "@/utils/dataUtils";
 function VectorStoreProviderCell({ provider }: { provider: string }) {
   const { displayName, logo } = getVectorStoreProviderLogoAndName(provider);
   return (
-    <div className="flex items-center gap-2">
-      {logo ? (
-        <img
-          src={logo}
-          alt=""
-          className="size-4 shrink-0"
-          onError={(event) => {
-            (event.currentTarget as HTMLImageElement).style.display = "none";
-          }}
-        />
-      ) : null}
-      <span className="truncate text-sm">{displayName}</span>
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        {logo ? (
+          <img
+            src={logo}
+            alt=""
+            className="size-4 shrink-0"
+            onError={(event) => {
+              (event.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : null}
+        <span className="truncate text-sm">{displayName}</span>
+        {isBetaVectorStoreProvider(provider) && <BetaBadge />}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {vectorStoreCapabilities(provider).map((capability) => (
+          <Badge key={capability} variant="outline" className="px-1.5 py-0 text-[10px] font-normal">
+            {capability}
+          </Badge>
+        ))}
+      </div>
     </div>
   );
 }
@@ -171,7 +187,7 @@ export const getVectorStoreTableColumns = ({
     accessorKey: "custom_llm_provider",
     meta: { title: "Provider" },
     header: "Provider",
-    size: 160,
+    size: 200,
     enableSorting: false,
     cell: ({ row }) => <VectorStoreProviderCell provider={row.original.custom_llm_provider} />,
   },

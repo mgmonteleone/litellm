@@ -23241,6 +23241,121 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+
+        /**
+         * VectorStoreConnectionCheck
+         * @description One diagnostic step executed during a connection test.
+         */
+        VectorStoreConnectionCheck: {
+            /** Check */
+            check?: string;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            } | null;
+            /** Message */
+            message?: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status?: "pass" | "warn" | "fail" | "skip";
+        };
+        /**
+         * VectorStoreDiscoverRequest
+         * @description Discover collections/indexes in a vector store.
+         */
+        VectorStoreDiscoverRequest: {
+            /** Custom Llm Provider */
+            custom_llm_provider?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "databases" | "collections" | "indexes" | "fields";
+            /** Litellm Credential Name */
+            litellm_credential_name?: string | null;
+            /** Litellm Params */
+            litellm_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Options */
+            options?: {
+                [key: string]: unknown;
+            };
+            /** Vector Store Id */
+            vector_store_id?: string | null;
+        };
+        /**
+         * VectorStoreProviderDefaultsResponse
+         * @description Deployment defaults for a vector store provider.
+         */
+        VectorStoreProviderDefaultsResponse: {
+            /** Api Base */
+            api_base?: string | null;
+            /** Api Key Configured */
+            api_key_configured?: boolean;
+            /** Custom Llm Provider */
+            custom_llm_provider: string;
+        };
+        /**
+         * VectorStoreTestConnectionRequest
+         * @description Run non-destructive liveness, auth, and read probes against a target vector store.
+         */
+        VectorStoreTestConnectionRequest: {
+            /** Custom Llm Provider */
+            custom_llm_provider?: string | null;
+            /** Litellm Credential Name */
+            litellm_credential_name?: string | null;
+            /** Litellm Params */
+            litellm_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Vector Store Id */
+            vector_store_id?: string | null;
+        };
+        /**
+         * VectorStoreTestConnectionResponse
+         * @description Result of POST /vector_store/test_connection
+         */
+        VectorStoreTestConnectionResponse: {
+            /** Checks */
+            checks?: components["schemas"]["VectorStoreConnectionCheck"][];
+            /** Custom Llm Provider */
+            custom_llm_provider?: string;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            } | null;
+            /** Ok */
+            ok?: boolean;
+            /** Summary */
+            summary?: string;
+            /** Supported */
+            supported?: boolean;
+        };
+        /**
+         * VectorStoreUpdateRequest
+         */
+        VectorStoreUpdateRequest: {
+            /** Custom Llm Provider */
+            custom_llm_provider?: string | null;
+            /** Litellm Params */
+            litellm_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Vector Store Description */
+            vector_store_description?: string | null;
+            /** Vector Store Id */
+            vector_store_id: string;
+            /** Vector Store Metadata */
+            vector_store_metadata?: {
+                [key: string]: unknown;
+            } | null;
+            /** Vector Store Name */
+            vector_store_name?: string | null;
+        };
+
         /**
          * APIKeySecurityScheme
          * @description Defines a security scheme using an API key.

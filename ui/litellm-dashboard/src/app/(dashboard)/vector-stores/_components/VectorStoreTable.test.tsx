@@ -14,6 +14,9 @@ vi.mock("@/components/vector_store_providers", () => ({
     };
     return providerMap[provider] || { displayName: provider, logo: "" };
   },
+  isBetaVectorStoreProvider: (provider: string) => provider === "mongodb",
+  vectorStoreCapabilities: (provider: string) =>
+    provider === "mongodb" ? ["Search", "Ingest", "Filters", "Hybrid"] : ["Search"],
 }));
 
 const mockVectorStores: VectorStore[] = [
