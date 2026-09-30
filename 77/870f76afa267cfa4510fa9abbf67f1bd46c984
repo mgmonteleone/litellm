@@ -1,0 +1,16 @@
+litellm/proxy/auth/auth_utils.py
+  h_69b863911ebf05 79-83,85-97
+litellm/proxy/litellm_pre_call_utils.py
+  h_69b863911ebf05 4,2389-2393,2395,2399-2404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.7.3",
+  "base_commit_sha": "77870f76afa267cfa4510fa9abbf67f1bd46c984",
+  "prompts": {},
+  "humans": {
+    "h_69b863911ebf05": {
+      "author": "Matthew Monteleone <mgm@augmentcode.com>"
+    }
+  }
+}
