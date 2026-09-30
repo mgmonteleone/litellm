@@ -8176,3 +8176,62 @@ def test_default_team_settings_bool_turn_off_message_logging_redacts():
         )
         is True
     )
+
+
+@pytest.mark.parametrize(
+    ("header_value", "expected"),
+    [
+        ("US", "US"),
+        (" de ", "DE"),
+        ("", None),
+        ("ZZZ", None),
+        ("U1", None),
+    ],
+)
+def test_get_requester_country_code(header_value: str, expected: str | None):
+    from litellm.proxy.litellm_pre_call_utils import get_requester_country_code
+
+    assert get_requester_country_code(Headers({"X-Client-Region": header_value})) == expected
+
+
+def test_get_requester_country_code_missing_header():
+    from litellm.proxy.litellm_pre_call_utils import get_requester_country_code
+
+    assert get_requester_country_code(Headers({})) is None
+
+
+def _country_request_mock() -> MagicMock:
+    request_mock = MagicMock(spec=Request)
+    request_mock.url = MagicMock()
+    request_mock.url.__str__.return_value = "http://localhost/v1/chat/completions"
+    request_mock.method = "POST"
+    request_mock.query_params = {}
+    request_mock.headers = Headers(
+        {"Content-Type": "application/json", "X-Client-IP": "203.0.113.7", "X-Client-Region": "FR"}
+    )
+    request_mock.client = MagicMock()
+    request_mock.client.host = "127.0.0.1"
+    return request_mock
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("use_xff", "expected"), [(True, "FR"), (False, None)])
+async def test_add_litellm_data_to_request_sets_requester_country_code(
+    monkeypatch, use_xff: bool, expected: str | None
+):
+    """X-Client-Region is trusted only alongside X-Client-IP, i.e. when XFF resolution is on."""
+    from litellm.proxy.litellm_pre_call_utils import add_litellm_data_to_request
+
+    monkeypatch.delenv("USE_X_FORWARDED_FOR", raising=False)
+    monkeypatch.delenv("LITELLM_USE_X_FORWARDED_FOR", raising=False)
+
+    updated = await add_litellm_data_to_request(
+        data={"model": "gpt-3.5-turbo"},
+        request=_country_request_mock(),
+        user_api_key_dict=UserAPIKeyAuth(api_key="hashed-key"),
+        proxy_config=MagicMock(),
+        general_settings={"use_x_forwarded_for": use_xff},
+        version="test-version",
+    )
+
+    assert updated["metadata"]["requester_country_code"] == expected

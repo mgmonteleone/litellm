@@ -3961,6 +3961,7 @@ class SpendLogsMetadata(TypedDict):
     user_api_key_team_alias: str | None
     spend_logs_metadata: dict | None  # special param to log k,v pairs to spendlogs for a call
     requester_ip_address: str | None
+    requester_country_code: ReadOnly[str | None]  # ISO 3166-1 alpha-2, from the LB's X-Client-Region
     user_agent: ReadOnly[str | None]
     litellm_call_id: str | None
     applied_guardrails: list[str] | None

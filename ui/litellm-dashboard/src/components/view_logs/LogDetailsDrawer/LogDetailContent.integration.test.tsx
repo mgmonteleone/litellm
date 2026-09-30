@@ -399,6 +399,19 @@ describe("LogDetailContent", () => {
     expect(screen.getByText("192.168.1.1")).toBeInTheDocument();
   });
 
+  it("should display the country flag when requester_country_code is present", () => {
+    render(
+      <LogDetailContent
+        logEntry={createLogEntry({
+          requester_ip_address: "203.0.113.7",
+          metadata: { status: "success", requester_country_code: "FR" },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("🇫🇷 France (FR)")).toBeInTheDocument();
+  });
+
   it("should display guardrail label when guardrail data exists", () => {
     render(
       <LogDetailContent

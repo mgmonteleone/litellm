@@ -852,6 +852,22 @@ def apply_missing_session_id_policy(
             )
 
 
+_COUNTRY_CODE_PATTERN: Final = re.compile(r"^[A-Z]{2}$")
+
+
+def get_requester_country_code(headers: Mapping[str, str]) -> str | None:
+    """
+    ISO 3166-1 alpha-2 country of the caller, from the `X-Client-Region` header
+    that the GCP load balancer sets from `{client_region}`. Anything that isn't
+    two letters (missing, empty, or unresolved) yields None.
+    """
+    raw: Final = headers.get("x-client-region")
+    if raw is None:
+        return None
+    code: Final = raw.strip().upper()
+    return code if _COUNTRY_CODE_PATTERN.match(code) else None
+
+
 def should_auto_drop_params_for_agentic_cli(user_agent: str, data: dict, proxy_config: ProxyConfig) -> bool:
     """drop_params defaults to on for agentic CLIs so their client-specific
     params (e.g. Claude Code's thinking, Codex's service_tier) don't fail
@@ -2391,11 +2407,7 @@ async def add_litellm_data_to_request(
             or os.getenv("USE_X_FORWARDED_FOR", "").lower() in ("true", "1")
             or os.getenv("LITELLM_USE_X_FORWARDED_FOR", "").lower() in ("true", "1")
         )
-        if (
-            is_xff_enabled
-            and request is not None
-            and hasattr(request, "headers")
-        ):
+        if is_xff_enabled and request is not None and hasattr(request, "headers"):
             if "x-client-ip" in request.headers:
                 requester_ip_address = request.headers["x-client-ip"].split(",")[0].strip()
             elif "x-real-ip" in request.headers:
@@ -2410,6 +2422,10 @@ async def add_litellm_data_to_request(
         ):
             requester_ip_address = request.client.host
     data[_metadata_variable_name]["requester_ip_address"] = requester_ip_address
+    # Country is only trusted from the same LB-set headers as the IP above.
+    data[_metadata_variable_name]["requester_country_code"] = (
+        get_requester_country_code(request.headers) if is_xff_enabled and hasattr(request, "headers") else None
+    )
 
     # Add User-Agent
     user_agent = ""

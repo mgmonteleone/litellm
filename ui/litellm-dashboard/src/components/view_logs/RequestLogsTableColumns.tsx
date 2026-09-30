@@ -10,6 +10,7 @@ import { getProviderLogoAndName } from "../provider_info_helpers";
 import { getBatchIdFromRequestId, getBatchRequestCounts, isBatchCallType } from "./batchLogUtils";
 import type { LogEntry } from "./columns";
 import { AGENT_CALL_TYPES, MCP_CALL_TYPES } from "./constants";
+import { countryCodeToFlag, countryCodeToName, readCountryCode } from "./countryFlag";
 import { AgentBadge, AgentIcon, BatchBadge, LlmBadge, McpBadge, SparkleIcon, WrenchIcon } from "./TypeBadges";
 
 export interface RequestLogsTableColumnsDeps {
@@ -39,6 +40,24 @@ function TruncatedText({ value, tooltip }: { value: string | undefined; tooltip?
     <CellTooltip
       content={tooltip ?? display}
       trigger={<span className="max-w-[15ch] truncate block">{display}</span>}
+    />
+  );
+}
+
+function CountryCell({ code, ipAddress }: { code: string | undefined; ipAddress: string | undefined }) {
+  if (!code) return <span>-</span>;
+  const name = countryCodeToName(code);
+  return (
+    <CellTooltip
+      content={ipAddress ? `${name} (${ipAddress})` : name}
+      trigger={
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-label={name} role="img">
+            {countryCodeToFlag(code)}
+          </span>
+          <span>{code}</span>
+        </span>
+      }
     />
   );
 }
@@ -346,6 +365,15 @@ export const getRequestLogsTableColumns = ({
     size: 140,
     enableSorting: false,
     cell: ({ row }) => <TruncatedText value={row.original.end_user} />,
+  },
+  {
+    id: "country",
+    header: "Country",
+    size: 90,
+    enableSorting: false,
+    cell: ({ row }) => (
+      <CountryCell code={readCountryCode(row.original.metadata)} ipAddress={row.original.requester_ip_address} />
+    ),
   },
   {
     id: "request_tags",

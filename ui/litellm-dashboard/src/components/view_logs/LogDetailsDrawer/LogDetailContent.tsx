@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 import { LogEntry } from "../columns";
+import { countryCodeToFlag, countryCodeToName, readCountryCode } from "../countryFlag";
 import { formatNumberWithCommas } from "@/utils/dataUtils";
 import { PROMPT_CACHE_CREATION_TOOLTIP, PROMPT_CACHE_READ_TOOLTIP } from "@/utils/promptCacheUsage";
 import GuardrailViewer from "../GuardrailViewer/GuardrailViewer";
@@ -88,6 +89,8 @@ export function LogDetailContent({
   // Don't show "missing data" warning while details are still loading
   const missingData = !hasMessages && !hasResponse && !hasError && !isLoadingDetails;
 
+  const countryCode = readCountryCode(metadata);
+
   // Guardrail data
   const guardrailInfo = metadata?.guardrail_information;
   const guardrailEntries = normalizeGuardrailEntries(guardrailInfo);
@@ -161,6 +164,11 @@ export function LogDetailContent({
               </DescriptionItem>
               {logEntry.requester_ip_address && (
                 <DescriptionItem label="IP Address">{logEntry.requester_ip_address}</DescriptionItem>
+              )}
+              {countryCode && (
+                <DescriptionItem label="Country">
+                  {`${countryCodeToFlag(countryCode)} ${countryCodeToName(countryCode)} (${countryCode})`}
+                </DescriptionItem>
               )}
               {hasGuardrailData && (
                 <DescriptionItem label="Guardrail">
